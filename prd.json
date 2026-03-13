@@ -62,8 +62,8 @@
         "Production build succeeds"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #2 merged. CI green after Vault health check fix."
     },
     {
       "id": "US-004",
