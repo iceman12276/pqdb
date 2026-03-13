@@ -23,9 +23,10 @@ sync_url = settings.database_url.replace("+asyncpg", "+psycopg2").replace(
 )
 config.set_main_option("sqlalchemy.url", sync_url)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-target_metadata = None
+from pqdb_api.models import Base  # noqa: E402
+
+# Model metadata for autogenerate support
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

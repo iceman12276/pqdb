@@ -13,3 +13,6 @@ class Settings(BaseSettings):
     )
     debug: bool = False
     cors_origins: list[str] = ["*"]
+
+    jwt_private_key_pem: str = ""
+    jwt_public_key_pem: str = ""

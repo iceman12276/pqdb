@@ -3,13 +3,34 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from cryptography.hazmat.primitives.serialization import (
+    load_pem_private_key,
+    load_pem_public_key,
+)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from pqdb_api.config import Settings
 from pqdb_api.database import dispose_engine, init_engine
 from pqdb_api.logging import setup_logging
+from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.health import router as health_router
+from pqdb_api.services.auth import generate_ed25519_keypair
+
+
+def _init_jwt_keys(app: FastAPI, settings: Settings) -> None:
+    """Load or generate Ed25519 key pair for JWT signing."""
+    if settings.jwt_private_key_pem and settings.jwt_public_key_pem:
+        app.state.jwt_private_key = load_pem_private_key(
+            settings.jwt_private_key_pem.encode(), password=None
+        )
+        app.state.jwt_public_key = load_pem_public_key(
+            settings.jwt_public_key_pem.encode()
+        )
+    else:
+        private_key, public_key = generate_ed25519_keypair()
+        app.state.jwt_private_key = private_key
+        app.state.jwt_public_key = public_key
 
 
 @asynccontextmanager
@@ -18,6 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     setup_logging(debug=settings.debug)
     init_engine(settings.database_url)
+    _init_jwt_keys(app, settings)
     yield
     await dispose_engine()
 
@@ -39,5 +61,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.include_router(health_router)
+    app.include_router(auth_router)
 
     return app
