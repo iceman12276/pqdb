@@ -3,7 +3,18 @@ name = "pqdb-api"
 version = "0.1.0"
 description = "pqdb backend API server"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "alembic>=1.18.4",
+    "asyncpg>=0.31.0",
+    "fastapi>=0.135.1",
+    "pydantic-settings>=2.13.1",
+    "sqlalchemy[asyncio]>=2.0.48",
+    "structlog>=25.5.0",
+    "uvicorn[standard]>=0.41.0",
+]
+
+[project.scripts]
+pqdb-api = "pqdb_api._cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -28,7 +39,10 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "mypy>=1.19.1",
     "pytest>=9.0.2",
+    "pyyaml>=6.0.3",
     "ruff>=0.15.6",
+    "types-pyyaml>=6.0.12.20250915",
 ]
