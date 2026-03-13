@@ -13,47 +13,66 @@ jobs:
     defaults:
       run:
         working-directory: backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pqdb_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      vault:
+        image: hashicorp/vault:1.15
+        env:
+          VAULT_DEV_ROOT_TOKEN_ID: dev-root-token
+        ports:
+          - 8200:8200
+        options: >-
+          --health-cmd "wget --spider http://localhost:8200/v1/sys/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/pqdb_platform
+      VAULT_ADDR: http://localhost:8200
+      VAULT_TOKEN: dev-root-token
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check backend exists
-        id: check
-        run: test -f backend/pyproject.toml
-        continue-on-error: true
-        working-directory: .
-
       - name: Install uv
-        if: steps.check.outcome == 'success'
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
 
       - name: Set up Python
-        if: steps.check.outcome == 'success'
         run: uv python install 3.12
 
       - name: Install dependencies
-        if: steps.check.outcome == 'success'
         run: uv sync
 
       - name: Lint
-        if: steps.check.outcome == 'success'
         run: uv run ruff check .
 
       - name: Format check
-        if: steps.check.outcome == 'success'
         run: uv run ruff format --check .
 
       - name: Type check
-        if: steps.check.outcome == 'success'
         run: uv run mypy .
 
       - name: Unit tests
-        if: steps.check.outcome == 'success'
         run: uv run pytest tests/unit/ -v --tb=short
 
       - name: Integration tests
-        if: steps.check.outcome == 'success'
         run: uv run pytest tests/integration/ -v --tb=short
 
   sdk:
@@ -65,14 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check SDK exists
-        id: check
-        run: test -f sdk/package.json
-        continue-on-error: true
-        working-directory: .
-
       - name: Set up Node
-        if: steps.check.outcome == 'success'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -80,17 +92,13 @@ jobs:
           cache-dependency-path: sdk/package-lock.json
 
       - name: Install dependencies
-        if: steps.check.outcome == 'success'
         run: npm ci
 
       - name: Type check
-        if: steps.check.outcome == 'success'
         run: npm run typecheck
 
       - name: Unit tests
-        if: steps.check.outcome == 'success'
         run: npm test
 
       - name: Build
-        if: steps.check.outcome == 'success'
         run: npm run build
