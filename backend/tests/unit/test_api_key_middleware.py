@@ -68,14 +68,21 @@ class TestBuildProjectDatabaseUrl:
     def test_replaces_database_name(self) -> None:
         from pqdb_api.middleware.api_key import _build_project_database_url
 
-        platform_url = "postgresql+asyncpg://postgres:postgres@localhost:5432/pqdb_platform"
+        platform_url = (
+            "postgresql+asyncpg://postgres:postgres@localhost:5432/pqdb_platform"
+        )
         result = _build_project_database_url(platform_url, "pqdb_project_abc123")
-        assert result == "postgresql+asyncpg://postgres:postgres@localhost:5432/pqdb_project_abc123"
+        assert (
+            result
+            == "postgresql+asyncpg://postgres:postgres@localhost:5432/pqdb_project_abc123"
+        )
 
     def test_preserves_host_and_port(self) -> None:
         from pqdb_api.middleware.api_key import _build_project_database_url
 
-        platform_url = "postgresql+asyncpg://user:pass@db.example.com:6543/pqdb_platform"
+        platform_url = (
+            "postgresql+asyncpg://user:pass@db.example.com:6543/pqdb_platform"
+        )
         result = _build_project_database_url(platform_url, "pqdb_project_xyz789")
         assert "db.example.com:6543" in result
         assert result.endswith("/pqdb_project_xyz789")

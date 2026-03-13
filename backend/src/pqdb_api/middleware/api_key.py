@@ -66,7 +66,7 @@ def _build_project_database_url(platform_url: str, database_name: str) -> str:
     last_slash = platform_url.rfind("/")
     if last_slash == -1:
         raise ValueError("Invalid platform database URL")
-    return platform_url[:last_slash + 1] + database_name
+    return platform_url[: last_slash + 1] + database_name
 
 
 def _get_or_create_engine(

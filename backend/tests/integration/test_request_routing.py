@@ -237,9 +237,7 @@ class TestApiKeyValid:
 class TestProjectIsolation:
     """Different API keys route to different projects."""
 
-    def test_different_projects_return_different_ids(
-        self, client: TestClient
-    ) -> None:
+    def test_different_projects_return_different_ids(self, client: TestClient) -> None:
         token = _signup_and_get_token(client, email="iso@test.com")
         pid_a, keys_a = _create_project_and_get_keys(client, token, name="proj-a")
         pid_b, keys_b = _create_project_and_get_keys(client, token, name="proj-b")
