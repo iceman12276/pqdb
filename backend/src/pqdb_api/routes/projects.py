@@ -14,7 +14,7 @@ from pqdb_api.database import get_session
 from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.project import Project
 from pqdb_api.services.api_keys import create_project_keys
-from pqdb_api.services.provisioner import provision_database
+from pqdb_api.services.provisioner import DatabaseProvisioner, ProvisioningError
 
 logger = structlog.get_logger()
 
@@ -54,14 +54,14 @@ class ProjectCreateResponse(ProjectResponse):
     api_keys: list[ApiKeyCreatedResponse]
 
 
-def _project_response(p: Project) -> ProjectResponse:
+def _project_response(project: Project) -> ProjectResponse:
     return ProjectResponse(
-        id=str(p.id),
-        name=p.name,
-        region=p.region,
-        status=p.status,
-        database_name=p.database_name,
-        created_at=p.created_at,
+        id=str(project.id),
+        name=project.name,
+        region=project.region,
+        status=project.status,
+        database_name=project.database_name,
+        created_at=project.created_at,
     )
 
 
@@ -72,12 +72,13 @@ async def create_project(
     developer_id: uuid.UUID = Depends(get_current_developer_id),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Create a new project for the authenticated developer."""
+    """Create a new project and provision an isolated database."""
     project = Project(
         id=uuid.uuid4(),
         developer_id=developer_id,
         name=body.name,
         region=body.region,
+        status="provisioning",
     )
     session.add(project)
     await session.flush()
@@ -86,28 +87,27 @@ async def create_project(
     await session.commit()
     await session.refresh(project)
 
-    # Provision an isolated database for the project
-    database_url: str = request.app.state.settings.database_url
+    provisioner: DatabaseProvisioner = request.app.state.provisioner
     try:
-        result = await provision_database(project.id, database_url)
-        project.database_name = result.database_name
+        db_name = await provisioner.provision(project.id)
+        project.database_name = db_name
         project.status = "active"
-        await session.commit()
-        await session.refresh(project)
-    except Exception:
-        logger.exception(
-            "provisioning_failed",
+    except ProvisioningError as exc:
+        logger.error(
+            "project_provisioning_failed",
             project_id=str(project.id),
+            error=str(exc),
         )
         project.status = "provisioning_failed"
-        await session.commit()
-        await session.refresh(project)
+
+    await session.commit()
+    await session.refresh(project)
 
     logger.info(
         "project_created",
         project_id=str(project.id),
         developer_id=str(developer_id),
-        database_name=project.database_name,
+        status=project.status,
     )
     return {
         "id": str(project.id),
@@ -169,7 +169,10 @@ async def delete_project(
     developer_id: uuid.UUID = Depends(get_current_developer_id),
     session: AsyncSession = Depends(get_session),
 ) -> ProjectResponse:
-    """Soft-delete a project by setting its status to archived."""
+    """Soft-delete a project by setting its status to archived.
+
+    Does NOT drop the provisioned database (soft delete for MVP).
+    """
     result = await session.execute(
         select(Project).where(
             Project.id == project_id,

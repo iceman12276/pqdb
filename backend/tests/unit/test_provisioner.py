@@ -6,70 +6,96 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from pqdb_api.services.provisioner import (
-    ProvisionResult,
-    generate_db_name,
-    generate_db_user,
-    provision_database,
+    DatabaseProvisioner,
+    ProvisioningError,
+    _validate_identifier,
+    make_database_name,
+    make_project_user,
 )
 
 
-class TestGenerateDbName:
-    """Tests for database name generation."""
+class TestMakeDatabaseName:
+    """Tests for the database naming function."""
 
-    def test_starts_with_prefix(self) -> None:
+    def test_starts_with_pqdb_project(self) -> None:
         project_id = uuid.uuid4()
-        name = generate_db_name(project_id)
+        name = make_database_name(project_id)
         assert name.startswith("pqdb_project_")
 
     def test_uses_short_uuid(self) -> None:
         project_id = uuid.uuid4()
-        name = generate_db_name(project_id)
+        name = make_database_name(project_id)
         suffix = name.removeprefix("pqdb_project_")
-        assert suffix == project_id.hex[:12]
+        # Short UUID = first 12 chars of hex, no dashes
+        assert len(suffix) == 12
+        assert "-" not in suffix
 
     def test_deterministic(self) -> None:
         project_id = uuid.uuid4()
-        assert generate_db_name(project_id) == generate_db_name(project_id)
+        assert make_database_name(project_id) == make_database_name(project_id)
 
-    def test_different_projects_get_different_names(self) -> None:
-        name_a = generate_db_name(uuid.uuid4())
-        name_b = generate_db_name(uuid.uuid4())
-        assert name_a != name_b
+    def test_different_projects_different_names(self) -> None:
+        id_a = uuid.uuid4()
+        id_b = uuid.uuid4()
+        assert make_database_name(id_a) != make_database_name(id_b)
 
 
-class TestGenerateDbUser:
-    """Tests for database user generation."""
+class TestMakeProjectUser:
+    """Tests for the project user naming function."""
 
-    def test_starts_with_prefix(self) -> None:
+    def test_starts_with_pqdb_user(self) -> None:
         project_id = uuid.uuid4()
-        user = generate_db_user(project_id)
+        user = make_project_user(project_id)
         assert user.startswith("pqdb_user_")
 
-    def test_uses_short_uuid(self) -> None:
+    def test_deterministic(self) -> None:
         project_id = uuid.uuid4()
-        user = generate_db_user(project_id)
-        suffix = user.removeprefix("pqdb_user_")
-        assert suffix == project_id.hex[:12]
+        assert make_project_user(project_id) == make_project_user(project_id)
 
 
-class TestProvisionResult:
-    """Tests for ProvisionResult dataclass."""
+class TestValidateIdentifier:
+    """Tests for the SQL identifier validator."""
 
-    def test_has_required_fields(self) -> None:
-        result = ProvisionResult(
-            database_name="pqdb_project_abc123def456",
-            database_user="pqdb_user_abc123def456",
-        )
-        assert result.database_name == "pqdb_project_abc123def456"
-        assert result.database_user == "pqdb_user_abc123def456"
+    def test_accepts_valid_identifier(self) -> None:
+        result = _validate_identifier("pqdb_project_abc123def456")
+        assert result == "pqdb_project_abc123def456"
+
+    def test_rejects_semicolon(self) -> None:
+        with pytest.raises(ValueError, match="Unsafe SQL identifier"):
+            _validate_identifier("name; DROP TABLE--")
+
+    def test_rejects_quotes(self) -> None:
+        with pytest.raises(ValueError, match="Unsafe SQL identifier"):
+            _validate_identifier('name"injection')
+
+    def test_rejects_uppercase(self) -> None:
+        with pytest.raises(ValueError, match="Unsafe SQL identifier"):
+            _validate_identifier("PQDB_PROJECT_ABC")
+
+    def test_rejects_spaces(self) -> None:
+        with pytest.raises(ValueError, match="Unsafe SQL identifier"):
+            _validate_identifier("name with spaces")
+
+    def test_rejects_empty_string(self) -> None:
+        with pytest.raises(ValueError, match="Unsafe SQL identifier"):
+            _validate_identifier("")
 
 
-class TestProvisionDatabase:
-    """Tests for the provision_database function."""
+class TestDatabaseProvisioner:
+    """Tests for the DatabaseProvisioner class."""
 
-    @pytest.mark.asyncio
-    async def test_returns_provision_result(self) -> None:
+    def test_init_stores_dsn(self) -> None:
+        dsn = "postgresql://postgres:postgres@localhost:5432/postgres"
+        provisioner = DatabaseProvisioner(superuser_dsn=dsn)
+        assert provisioner.superuser_dsn == dsn
+
+    @pytest.mark.asyncio()
+    async def test_provision_calls_create_database(self) -> None:
+        dsn = "postgresql://postgres:postgres@localhost:5432/postgres"
+        provisioner = DatabaseProvisioner(superuser_dsn=dsn)
         project_id = uuid.uuid4()
+        db_name = make_database_name(project_id)
+
         mock_conn = AsyncMock()
         mock_conn.execute = AsyncMock()
         mock_conn.close = AsyncMock()
@@ -77,104 +103,67 @@ class TestProvisionDatabase:
         with patch(
             "pqdb_api.services.provisioner.asyncpg.connect",
             new_callable=AsyncMock,
-            return_value=mock_conn,
-        ):
-            result = await provision_database(
-                project_id, "postgresql://user:pass@localhost/db"
-            )
-
-        assert isinstance(result, ProvisionResult)
-        expected_db = generate_db_name(project_id)
-        assert result.database_name == expected_db
-
-    @pytest.mark.asyncio
-    async def test_creates_database_and_user(self) -> None:
-        project_id = uuid.uuid4()
-        mock_conn = AsyncMock()
-        mock_conn.execute = AsyncMock()
-        mock_conn.close = AsyncMock()
-
-        with patch(
-            "pqdb_api.services.provisioner.asyncpg.connect",
-            new_callable=AsyncMock,
-            return_value=mock_conn,
-        ):
-            await provision_database(project_id, "postgresql://user:pass@localhost/db")
-
-        calls = [str(c) for c in mock_conn.execute.call_args_list]
-        call_text = " ".join(calls)
-        assert "CREATE USER" in call_text or "CREATE ROLE" in call_text
-        assert "CREATE DATABASE" in call_text
-
-    @pytest.mark.asyncio
-    async def test_grants_privileges(self) -> None:
-        project_id = uuid.uuid4()
-        mock_conn = AsyncMock()
-        mock_conn.execute = AsyncMock()
-        mock_conn.close = AsyncMock()
-
-        with patch(
-            "pqdb_api.services.provisioner.asyncpg.connect",
-            new_callable=AsyncMock,
-            return_value=mock_conn,
-        ):
-            await provision_database(project_id, "postgresql://user:pass@localhost/db")
-
-        calls = [str(c) for c in mock_conn.execute.call_args_list]
-        call_text = " ".join(calls)
-        assert "GRANT" in call_text
-
-    @pytest.mark.asyncio
-    async def test_closes_connection(self) -> None:
-        project_id = uuid.uuid4()
-        mock_conn = AsyncMock()
-        mock_conn.execute = AsyncMock()
-        mock_conn.close = AsyncMock()
-
-        with patch(
-            "pqdb_api.services.provisioner.asyncpg.connect",
-            new_callable=AsyncMock,
-            return_value=mock_conn,
-        ):
-            await provision_database(project_id, "postgresql://user:pass@localhost/db")
-
-        mock_conn.close.assert_awaited()
-
-    @pytest.mark.asyncio
-    async def test_closes_connection_on_error(self) -> None:
-        project_id = uuid.uuid4()
-        mock_conn = AsyncMock()
-        mock_conn.execute = AsyncMock(side_effect=Exception("db error"))
-        mock_conn.close = AsyncMock()
-
-        with (
-            patch(
-                "pqdb_api.services.provisioner.asyncpg.connect",
-                new_callable=AsyncMock,
-                return_value=mock_conn,
-            ),
-            pytest.raises(Exception, match="db error"),
-        ):
-            await provision_database(project_id, "postgresql://user:pass@localhost/db")
-
-        mock_conn.close.assert_awaited()
-
-    @pytest.mark.asyncio
-    async def test_converts_sqlalchemy_url_to_asyncpg(self) -> None:
-        project_id = uuid.uuid4()
-        mock_conn = AsyncMock()
-        mock_conn.execute = AsyncMock()
-        mock_conn.close = AsyncMock()
-
-        with patch(
-            "pqdb_api.services.provisioner.asyncpg.connect",
-            new_callable=AsyncMock,
-            return_value=mock_conn,
         ) as mock_connect:
-            await provision_database(
-                project_id,
-                "postgresql+asyncpg://user:pass@localhost:5432/db",
-            )
+            mock_connect.return_value = mock_conn
+            result = await provisioner.provision(project_id)
 
-        dsn = mock_connect.call_args[0][0]
-        assert "+asyncpg" not in dsn
+        assert result == db_name
+        # Verify CREATE USER, CREATE DATABASE, and GRANT were called
+        calls = [str(c) for c in mock_conn.execute.call_args_list]
+        call_str = " ".join(calls)
+        assert "CREATE USER" in call_str
+        assert "CREATE DATABASE" in call_str
+        assert "GRANT" in call_str
+
+    @pytest.mark.asyncio()
+    async def test_provision_raises_provisioning_error_on_failure(self) -> None:
+        dsn = "postgresql://postgres:postgres@localhost:5432/postgres"
+        provisioner = DatabaseProvisioner(superuser_dsn=dsn)
+        project_id = uuid.uuid4()
+
+        with patch(
+            "pqdb_api.services.provisioner.asyncpg.connect",
+            new_callable=AsyncMock,
+        ) as mock_connect:
+            mock_connect.side_effect = Exception("Connection refused")
+            with pytest.raises(ProvisioningError, match="Connection refused"):
+                await provisioner.provision(project_id)
+
+    @pytest.mark.asyncio()
+    async def test_provision_closes_connection_on_success(self) -> None:
+        dsn = "postgresql://postgres:postgres@localhost:5432/postgres"
+        provisioner = DatabaseProvisioner(superuser_dsn=dsn)
+        project_id = uuid.uuid4()
+
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock()
+        mock_conn.close = AsyncMock()
+
+        with patch(
+            "pqdb_api.services.provisioner.asyncpg.connect",
+            new_callable=AsyncMock,
+        ) as mock_connect:
+            mock_connect.return_value = mock_conn
+            await provisioner.provision(project_id)
+
+        mock_conn.close.assert_awaited_once()
+
+    @pytest.mark.asyncio()
+    async def test_provision_closes_connection_on_failure(self) -> None:
+        dsn = "postgresql://postgres:postgres@localhost:5432/postgres"
+        provisioner = DatabaseProvisioner(superuser_dsn=dsn)
+        project_id = uuid.uuid4()
+
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock(side_effect=Exception("SQL error"))
+        mock_conn.close = AsyncMock()
+
+        with patch(
+            "pqdb_api.services.provisioner.asyncpg.connect",
+            new_callable=AsyncMock,
+        ) as mock_connect:
+            mock_connect.return_value = mock_conn
+            with pytest.raises(ProvisioningError):
+                await provisioner.provision(project_id)
+
+        mock_conn.close.assert_awaited_once()

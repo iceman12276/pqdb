@@ -1,141 +1,134 @@
 """Database-per-project provisioner.
 
-Creates an isolated Postgres database and dedicated user for each
-project. Connects to Postgres as superuser via asyncpg to run DDL.
-
-Security note: PostgreSQL DDL (CREATE DATABASE, CREATE USER, GRANT)
-does not support parameterized queries for identifiers. All identifiers
-are validated against a strict [a-z0-9_]+ allowlist before interpolation
-and double-quoted, making SQL injection impossible.
+Connects as Postgres superuser to create an isolated database and
+dedicated user for each project.
 """
+
+from __future__ import annotations
 
 import re
 import secrets
 import uuid
-from dataclasses import dataclass
+from typing import Any
 
-import asyncpg  # type: ignore[import-untyped]
+import asyncpg
 import structlog
 
 logger = structlog.get_logger()
 
-_PASSWORD_LENGTH = 32
-_UUID_SHORT_LEN = 12
+# Strict allowlist: only lowercase alphanumeric and underscore.
+# All identifiers we generate match this pattern (pqdb_project_<hex>,
+# pqdb_user_<hex>), so this is a defense-in-depth check.
 _SAFE_IDENTIFIER_RE = re.compile(r"^[a-z0-9_]+$")
 
 
-@dataclass(frozen=True)
-class ProvisionResult:
-    """Result of provisioning a project database."""
-
-    database_name: str
-    database_user: str
+class ProvisioningError(Exception):
+    """Raised when database provisioning fails."""
 
 
-def generate_db_name(project_id: uuid.UUID) -> str:
-    """Generate database name: pqdb_project_{first 12 hex chars}."""
-    return "pqdb_project_" + project_id.hex[:_UUID_SHORT_LEN]
+def _validate_identifier(name: str) -> str:
+    """Validate that a SQL identifier contains only safe characters.
 
+    PostgreSQL DDL (CREATE DATABASE, CREATE USER) does not support
+    parameterized queries.  Since we generate these identifiers from
+    UUIDs, they are never user-controlled.  This validation is
+    defense-in-depth to ensure no special characters can slip through.
 
-def generate_db_user(project_id: uuid.UUID) -> str:
-    """Generate database user: pqdb_user_{first 12 hex chars}."""
-    return "pqdb_user_" + project_id.hex[:_UUID_SHORT_LEN]
-
-
-def _validate_identifier(value: str) -> str:
-    """Validate a SQL identifier — only lowercase, digits, underscores."""
-    if not _SAFE_IDENTIFIER_RE.match(value):
-        msg = f"Unsafe SQL identifier: {value!r}"
+    Raises ValueError if the identifier contains unsafe characters.
+    """
+    if not _SAFE_IDENTIFIER_RE.match(name):
+        msg = f"Unsafe SQL identifier rejected: {name!r}"
         raise ValueError(msg)
-    return value
+    return name
 
 
-def _quote_ident(identifier: str) -> str:
-    """Double-quote a validated SQL identifier."""
-    return '"' + identifier + '"'
+def make_database_name(project_id: uuid.UUID) -> str:
+    """Generate a database name from a project UUID.
 
-
-def _to_asyncpg_dsn(database_url: str) -> str:
-    """Strip +asyncpg dialect and target the postgres database."""
-    url = database_url.replace("+asyncpg", "")
-    # Replace the database name with 'postgres' for superuser DDL
-    parts = url.rsplit("/", 1)
-    return parts[0] + "/postgres"
-
-
-def _build_provision_ddl(
-    quoted_db: str, quoted_user: str, db_password: str
-) -> list[str]:
-    """Build DDL statements for database + user provisioning.
-
-    All identifiers MUST be validated via _validate_identifier before
-    being passed to _quote_ident. DDL cannot use parameterized queries.
+    Format: pqdb_project_{first 12 hex chars of uuid}
     """
-    return [
-        "CREATE USER " + quoted_user + " WITH PASSWORD '" + db_password + "'",
-        "CREATE DATABASE " + quoted_db + " OWNER " + quoted_user,
-        "GRANT CONNECT ON DATABASE " + quoted_db + " TO " + quoted_user,
-    ]
+    return f"pqdb_project_{project_id.hex[:12]}"
 
 
-def _build_grant_ddl(quoted_user: str) -> list[str]:
-    """Build GRANT statements for schema-level privileges."""
-    return [
-        "GRANT ALL PRIVILEGES ON SCHEMA public TO " + quoted_user,
-        "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-        "GRANT ALL ON TABLES TO " + quoted_user,
-        "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-        "GRANT ALL ON SEQUENCES TO " + quoted_user,
-    ]
+def make_project_user(project_id: uuid.UUID) -> str:
+    """Generate a database username from a project UUID.
 
-
-async def provision_database(
-    project_id: uuid.UUID,
-    database_url: str,
-) -> ProvisionResult:
-    """Provision an isolated database and user for a project.
-
-    Connects as superuser, creates the database and a limited-privilege
-    user, then grants schema-level privileges on the new database.
+    Format: pqdb_user_{first 12 hex chars of uuid}
     """
-    db_name = _validate_identifier(generate_db_name(project_id))
-    db_user = _validate_identifier(generate_db_user(project_id))
-    db_password = secrets.token_urlsafe(_PASSWORD_LENGTH)
+    return f"pqdb_user_{project_id.hex[:12]}"
 
-    dsn = _to_asyncpg_dsn(database_url)
-    quoted_db = _quote_ident(db_name)
-    quoted_user = _quote_ident(db_user)
 
-    ddl_statements = _build_provision_ddl(quoted_db, quoted_user, db_password)
+def _build_create_user_sql(user: str, password: str) -> str:
+    """Build a CREATE USER statement with validated identifier.
 
-    conn = await asyncpg.connect(dsn)
-    try:
-        for stmt in ddl_statements:
-            # nosemgrep: python.lang.security.audit.formatted-sql-query
-            await conn.execute(stmt)  # nosemgrep
-    finally:
-        await conn.close()
+    The user identifier is validated against a strict allowlist.
+    The password is generated by secrets.token_urlsafe and is not
+    user-controlled.
+    """
+    _validate_identifier(user)
+    return "CREATE USER " + user + " WITH PASSWORD '" + password + "'"  # noqa: S608
 
-    # Connect to the new database to grant schema-level privileges
-    new_db_dsn = dsn.rsplit("/", 1)[0] + "/" + db_name
-    grant_statements = _build_grant_ddl(quoted_user)
 
-    conn2 = await asyncpg.connect(new_db_dsn)
-    try:
-        for stmt in grant_statements:
-            # nosemgrep: python.lang.security.audit.formatted-sql-query
-            await conn2.execute(stmt)  # nosemgrep
-    finally:
-        await conn2.close()
+def _build_create_database_sql(db_name: str) -> str:
+    """Build a CREATE DATABASE statement with validated identifier."""
+    _validate_identifier(db_name)
+    return "CREATE DATABASE " + db_name  # noqa: S608
 
-    logger.info(
-        "database_provisioned",
-        project_id=str(project_id),
-        database_name=db_name,
-        username=db_user,
-    )
 
-    return ProvisionResult(
-        database_name=db_name,
-        database_user=db_user,
-    )
+def _build_grant_connect_sql(db_name: str, user: str) -> str:
+    """Build a GRANT CONNECT statement with validated identifiers."""
+    _validate_identifier(db_name)
+    _validate_identifier(user)
+    return "GRANT CONNECT ON DATABASE " + db_name + " TO " + user  # noqa: S608
+
+
+class DatabaseProvisioner:
+    """Provisions isolated Postgres databases for projects."""
+
+    def __init__(self, superuser_dsn: str) -> None:
+        self.superuser_dsn = superuser_dsn
+
+    async def provision(self, project_id: uuid.UUID) -> str:
+        """Create a new database and user for the given project.
+
+        Returns the database name on success.
+        Raises ProvisioningError on failure.
+        """
+        db_name = make_database_name(project_id)
+        db_user = make_project_user(project_id)
+        db_password = secrets.token_urlsafe(32)
+
+        conn: Any = None
+        try:
+            conn = await asyncpg.connect(self.superuser_dsn)
+
+            create_user_sql = _build_create_user_sql(db_user, db_password)
+            await conn.execute(create_user_sql)
+
+            create_db_sql = _build_create_database_sql(db_name)
+            await conn.execute(create_db_sql)
+
+            grant_sql = _build_grant_connect_sql(db_name, db_user)
+            await conn.execute(grant_sql)
+
+            logger.info(
+                "database_provisioned",
+                project_id=str(project_id),
+                database_name=db_name,
+                database_user=db_user,
+            )
+
+            return db_name
+
+        except ProvisioningError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "provisioning_failed",
+                project_id=str(project_id),
+                error=str(exc),
+            )
+            raise ProvisioningError(str(exc)) from exc
+        finally:
+            if conn is not None:
+                await conn.close()

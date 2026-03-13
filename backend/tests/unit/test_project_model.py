@@ -24,18 +24,6 @@ class TestProjectModel:
         }
         assert columns == expected
 
-    def test_database_name_is_nullable(self) -> None:
-        col = Project.__table__.columns["database_name"]
-        assert col.nullable is True
-
-    def test_database_name_defaults_to_none(self) -> None:
-        project = Project(
-            id=uuid.uuid4(),
-            developer_id=uuid.uuid4(),
-            name="test-project",
-        )
-        assert project.database_name is None
-
     def test_id_is_primary_key(self) -> None:
         pk_cols = [c.name for c in Project.__table__.primary_key]
         assert pk_cols == ["id"]
@@ -65,6 +53,18 @@ class TestProjectModel:
         )
         assert project.region == "us-east-1"
 
+    def test_database_name_is_nullable(self) -> None:
+        col = Project.__table__.columns["database_name"]
+        assert col.nullable is True
+
+    def test_database_name_defaults_to_none(self) -> None:
+        project = Project(
+            id=uuid.uuid4(),
+            developer_id=uuid.uuid4(),
+            name="test-project",
+        )
+        assert project.database_name is None
+
     def test_can_instantiate(self) -> None:
         proj_id = uuid.uuid4()
         dev_id = uuid.uuid4()
@@ -80,3 +80,14 @@ class TestProjectModel:
         assert project.name == "my-project"
         assert project.region == "eu-west-1"
         assert project.status == "active"
+
+    def test_can_instantiate_with_database_name(self) -> None:
+        proj_id = uuid.uuid4()
+        dev_id = uuid.uuid4()
+        project = Project(
+            id=proj_id,
+            developer_id=dev_id,
+            name="my-project",
+            database_name="pqdb_project_abc123",
+        )
+        assert project.database_name == "pqdb_project_abc123"
