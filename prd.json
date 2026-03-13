@@ -347,8 +347,8 @@
         "Production build succeeds"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Already implemented by US-001. All SDK scaffolding acceptance criteria met in PR #1."
     },
     {
       "id": "US-016",
