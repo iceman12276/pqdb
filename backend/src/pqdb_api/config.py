@@ -16,3 +16,5 @@ class Settings(BaseSettings):
 
     jwt_private_key_pem: str = ""
     jwt_public_key_pem: str = ""
+
+    superuser_dsn: str = "postgresql://postgres:postgres@localhost:5432/postgres"

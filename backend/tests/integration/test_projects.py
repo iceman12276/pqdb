@@ -2,11 +2,13 @@
 
 Boots the real FastAPI app with an in-process SQLite database,
 exercises create -> list -> get -> delete project flow with auth.
+The provisioner is mocked to avoid needing a real Postgres superuser.
 """
 
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
@@ -20,10 +22,18 @@ from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.provisioner import DatabaseProvisioner, make_database_name
 
 
-def _create_test_app() -> FastAPI:
-    """Create a test FastAPI app with in-memory SQLite."""
+def _create_test_app(
+    provisioner_side_effect: Exception | None = None,
+) -> FastAPI:
+    """Create a test FastAPI app with in-memory SQLite.
+
+    Args:
+        provisioner_side_effect: If set, the mock provisioner will raise
+            this exception instead of succeeding.
+    """
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -46,12 +56,24 @@ def _create_test_app() -> FastAPI:
 
     private_key, public_key = generate_ed25519_keypair()
 
+    # Create a mock provisioner that returns the expected db name
+    mock_provisioner = AsyncMock(spec=DatabaseProvisioner)
+    mock_provisioner.superuser_dsn = "postgresql://test:test@localhost/test"
+
+    async def _mock_provision(project_id: uuid.UUID) -> str:
+        if provisioner_side_effect is not None:
+            raise provisioner_side_effect
+        return make_database_name(project_id)
+
+    mock_provisioner.provision = AsyncMock(side_effect=_mock_provision)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         app.state.jwt_private_key = private_key
         app.state.jwt_public_key = public_key
+        app.state.provisioner = mock_provisioner
         yield
         await engine.dispose()
 
@@ -66,6 +88,17 @@ def _create_test_app() -> FastAPI:
 @pytest.fixture()
 def client() -> Iterator[TestClient]:
     app = _create_test_app()
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture()
+def client_with_provisioner_failure() -> Iterator[TestClient]:
+    from pqdb_api.services.provisioner import ProvisioningError
+
+    app = _create_test_app(
+        provisioner_side_effect=ProvisioningError("Connection refused"),
+    )
     with TestClient(app) as c:
         yield c
 
@@ -143,6 +176,18 @@ class TestCreateProject:
         assert "id" in data
         assert "created_at" in data
 
+    def test_create_project_sets_database_name(self, client: TestClient) -> None:
+        token = _signup_and_get_token(client)
+        resp = client.post(
+            "/v1/projects",
+            json={"name": "db-project"},
+            headers=_auth_headers(token),
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["database_name"] is not None
+        assert data["database_name"].startswith("pqdb_project_")
+
     def test_create_project_with_region(self, client: TestClient) -> None:
         token = _signup_and_get_token(client)
         resp = client.post(
@@ -161,6 +206,24 @@ class TestCreateProject:
             headers=_auth_headers(token),
         )
         assert resp.status_code == 422
+
+
+class TestCreateProjectProvisioningFailure:
+    """Tests for project creation when provisioning fails."""
+
+    def test_provisioning_failure_sets_status(
+        self, client_with_provisioner_failure: TestClient
+    ) -> None:
+        token = _signup_and_get_token(client_with_provisioner_failure)
+        resp = client_with_provisioner_failure.post(
+            "/v1/projects",
+            json={"name": "fail-project"},
+            headers=_auth_headers(token),
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["status"] == "provisioning_failed"
+        assert data["database_name"] is None
 
 
 class TestListProjects:
@@ -190,6 +253,20 @@ class TestListProjects:
         assert len(projects) == 2
         names = {p["name"] for p in projects}
         assert names == {"proj-1", "proj-2"}
+
+    def test_list_projects_includes_database_name(self, client: TestClient) -> None:
+        token = _signup_and_get_token(client)
+        client.post(
+            "/v1/projects",
+            json={"name": "listed-project"},
+            headers=_auth_headers(token),
+        )
+        resp = client.get("/v1/projects", headers=_auth_headers(token))
+        assert resp.status_code == 200
+        projects = resp.json()
+        assert len(projects) == 1
+        assert projects[0]["database_name"] is not None
+        assert projects[0]["database_name"].startswith("pqdb_project_")
 
     def test_list_projects_does_not_include_other_developers(
         self, client: TestClient
@@ -253,6 +330,22 @@ class TestGetProject:
         data = resp.json()
         assert data["id"] == project_id
         assert data["name"] == "detail-project"
+
+    def test_get_project_includes_database_name(self, client: TestClient) -> None:
+        token = _signup_and_get_token(client)
+        create_resp = client.post(
+            "/v1/projects",
+            json={"name": "db-detail-project"},
+            headers=_auth_headers(token),
+        )
+        project_id = create_resp.json()["id"]
+
+        resp = client.get(
+            f"/v1/projects/{project_id}",
+            headers=_auth_headers(token),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["database_name"] is not None
 
     def test_get_nonexistent_project_returns_404(self, client: TestClient) -> None:
         token = _signup_and_get_token(client)
@@ -321,6 +414,29 @@ class TestDeleteProject:
         assert resp.status_code == 200
         assert resp.json()["status"] == "archived"
 
+    def test_delete_does_not_clear_database_name(self, client: TestClient) -> None:
+        """Deleting a project does NOT drop the database (soft delete for MVP)."""
+        token = _signup_and_get_token(client)
+        create_resp = client.post(
+            "/v1/projects",
+            json={"name": "keep-db"},
+            headers=_auth_headers(token),
+        )
+        project_id = create_resp.json()["id"]
+        db_name = create_resp.json()["database_name"]
+
+        client.delete(
+            f"/v1/projects/{project_id}",
+            headers=_auth_headers(token),
+        )
+
+        resp = client.get(
+            f"/v1/projects/{project_id}",
+            headers=_auth_headers(token),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["database_name"] == db_name
+
     def test_delete_nonexistent_project_returns_404(self, client: TestClient) -> None:
         token = _signup_and_get_token(client)
         resp = client.delete(
@@ -376,6 +492,8 @@ class TestFullProjectFlow:
         assert project["name"] == "flow-project"
         assert project["region"] == "ap-southeast-1"
         assert project["status"] == "active"
+        assert project["database_name"] is not None
+        assert project["database_name"].startswith("pqdb_project_")
 
         # 3. List projects - should include the new one
         list_resp = client.get("/v1/projects", headers=_auth_headers(token))
@@ -410,3 +528,5 @@ class TestFullProjectFlow:
         )
         assert get_resp2.status_code == 200
         assert get_resp2.json()["status"] == "archived"
+        # Database name preserved (soft delete doesn't drop the DB)
+        assert get_resp2.json()["database_name"] is not None

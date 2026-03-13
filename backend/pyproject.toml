@@ -29,6 +29,10 @@ strict = true
 mypy_path = "src"
 packages = ["pqdb_api"]
 
+[[tool.mypy.overrides]]
+module = ["asyncpg", "asyncpg.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 src = ["src", "tests"]
 target-version = "py312"

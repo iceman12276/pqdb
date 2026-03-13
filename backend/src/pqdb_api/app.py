@@ -18,6 +18,7 @@ from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.provisioner import DatabaseProvisioner
 
 
 def _init_jwt_keys(app: FastAPI, settings: Settings) -> None:
@@ -42,6 +43,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging(debug=settings.debug)
     init_engine(settings.database_url)
     _init_jwt_keys(app, settings)
+    app.state.provisioner = DatabaseProvisioner(
+        superuser_dsn=settings.superuser_dsn,
+    )
     yield
     await dispose_engine()
 
