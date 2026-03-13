@@ -36,10 +36,10 @@ jobs:
         ports:
           - 8200:8200
         options: >-
-          --health-cmd "wget --spider http://localhost:8200/v1/sys/health || exit 1"
+          --health-cmd "vault status"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/pqdb_platform
