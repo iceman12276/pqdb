@@ -205,8 +205,8 @@
         "Production build succeeds"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #10 merged. API key middleware with prefix-narrowed argon2id, project-scoped sessions, 22 tests. Three-layer verification passed."
     },
     {
       "id": "US-010",
