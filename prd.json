@@ -111,8 +111,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #5 merged. Ed25519 JWT, argon2id, 73 tests. Three-layer verification passed."
     },
     {
       "id": "US-006",
@@ -367,8 +367,8 @@
         "Production build succeeds"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #6 merged. @noble/post-quantum + @noble/hashes chosen. PoC + 10 tests."
     },
     {
       "id": "US-017",
