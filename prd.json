@@ -158,8 +158,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #9 merged. Database-per-project provisioning with asyncpg, 41 tests. Three-layer verification passed."
     },
     {
       "id": "US-008",
