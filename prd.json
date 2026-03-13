@@ -1,6 +1,7 @@
 {
   "project": "pqdb",
   "branchName": "main",
+  "preflightComplete": true,
   "description": "Phase 1 Core MVP — A multi-tenant post-quantum zero-knowledge database platform with TypeScript SDK, database-per-project isolation, ML-KEM-768 client-side encryption, blind indexing, and schema introspection API",
   "userStories": [
     {
