@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pqdb_api.database import get_session
 from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.project import Project
+from pqdb_api.services.api_keys import create_project_keys
 
 logger = structlog.get_logger()
 
@@ -25,6 +27,15 @@ class CreateProjectRequest(BaseModel):
     region: str = "us-east-1"
 
 
+class ApiKeyCreatedResponse(BaseModel):
+    """API key info returned at creation time (includes full key)."""
+
+    id: str
+    role: str
+    key: str
+    key_prefix: str
+
+
 class ProjectResponse(BaseModel):
     """Response body for a project."""
 
@@ -35,12 +46,18 @@ class ProjectResponse(BaseModel):
     created_at: datetime
 
 
-@router.post("", response_model=ProjectResponse, status_code=201)
+class ProjectCreateResponse(ProjectResponse):
+    """Response body for project creation (includes one-time API keys)."""
+
+    api_keys: list[ApiKeyCreatedResponse]
+
+
+@router.post("", response_model=ProjectCreateResponse, status_code=201)
 async def create_project(
     body: CreateProjectRequest,
     developer_id: uuid.UUID = Depends(get_current_developer_id),
     session: AsyncSession = Depends(get_session),
-) -> ProjectResponse:
+) -> dict[str, Any]:
     """Create a new project for the authenticated developer."""
     project = Project(
         id=uuid.uuid4(),
@@ -49,6 +66,9 @@ async def create_project(
         region=body.region,
     )
     session.add(project)
+    await session.flush()
+
+    keys = await create_project_keys(project.id, session)
     await session.commit()
     await session.refresh(project)
     logger.info(
@@ -56,13 +76,22 @@ async def create_project(
         project_id=str(project.id),
         developer_id=str(developer_id),
     )
-    return ProjectResponse(
-        id=str(project.id),
-        name=project.name,
-        region=project.region,
-        status=project.status,
-        created_at=project.created_at,
-    )
+    return {
+        "id": str(project.id),
+        "name": project.name,
+        "region": project.region,
+        "status": project.status,
+        "created_at": project.created_at,
+        "api_keys": [
+            {
+                "id": k["id"],
+                "role": k["role"],
+                "key": k["key"],
+                "key_prefix": k["key_prefix"],
+            }
+            for k in keys
+        ],
+    }
 
 
 @router.get("", response_model=list[ProjectResponse])
