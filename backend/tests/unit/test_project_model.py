@@ -19,9 +19,22 @@ class TestProjectModel:
             "name",
             "region",
             "status",
+            "database_name",
             "created_at",
         }
         assert columns == expected
+
+    def test_database_name_is_nullable(self) -> None:
+        col = Project.__table__.columns["database_name"]
+        assert col.nullable is True
+
+    def test_database_name_defaults_to_none(self) -> None:
+        project = Project(
+            id=uuid.uuid4(),
+            developer_id=uuid.uuid4(),
+            name="test-project",
+        )
+        assert project.database_name is None
 
     def test_id_is_primary_key(self) -> None:
         pk_cols = [c.name for c in Project.__table__.primary_key]

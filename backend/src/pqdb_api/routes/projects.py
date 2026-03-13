@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,7 @@ from pqdb_api.database import get_session
 from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.project import Project
 from pqdb_api.services.api_keys import create_project_keys
+from pqdb_api.services.provisioner import provision_database
 
 logger = structlog.get_logger()
 
@@ -43,6 +44,7 @@ class ProjectResponse(BaseModel):
     name: str
     region: str
     status: str
+    database_name: str | None = None
     created_at: datetime
 
 
@@ -52,9 +54,21 @@ class ProjectCreateResponse(ProjectResponse):
     api_keys: list[ApiKeyCreatedResponse]
 
 
+def _project_response(p: Project) -> ProjectResponse:
+    return ProjectResponse(
+        id=str(p.id),
+        name=p.name,
+        region=p.region,
+        status=p.status,
+        database_name=p.database_name,
+        created_at=p.created_at,
+    )
+
+
 @router.post("", response_model=ProjectCreateResponse, status_code=201)
 async def create_project(
     body: CreateProjectRequest,
+    request: Request,
     developer_id: uuid.UUID = Depends(get_current_developer_id),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
@@ -71,16 +85,36 @@ async def create_project(
     keys = await create_project_keys(project.id, session)
     await session.commit()
     await session.refresh(project)
+
+    # Provision an isolated database for the project
+    database_url: str = request.app.state.settings.database_url
+    try:
+        result = await provision_database(project.id, database_url)
+        project.database_name = result.database_name
+        project.status = "active"
+        await session.commit()
+        await session.refresh(project)
+    except Exception:
+        logger.exception(
+            "provisioning_failed",
+            project_id=str(project.id),
+        )
+        project.status = "provisioning_failed"
+        await session.commit()
+        await session.refresh(project)
+
     logger.info(
         "project_created",
         project_id=str(project.id),
         developer_id=str(developer_id),
+        database_name=project.database_name,
     )
     return {
         "id": str(project.id),
         "name": project.name,
         "region": project.region,
         "status": project.status,
+        "database_name": project.database_name,
         "created_at": project.created_at,
         "api_keys": [
             {
@@ -107,16 +141,7 @@ async def list_projects(
         )
     )
     projects = result.scalars().all()
-    return [
-        ProjectResponse(
-            id=str(p.id),
-            name=p.name,
-            region=p.region,
-            status=p.status,
-            created_at=p.created_at,
-        )
-        for p in projects
-    ]
+    return [_project_response(p) for p in projects]
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -135,13 +160,7 @@ async def get_project(
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    return ProjectResponse(
-        id=str(project.id),
-        name=project.name,
-        region=project.region,
-        status=project.status,
-        created_at=project.created_at,
-    )
+    return _project_response(project)
 
 
 @router.delete("/{project_id}", response_model=ProjectResponse)
@@ -168,10 +187,4 @@ async def delete_project(
         project_id=str(project.id),
         developer_id=str(developer_id),
     )
-    return ProjectResponse(
-        id=str(project.id),
-        name=project.name,
-        region=project.region,
-        status=project.status,
-        created_at=project.created_at,
-    )
+    return _project_response(project)
