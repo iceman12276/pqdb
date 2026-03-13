@@ -7,6 +7,7 @@ exercises key generation on project creation, listing, and rotation.
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
@@ -21,6 +22,7 @@ from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.provisioner import DatabaseProvisioner, make_database_name
 
 
 def _create_test_app() -> FastAPI:
@@ -53,6 +55,14 @@ def _create_test_app() -> FastAPI:
             await conn.run_sync(Base.metadata.create_all)
         app.state.jwt_private_key = private_key
         app.state.jwt_public_key = public_key
+        mock_provisioner = AsyncMock(spec=DatabaseProvisioner)
+        mock_provisioner.superuser_dsn = "postgresql://test:test@localhost/test"
+
+        async def _mock_provision(project_id: uuid.UUID) -> str:
+            return make_database_name(project_id)
+
+        mock_provisioner.provision = AsyncMock(side_effect=_mock_provision)
+        app.state.provisioner = mock_provisioner
         yield
         await engine.dispose()
 
