@@ -262,9 +262,7 @@ class TestGetProject:
         )
         assert resp.status_code == 404
 
-    def test_get_other_developers_project_returns_404(
-        self, client: TestClient
-    ) -> None:
+    def test_get_other_developers_project_returns_404(self, client: TestClient) -> None:
         token_a = _signup_and_get_token(client, email="owner@test.com")
         token_b = _signup_and_get_token(client, email="intruder@test.com")
 
@@ -323,9 +321,7 @@ class TestDeleteProject:
         assert resp.status_code == 200
         assert resp.json()["status"] == "archived"
 
-    def test_delete_nonexistent_project_returns_404(
-        self, client: TestClient
-    ) -> None:
+    def test_delete_nonexistent_project_returns_404(self, client: TestClient) -> None:
         token = _signup_and_get_token(client)
         resp = client.delete(
             f"/v1/projects/{uuid.uuid4()}",

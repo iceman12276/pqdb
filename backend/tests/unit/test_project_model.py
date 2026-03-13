@@ -14,8 +14,12 @@ class TestProjectModel:
     def test_columns_exist(self) -> None:
         columns = {c.name for c in Project.__table__.columns}
         expected = {
-            "id", "developer_id", "name", "region",
-            "status", "created_at",
+            "id",
+            "developer_id",
+            "name",
+            "region",
+            "status",
+            "created_at",
         }
         assert columns == expected
 
