@@ -196,7 +196,7 @@ class TestColumnDefinition:
 
     def test_invalid_sensitivity_rejected(self) -> None:
         with pytest.raises(ValueError, match="sensitivity"):
-            ColumnDefinition(name="test", data_type="text", sensitivity="encrypted")
+            ColumnDefinition(name="test", data_type="text", sensitivity="encrypted")  # type: ignore[arg-type]
 
 
 class TestTableDefinition:

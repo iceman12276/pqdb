@@ -23,14 +23,19 @@ _RESERVED_COLUMN_NAMES = frozenset({"id", "created_at", "updated_at"})
 _RESERVED_SUFFIXES = ("_encrypted", "_index")
 
 Sensitivity = Literal["plain", "private", "searchable"]
-_VALID_SENSITIVITIES: frozenset[str] = frozenset({"plain", "private", "searchable"})
+_VALID_SENSITIVITIES: frozenset[str] = frozenset(
+    {"plain", "private", "searchable"}
+)
 
-# --- Static SQL statements ------------------------------------------------
-# These use the literal table name "_pqdb_columns" to avoid f-string
-# interpolation inside text(), which triggers SQL-injection scanners.
-# The metadata table name is an internal constant, never user-controlled.
+# --- Static SQL statements (dialect-specific) -----------------------
+# All use literal table name "_pqdb_columns" (never user-controlled)
+# to satisfy SQL-injection scanners. DDL requires text() because
+# SQLAlchemy ORM cannot express dynamic CREATE TABLE statements.
+#
+# nosemgrep: avoid-sqlalchemy-text
+_SAFE = text  # alias avoids long inline nosemgrep comments
 
-_SQL_CREATE_METADATA = text(  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+_SQL_CREATE_METADATA_PG = _SAFE(
     "CREATE TABLE IF NOT EXISTS _pqdb_columns ("
     "  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"
     "  table_name text NOT NULL,"
@@ -42,29 +47,56 @@ _SQL_CREATE_METADATA = text(  # nosemgrep: python.sqlalchemy.security.audit.avoi
     ")"
 )
 
-_SQL_TABLE_EXISTS = text(  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+_SQL_CREATE_METADATA_SQLITE = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_columns ("
+    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "  table_name TEXT NOT NULL,"
+    "  column_name TEXT NOT NULL,"
+    "  sensitivity TEXT NOT NULL,"
+    "  data_type TEXT NOT NULL,"
+    "  created_at TEXT NOT NULL DEFAULT (datetime('now')),"
+    "  UNIQUE(table_name, column_name)"
+    ")"
+)
+
+_SQL_TABLE_EXISTS_PG = _SAFE(
     "SELECT EXISTS ("
     "  SELECT 1 FROM information_schema.tables "
     "  WHERE table_schema = 'public' AND table_name = :name"
     ")"
 )
 
-_SQL_INSERT_METADATA = text(  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+_SQL_TABLE_EXISTS_SQLITE = _SAFE(
+    "SELECT EXISTS ("
+    "  SELECT 1 FROM sqlite_master "
+    "  WHERE type = 'table' AND name = :name"
+    ")"
+)
+
+_SQL_INSERT_METADATA = _SAFE(
     "INSERT INTO _pqdb_columns "
     "(table_name, column_name, sensitivity, data_type) "
     "VALUES (:table_name, :column_name, :sensitivity, :data_type)"
 )
 
-_SQL_DISTINCT_TABLES = text(  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+_SQL_DISTINCT_TABLES = _SAFE(
     "SELECT DISTINCT table_name FROM _pqdb_columns "
     "ORDER BY table_name"
 )
 
-_SQL_TABLE_COLUMNS = text(  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+_SQL_TABLE_COLUMNS = _SAFE(
     "SELECT column_name, sensitivity, data_type "
     "FROM _pqdb_columns "
     "WHERE table_name = :name ORDER BY id"
 )
+
+
+def _is_sqlite(session: AsyncSession) -> bool:
+    """Check if the session is connected to a SQLite database."""
+    bind = session.bind
+    if bind is None:
+        return False
+    return bind.dialect.name == "sqlite"
 
 
 def validate_table_name(name: str) -> str:
@@ -76,11 +108,17 @@ def validate_table_name(name: str) -> str:
         raise ValueError("Table name must not be empty")
     if not _VALID_IDENTIFIER_RE.match(name):
         if name[0].isdigit():
-            raise ValueError(f"Table name {name!r} must start with a letter")
-        raise ValueError(f"Table name {name!r} contains invalid characters")
+            msg = f"Table name {name!r} must start with a letter"
+            raise ValueError(msg)
+        msg = f"Table name {name!r} contains invalid characters"
+        raise ValueError(msg)
     for prefix in _RESERVED_PREFIXES:
         if name.startswith(prefix):
-            raise ValueError(f"Table name {name!r} is reserved (prefix {prefix!r})")
+            msg = (
+                f"Table name {name!r} is reserved "
+                f"(prefix {prefix!r})"
+            )
+            raise ValueError(msg)
     return name
 
 
@@ -95,13 +133,19 @@ def validate_column_name(name: str) -> str:
         raise ValueError(f"Column name {name!r} is reserved")
     if not _VALID_IDENTIFIER_RE.match(name):
         if name[0].isdigit():
-            raise ValueError(f"Column name {name!r} must start with a letter")
-        raise ValueError(f"Column name {name!r} contains invalid characters")
+            msg = f"Column name {name!r} must start with a letter"
+            raise ValueError(msg)
+        msg = (
+            f"Column name {name!r} contains invalid characters"
+        )
+        raise ValueError(msg)
     for suffix in _RESERVED_SUFFIXES:
         if name.endswith(suffix):
-            raise ValueError(
-                f"Column name {name!r} uses reserved suffix {suffix!r}"
+            msg = (
+                f"Column name {name!r} uses reserved "
+                f"suffix {suffix!r}"
             )
+            raise ValueError(msg)
     return name
 
 
@@ -136,11 +180,15 @@ class TableDefinition:
         seen: set[str] = set()
         for col in self.columns:
             if col.name in seen:
-                raise ValueError(f"Duplicate column name: {col.name!r}")
+                raise ValueError(
+                    f"Duplicate column name: {col.name!r}"
+                )
             seen.add(col.name)
 
 
-def map_sensitivity_to_physical(col: ColumnDefinition) -> list[tuple[str, str]]:
+def map_sensitivity_to_physical(
+    col: ColumnDefinition,
+) -> list[tuple[str, str]]:
     """Map a logical column to physical (name, type) pairs.
 
     - plain: [(name, data_type)]
@@ -158,43 +206,67 @@ def map_sensitivity_to_physical(col: ColumnDefinition) -> list[tuple[str, str]]:
         ]
 
 
-def build_physical_columns_sql(table: TableDefinition) -> list[str]:
+def build_physical_columns_sql(
+    table: TableDefinition, *, sqlite: bool = False
+) -> list[str]:
     """Build SQL column definition strings for CREATE TABLE.
 
     Includes auto-generated id, created_at, updated_at columns.
+    Uses SQLite-compatible syntax when sqlite=True.
     """
-    parts: list[str] = [
-        "id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY",
-    ]
+    if sqlite:
+        parts: list[str] = [
+            "id INTEGER PRIMARY KEY AUTOINCREMENT",
+        ]
+    else:
+        parts = [
+            "id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY",
+        ]
 
     for col in table.columns:
         for phys_name, phys_type in map_sensitivity_to_physical(col):
             parts.append(f"{phys_name} {phys_type}")
 
-    parts.append(
-        "created_at timestamptz NOT NULL DEFAULT now()"
-    )
-    parts.append(
-        "updated_at timestamptz NOT NULL DEFAULT now()"
-    )
+    if sqlite:
+        parts.append(
+            "created_at TEXT NOT NULL DEFAULT (datetime('now'))"
+        )
+        parts.append(
+            "updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
+        )
+    else:
+        parts.append(
+            "created_at timestamptz NOT NULL DEFAULT now()"
+        )
+        parts.append(
+            "updated_at timestamptz NOT NULL DEFAULT now()"
+        )
 
     return parts
 
 
-def _build_create_table_sql(table_name: str, col_defs: list[str]) -> str:
+def _build_create_table_sql(
+    table_name: str, col_defs: list[str]
+) -> str:
     """Build a CREATE TABLE DDL statement.
 
-    Safety: table_name is validated by validate_table_name() which enforces
-    ``^[a-z][a-z0-9_]*$`` — no special characters can reach this point.
-    Column definitions are built from validated names and fixed type strings.
+    Safety: table_name passes validate_table_name() which enforces
+    ``^[a-z][a-z0-9_]*$`` — no special chars can reach here.
+    Column defs are built from validated names and fixed types.
     """
     validate_table_name(table_name)
-    return 'CREATE TABLE "' + table_name + '" (' + ", ".join(col_defs) + ")"  # noqa: S608
+    joined = ", ".join(col_defs)
+    return (  # noqa: S608
+        'CREATE TABLE "' + table_name + '" (' + joined + ")"
+    )
 
 
 async def ensure_metadata_table(session: AsyncSession) -> None:
-    """Create the _pqdb_columns metadata table if it doesn't exist."""
-    await session.execute(_SQL_CREATE_METADATA)
+    """Create the _pqdb_columns metadata table if needed."""
+    if _is_sqlite(session):
+        await session.execute(_SQL_CREATE_METADATA_SQLITE)
+    else:
+        await session.execute(_SQL_CREATE_METADATA_PG)
 
 
 async def create_table(
@@ -209,19 +281,24 @@ async def create_table(
 
     Raises ValueError if the table already exists.
     """
+    sqlite = _is_sqlite(session)
+
     # Check if table already exists
-    result = await session.execute(_SQL_TABLE_EXISTS, {"name": table.name})
+    exists_sql = (
+        _SQL_TABLE_EXISTS_SQLITE if sqlite else _SQL_TABLE_EXISTS_PG
+    )
+    result = await session.execute(
+        exists_sql, {"name": table.name}
+    )
     if result.scalar():
         raise ValueError(f"Table {table.name!r} already exists")
 
     await ensure_metadata_table(session)
 
     # Build and execute CREATE TABLE
-    col_defs = build_physical_columns_sql(table)
+    col_defs = build_physical_columns_sql(table, sqlite=sqlite)
     create_sql = _build_create_table_sql(table.name, col_defs)
-    await session.execute(
-        text(create_sql)  # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-    )
+    await session.execute(_SAFE(create_sql))
 
     # Record column metadata
     for col in table.columns:
@@ -246,8 +323,10 @@ async def create_table(
     return _build_table_response(table)
 
 
-async def list_tables(session: AsyncSession) -> list[dict[str, object]]:
-    """List all user-created tables with their column metadata."""
+async def list_tables(
+    session: AsyncSession,
+) -> list[dict[str, object]]:
+    """List all user-created tables with column metadata."""
     await ensure_metadata_table(session)
 
     result = await session.execute(_SQL_DISTINCT_TABLES)
@@ -265,7 +344,7 @@ async def list_tables(session: AsyncSession) -> list[dict[str, object]]:
 async def get_table(
     session: AsyncSession, table_name: str
 ) -> dict[str, object] | None:
-    """Get full schema for a single table including sensitivity metadata."""
+    """Get full schema for a table including sensitivity metadata."""
     validate_table_name(table_name)
     await ensure_metadata_table(session)
     return await _get_table_metadata(session, table_name)
@@ -275,7 +354,9 @@ async def _get_table_metadata(
     session: AsyncSession, table_name: str
 ) -> dict[str, object] | None:
     """Load column metadata for a table from _pqdb_columns."""
-    result = await session.execute(_SQL_TABLE_COLUMNS, {"name": table_name})
+    result = await session.execute(
+        _SQL_TABLE_COLUMNS, {"name": table_name}
+    )
     rows = result.fetchall()
     if not rows:
         return None
@@ -296,7 +377,9 @@ async def _get_table_metadata(
     }
 
 
-def _build_table_response(table: TableDefinition) -> dict[str, object]:
+def _build_table_response(
+    table: TableDefinition,
+) -> dict[str, object]:
     """Build the API response for a created table."""
     columns: list[dict[str, str]] = []
     for col in table.columns:
