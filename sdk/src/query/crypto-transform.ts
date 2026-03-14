@@ -61,7 +61,8 @@ export async function transformInsertRows<S extends SchemaColumns>(
 
         const plaintext = String(value);
         const ciphertext = await encrypt(plaintext, keyPair.publicKey);
-        transformed[`${colName}_encrypted`] = toBase64(ciphertext);
+        // Send the logical column name — the backend maps to {col}_encrypted
+        transformed[colName] = toBase64(ciphertext);
 
         if (colDef.sensitivity === "searchable") {
           transformed[`${colName}_index`] = computeBlindIndex(plaintext, hmacKey);

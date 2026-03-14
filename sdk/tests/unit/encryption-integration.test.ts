@@ -64,14 +64,14 @@ describe("SDK encryption integration", () => {
     const body = JSON.parse(insertInit.body as string);
     const row = body.rows[0];
 
-    // Original sensitive columns should NOT be present
-    expect(row).not.toHaveProperty("email");
-    expect(row).not.toHaveProperty("name");
+    // Logical column names should contain ciphertext (backend maps to _encrypted)
+    expect(row).toHaveProperty("email");
+    expect(row.email).not.toBe("alice@example.com"); // encrypted, not plaintext
+    expect(row).toHaveProperty("name");
+    expect(row.name).not.toBe("Alice"); // encrypted, not plaintext
 
-    // Shadow columns should be present
-    expect(row).toHaveProperty("email_encrypted");
+    // Blind index should be present for searchable columns
     expect(row).toHaveProperty("email_index");
-    expect(row).toHaveProperty("name_encrypted");
     expect(row).not.toHaveProperty("name_index");
 
     // Plain columns should pass through
