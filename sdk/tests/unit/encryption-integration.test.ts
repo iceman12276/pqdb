@@ -114,9 +114,9 @@ describe("SDK encryption integration", () => {
     const [, selectInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     const body = JSON.parse(selectInit.body as string);
 
-    // Filter should be rewritten
+    // Filter value should be hashed, column name stays logical
     expect(body.filters).toHaveLength(1);
-    expect(body.filters[0].column).toBe("email_index");
+    expect(body.filters[0].column).toBe("email");
     expect(body.filters[0].op).toBe("eq");
     expect(body.filters[0].value).toBe(
       computeBlindIndex("alice@example.com", TEST_HMAC_KEY),

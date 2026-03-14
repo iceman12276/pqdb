@@ -148,10 +148,11 @@ export function transformFilters<S extends SchemaColumns>(
       return filter;
     }
 
-    // For searchable columns with eq/in, rewrite to use _index
+    // For searchable columns with eq/in, hash the values for blind index lookup.
+    // Keep the logical column name — the backend maps to _index.
     if (filter.op === "eq") {
       return {
-        column: `${filter.column}_index`,
+        column: filter.column,
         op: "eq",
         value: computeBlindIndex(String(filter.value), hmacKey),
       };
@@ -160,7 +161,7 @@ export function transformFilters<S extends SchemaColumns>(
     if (filter.op === "in") {
       const values = filter.value as unknown[];
       return {
-        column: `${filter.column}_index`,
+        column: filter.column,
         op: "in",
         value: values.map((v) => computeBlindIndex(String(v), hmacKey)),
       };

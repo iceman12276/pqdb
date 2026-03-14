@@ -312,7 +312,7 @@ export class QueryBuilder<S extends SchemaColumns> {
 
   /** Build a SELECT query. Optionally specify columns to select. */
   select(...columns: (keyof S & string)[]): ExecutableQuery<InferRow<S>, S> {
-    const cols = columns.length > 0 ? columns : "*";
+    const cols = columns.length > 0 ? columns : ["*"];
     return new ExecutableQuery<InferRow<S>, S>(
       this.http,
       this.schema.name,

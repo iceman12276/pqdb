@@ -189,7 +189,7 @@ describe("transformSelectResponse", () => {
 });
 
 describe("transformFilters", () => {
-  it("rewrites .eq() on searchable column to use _index", () => {
+  it("hashes .eq() values on searchable columns for blind index lookup", () => {
     const hmacKey = generateHmacKey();
     const filters: FilterClause[] = [
       { column: "email", op: "eq", value: "alice@example.com" },
@@ -198,14 +198,15 @@ describe("transformFilters", () => {
     const transformed = transformFilters(filters, usersSchema, hmacKey);
 
     expect(transformed).toHaveLength(1);
-    expect(transformed[0].column).toBe("email_index");
+    // Column name stays logical — backend maps to _index
+    expect(transformed[0].column).toBe("email");
     expect(transformed[0].op).toBe("eq");
     // Value should be a hex hash, not plaintext
     expect(transformed[0].value).toMatch(/^[0-9a-f]{64}$/);
     expect(transformed[0].value).not.toBe("alice@example.com");
   });
 
-  it("rewrites .in() on searchable column to use _index with hashed values", () => {
+  it("hashes .in() values on searchable columns for blind index lookup", () => {
     const hmacKey = generateHmacKey();
     const filters: FilterClause[] = [
       { column: "email", op: "in", value: ["a@x.com", "b@x.com"] },
@@ -214,7 +215,8 @@ describe("transformFilters", () => {
     const transformed = transformFilters(filters, usersSchema, hmacKey);
 
     expect(transformed).toHaveLength(1);
-    expect(transformed[0].column).toBe("email_index");
+    // Column name stays logical — backend maps to _index
+    expect(transformed[0].column).toBe("email");
     expect(transformed[0].op).toBe("in");
     const values = transformed[0].value as string[];
     expect(values).toHaveLength(2);
