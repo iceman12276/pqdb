@@ -1,66 +1,23 @@
 """Integration tests for schema introspection (US-013).
 
-Boots the real FastAPI app with an in-process SQLite database.
+Boots the real FastAPI app with a real Postgres database.
 The project session dependency is overridden to use the same
-in-memory SQLite DB, bypassing API key auth. Tests verify that
+test Postgres DB, bypassing API key auth. Tests verify that
 introspection returns accurate schema metadata after table
 creation.
 """
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import StaticPool, event
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
 
-from pqdb_api.middleware.api_key import get_project_session
-from pqdb_api.routes.db import router as db_router
-from pqdb_api.routes.health import router as health_router
-
-
-def _create_test_app() -> FastAPI:
-    """Create a minimal test app with in-memory SQLite."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _set_sqlite_pragma(  # type: ignore[no-untyped-def]
-        dbapi_conn,
-        connection_record,
-    ):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    session_factory = async_sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-
-    async def _override() -> AsyncIterator[AsyncSession]:
-        async with session_factory() as session:
-            yield session
-
-    app = FastAPI()
-    app.include_router(health_router)
-    app.include_router(db_router)
-    app.dependency_overrides[get_project_session] = _override
-    return app
+from tests.integration.conftest import _make_project_app
 
 
 @pytest.fixture()
-def client() -> Iterator[TestClient]:
-    app = _create_test_app()
+def client(test_db_url: str) -> Iterator[TestClient]:
+    app = _make_project_app(test_db_url)
     with TestClient(app) as c:
         yield c
 
