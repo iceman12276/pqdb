@@ -22,7 +22,9 @@ from pqdb_api.services.schema_engine import (
     ColumnDefinition,
     Sensitivity,
     TableDefinition,
+    add_column,
     create_table,
+    drop_column,
     get_table,
     introspect_all_tables,
     introspect_table,
@@ -173,3 +175,58 @@ async def introspect_table_endpoint(
         )
 
     return result
+
+
+@router.post("/tables/{table_name}/columns", status_code=201)
+async def add_column_endpoint(
+    table_name: str,
+    body: ColumnSchema,
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, Any]:
+    """Add a column to an existing table.
+
+    Creates physical shadow columns based on sensitivity level.
+    Updates _pqdb_columns metadata atomically with DDL.
+    """
+    try:
+        col_def = ColumnDefinition(
+            name=body.name,
+            data_type=body.data_type,
+            sensitivity=cast(Sensitivity, body.sensitivity),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        result = await add_column(session, table_name, col_def)
+    except ValueError as exc:
+        msg = str(exc)
+        if "not found" in msg:
+            raise HTTPException(status_code=404, detail=msg) from exc
+        if "already exists" in msg:
+            raise HTTPException(status_code=409, detail=msg) from exc
+        raise HTTPException(status_code=400, detail=msg) from exc
+
+    return result
+
+
+@router.delete("/tables/{table_name}/columns/{column_name}", status_code=204)
+async def drop_column_endpoint(
+    table_name: str,
+    column_name: str,
+    session: AsyncSession = Depends(get_project_session),
+) -> None:
+    """Drop a column from a table.
+
+    Removes all physical shadow columns and _pqdb_columns metadata.
+    Cannot drop system columns (id, created_at, updated_at).
+    """
+    try:
+        await drop_column(session, table_name, column_name)
+    except ValueError as exc:
+        msg = str(exc)
+        if "not found" in msg:
+            raise HTTPException(status_code=404, detail=msg) from exc
+        if "Cannot drop system column" in msg:
+            raise HTTPException(status_code=400, detail=msg) from exc
+        raise HTTPException(status_code=400, detail=msg) from exc

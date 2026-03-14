@@ -110,6 +110,19 @@ _SQL_TABLE_COLUMNS = _SAFE(
     "WHERE table_name = :name ORDER BY id"
 )
 
+_SQL_COLUMN_EXISTS = _SAFE(
+    "SELECT sensitivity, data_type FROM _pqdb_columns "
+    "WHERE table_name = :table_name AND column_name = :column_name"
+)
+
+_SQL_DELETE_COLUMN_METADATA = _SAFE(
+    "DELETE FROM _pqdb_columns "
+    "WHERE table_name = :table_name AND column_name = :column_name"
+)
+
+# Reserved auto-generated columns that cannot be dropped
+_SYSTEM_COLUMNS = frozenset({"id", "created_at", "updated_at"})
+
 
 def _is_sqlite(session: AsyncSession) -> bool:
     """Check if the session is connected to a SQLite database."""
@@ -264,6 +277,43 @@ def build_physical_columns_sql(
         parts.append("updated_at timestamptz NOT NULL DEFAULT now()")
 
     return parts
+
+
+def build_add_column_ddl(
+    table_name: str, col: ColumnDefinition
+) -> list[str]:
+    """Build ALTER TABLE ADD COLUMN DDL statements for a column.
+
+    Returns one statement for plain/private, two for searchable.
+    Safety: table_name and column names are validated.
+    """
+    validate_table_name(table_name)
+    statements: list[str] = []
+    for phys_name, phys_type in map_sensitivity_to_physical(col):
+        statements.append(  # noqa: S608
+            f'ALTER TABLE "{table_name}" ADD COLUMN {phys_name} {phys_type}'
+        )
+    return statements
+
+
+def _build_drop_column_ddl(
+    table_name: str, column_name: str, sensitivity: str
+) -> list[str]:
+    """Build ALTER TABLE DROP COLUMN DDL statements.
+
+    Drops all physical columns associated with a logical column.
+    """
+    validate_table_name(table_name)
+    if sensitivity == "plain":
+        names = [column_name]
+    elif sensitivity == "private":
+        names = [f"{column_name}_encrypted"]
+    else:  # searchable
+        names = [f"{column_name}_encrypted", f"{column_name}_index"]
+    return [
+        f'ALTER TABLE "{table_name}" DROP COLUMN {n}'  # noqa: S608
+        for n in names
+    ]
 
 
 def _build_create_table_sql(table_name: str, col_defs: list[str]) -> str:
@@ -529,3 +579,127 @@ def _build_table_response(
         "name": table.name,
         "columns": columns,
     }
+
+
+async def add_column(
+    session: AsyncSession,
+    table_name: str,
+    col: ColumnDefinition,
+) -> dict[str, str]:
+    """Add a column to an existing table with shadow column mapping.
+
+    1. Validates table exists (via _pqdb_columns metadata)
+    2. Validates column doesn't already exist
+    3. Executes ALTER TABLE ADD COLUMN for each physical column
+    4. Inserts metadata into _pqdb_columns
+    5. Commits the transaction
+
+    Raises ValueError if table not found or column already exists.
+    """
+    validate_table_name(table_name)
+    await ensure_metadata_table(session)
+
+    # Check table exists
+    table_meta = await _get_table_metadata(session, table_name)
+    if table_meta is None:
+        raise ValueError(f"Table {table_name!r} not found")
+
+    # Check column doesn't already exist
+    result = await session.execute(
+        _SQL_COLUMN_EXISTS,
+        {"table_name": table_name, "column_name": col.name},
+    )
+    if result.fetchone() is not None:
+        raise ValueError(
+            f"Column {col.name!r} already exists in table {table_name!r}"
+        )
+
+    # Execute DDL
+    for stmt in build_add_column_ddl(table_name, col):
+        await session.execute(_SAFE(stmt))
+
+    # Insert metadata
+    await session.execute(
+        _SQL_INSERT_METADATA,
+        {
+            "table_name": table_name,
+            "column_name": col.name,
+            "sensitivity": col.sensitivity,
+            "data_type": col.data_type,
+        },
+    )
+
+    await session.commit()
+
+    logger.info(
+        "column_added",
+        table=table_name,
+        column=col.name,
+        sensitivity=col.sensitivity,
+    )
+
+    return {
+        "name": col.name,
+        "sensitivity": col.sensitivity,
+        "data_type": col.data_type,
+    }
+
+
+async def drop_column(
+    session: AsyncSession,
+    table_name: str,
+    column_name: str,
+) -> None:
+    """Drop a column from a table including its shadow columns.
+
+    1. Validates table and column exist
+    2. Checks column is not a system column (id, created_at, updated_at)
+    3. Looks up sensitivity from _pqdb_columns
+    4. Executes ALTER TABLE DROP COLUMN for each physical column
+    5. Deletes metadata from _pqdb_columns
+    6. Commits the transaction
+
+    Raises ValueError if table/column not found or column is protected.
+    """
+    validate_table_name(table_name)
+    await ensure_metadata_table(session)
+
+    # Check if it's a system column
+    if column_name in _SYSTEM_COLUMNS:
+        raise ValueError(f"Cannot drop system column {column_name!r}")
+
+    # Check table exists
+    table_meta = await _get_table_metadata(session, table_name)
+    if table_meta is None:
+        raise ValueError(f"Table {table_name!r} not found")
+
+    # Look up column metadata
+    result = await session.execute(
+        _SQL_COLUMN_EXISTS,
+        {"table_name": table_name, "column_name": column_name},
+    )
+    row = result.fetchone()
+    if row is None:
+        raise ValueError(
+            f"Column {column_name!r} not found in table {table_name!r}"
+        )
+
+    sensitivity = row[0]
+
+    # Execute DDL
+    for stmt in _build_drop_column_ddl(table_name, column_name, sensitivity):
+        await session.execute(_SAFE(stmt))
+
+    # Delete metadata
+    await session.execute(
+        _SQL_DELETE_COLUMN_METADATA,
+        {"table_name": table_name, "column_name": column_name},
+    )
+
+    await session.commit()
+
+    logger.info(
+        "column_dropped",
+        table=table_name,
+        column=column_name,
+    )
