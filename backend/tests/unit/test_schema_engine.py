@@ -14,6 +14,7 @@ from pqdb_api.services.schema_engine import (
     build_physical_columns_sql,
     map_sensitivity_to_physical,
     validate_column_name,
+    validate_data_type,
     validate_table_name,
 )
 
@@ -76,6 +77,75 @@ class TestValidateColumnName:
     def test_rejects_id_column(self) -> None:
         with pytest.raises(ValueError, match="reserved"):
             validate_column_name("id")
+
+
+class TestValidateDataType:
+    """Data type validation — prevents SQL injection via data_type field."""
+
+    def test_valid_text(self) -> None:
+        assert validate_data_type("text") == "text"
+
+    def test_valid_integer(self) -> None:
+        assert validate_data_type("integer") == "integer"
+
+    def test_valid_boolean(self) -> None:
+        assert validate_data_type("boolean") == "boolean"
+
+    def test_valid_timestamptz(self) -> None:
+        assert validate_data_type("timestamptz") == "timestamptz"
+
+    def test_valid_double_precision(self) -> None:
+        assert validate_data_type("double precision") == "double precision"
+
+    def test_valid_vector(self) -> None:
+        assert validate_data_type("vector(768)") == "vector(768)"
+
+    def test_valid_vector_large_dim(self) -> None:
+        assert validate_data_type("vector(1536)") == "vector(1536)"
+
+    def test_normalizes_case(self) -> None:
+        assert validate_data_type("TEXT") == "text"
+
+    def test_normalizes_whitespace(self) -> None:
+        assert validate_data_type("  text  ") == "text"
+
+    def test_rejects_sql_injection_drop_table(self) -> None:
+        with pytest.raises(ValueError, match="Unsupported data type"):
+            validate_data_type("text); DROP TABLE users; --")
+
+    def test_rejects_sql_injection_semicolon(self) -> None:
+        with pytest.raises(ValueError, match="Unsupported data type"):
+            validate_data_type("text; SELECT 1")
+
+    def test_rejects_unknown_type(self) -> None:
+        with pytest.raises(ValueError, match="Unsupported data type"):
+            validate_data_type("varchar(255)")
+
+    def test_rejects_empty(self) -> None:
+        with pytest.raises(ValueError, match="Unsupported data type"):
+            validate_data_type("")
+
+    def test_rejects_vector_without_dimension(self) -> None:
+        with pytest.raises(ValueError, match="Unsupported data type"):
+            validate_data_type("vector")
+
+    def test_rejects_vector_with_bad_dimension(self) -> None:
+        with pytest.raises(ValueError, match="Unsupported data type"):
+            validate_data_type("vector(abc)")
+
+    def test_column_definition_rejects_injection(self) -> None:
+        """ColumnDefinition.__post_init__ calls validate_data_type."""
+        with pytest.raises(ValueError, match="Unsupported data type"):
+            ColumnDefinition(
+                name="evil",
+                data_type="text); DROP TABLE users; --",
+                sensitivity="plain",
+            )
+
+    def test_column_definition_normalizes_type(self) -> None:
+        """ColumnDefinition normalizes data_type to lowercase."""
+        col = ColumnDefinition(name="name", data_type="TEXT", sensitivity="plain")
+        assert col.data_type == "text"
 
 
 class TestMapSensitivityToPhysical:

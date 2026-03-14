@@ -25,6 +25,29 @@ _RESERVED_SUFFIXES = ("_encrypted", "_index")
 Sensitivity = Literal["plain", "private", "searchable"]
 _VALID_SENSITIVITIES: frozenset[str] = frozenset({"plain", "private", "searchable"})
 
+_ALLOWED_DATA_TYPES = frozenset(
+    {
+        "text",
+        "integer",
+        "bigint",
+        "smallint",
+        "boolean",
+        "bytea",
+        "timestamptz",
+        "timestamp",
+        "date",
+        "time",
+        "jsonb",
+        "json",
+        "uuid",
+        "real",
+        "double precision",
+        "numeric",
+        "serial",
+        "bigserial",
+    }
+)
+
 # --- Static SQL statements (dialect-specific) -----------------------
 # All use literal table name "_pqdb_columns" (never user-controlled)
 # to satisfy SQL-injection scanners. DDL requires text() because
@@ -138,6 +161,23 @@ def validate_column_name(name: str) -> str:
     return name
 
 
+def validate_data_type(data_type: str) -> str:
+    """Validate data_type against allowed SQL types.
+
+    Prevents SQL injection via the data_type field, which is interpolated
+    into DDL for plain columns.
+
+    Raises ValueError for unsupported types.
+    """
+    dt_lower = data_type.strip().lower()
+    if dt_lower in _ALLOWED_DATA_TYPES:
+        return dt_lower
+    # Allow vector(N) for pgvector
+    if re.match(r"^vector\(\d+\)$", dt_lower):
+        return dt_lower
+    raise ValueError(f"Unsupported data type: {data_type!r}")
+
+
 @dataclass(frozen=True)
 class ColumnDefinition:
     """Logical column definition with sensitivity level."""
@@ -153,6 +193,8 @@ class ColumnDefinition:
                 f"must be one of {sorted(_VALID_SENSITIVITIES)}"
             )
         validate_column_name(self.name)
+        # Normalize and validate data_type to prevent SQL injection in DDL
+        object.__setattr__(self, "data_type", validate_data_type(self.data_type))
 
 
 @dataclass
