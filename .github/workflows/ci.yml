@@ -160,9 +160,9 @@ jobs:
         run: cd backend && uv sync
 
       - name: Run backend migrations
-        run: cd backend && uv run alembic upgrade head
+        run: cd backend && uv add --dev psycopg2-binary && uv run alembic upgrade head
         env:
-          PQDB_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/pqdb_platform
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pqdb_platform
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -180,7 +180,7 @@ jobs:
       - name: Run E2E tests
         run: cd sdk && npm run test:e2e
         env:
-          PQDB_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/pqdb_platform
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pqdb_platform
           PQDB_VAULT_ADDR: http://localhost:8200
           PQDB_VAULT_TOKEN: dev-root-token
           PQDB_SUPERUSER_DSN: postgresql://postgres:postgres@localhost:5432/postgres
