@@ -296,9 +296,7 @@ class TestDropColumnValidation:
             },
         )
 
-    def test_drop_from_nonexistent_table_returns_404(
-        self, client: TestClient
-    ) -> None:
+    def test_drop_from_nonexistent_table_returns_404(self, client: TestClient) -> None:
         resp = client.delete("/v1/db/tables/missing/columns/x")
         assert resp.status_code == 404
 

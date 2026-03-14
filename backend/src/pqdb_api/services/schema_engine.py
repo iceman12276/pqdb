@@ -279,9 +279,7 @@ def build_physical_columns_sql(
     return parts
 
 
-def build_add_column_ddl(
-    table_name: str, col: ColumnDefinition
-) -> list[str]:
+def build_add_column_ddl(table_name: str, col: ColumnDefinition) -> list[str]:
     """Build ALTER TABLE ADD COLUMN DDL statements for a column.
 
     Returns one statement for plain/private, two for searchable.
@@ -610,9 +608,7 @@ async def add_column(
         {"table_name": table_name, "column_name": col.name},
     )
     if result.fetchone() is not None:
-        raise ValueError(
-            f"Column {col.name!r} already exists in table {table_name!r}"
-        )
+        raise ValueError(f"Column {col.name!r} already exists in table {table_name!r}")
 
     # Execute DDL
     for stmt in build_add_column_ddl(table_name, col):
@@ -680,9 +676,7 @@ async def drop_column(
     )
     row = result.fetchone()
     if row is None:
-        raise ValueError(
-            f"Column {column_name!r} not found in table {table_name!r}"
-        )
+        raise ValueError(f"Column {column_name!r} not found in table {table_name!r}")
 
     sensitivity = row[0]
 
