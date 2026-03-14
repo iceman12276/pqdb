@@ -388,6 +388,122 @@ async def _get_table_metadata(
     }
 
 
+_PLAIN_OPERATIONS: list[str] = [
+    "eq", "gt", "lt", "gte", "lte", "in", "between",
+]
+_SEARCHABLE_OPERATIONS: list[str] = ["eq", "in"]
+
+
+def build_introspection_column(
+    name: str, data_type: str, sensitivity: str
+) -> dict[str, object]:
+    """Build introspection metadata for a single column.
+
+    Returns name, type, sensitivity, queryable flag, and
+    operations/note based on sensitivity level.
+    """
+    result: dict[str, object] = {
+        "name": name,
+        "type": data_type,
+        "sensitivity": sensitivity,
+    }
+    if sensitivity == "plain":
+        result["queryable"] = True
+        result["operations"] = list(_PLAIN_OPERATIONS)
+    elif sensitivity == "searchable":
+        result["queryable"] = True
+        result["operations"] = list(_SEARCHABLE_OPERATIONS)
+    else:  # private
+        result["queryable"] = False
+        result["note"] = (
+            "retrieve only \u2014 no server-side filtering"
+        )
+    return result
+
+
+def build_introspection_table(
+    table_name: str, columns: list[dict[str, str]]
+) -> dict[str, object]:
+    """Build introspection metadata for a table.
+
+    Includes sensitivity_summary with counts per level.
+    ``columns`` is a list of dicts with keys:
+    name, data_type, sensitivity.
+    """
+    introspection_columns: list[dict[str, object]] = []
+    summary: dict[str, int] = {
+        "searchable": 0, "private": 0, "plain": 0,
+    }
+    for col in columns:
+        sensitivity = col["sensitivity"]
+        summary[sensitivity] = summary.get(sensitivity, 0) + 1
+        introspection_columns.append(
+            build_introspection_column(
+                col["name"], col["data_type"], sensitivity,
+            )
+        )
+    return {
+        "name": table_name,
+        "columns": introspection_columns,
+        "sensitivity_summary": summary,
+    }
+
+
+async def introspect_all_tables(
+    session: AsyncSession,
+) -> list[dict[str, object]]:
+    """Introspect all tables with queryable info."""
+    await ensure_metadata_table(session)
+
+    result = await session.execute(_SQL_DISTINCT_TABLES)
+    table_names = [row[0] for row in result.fetchall()]
+
+    tables: list[dict[str, object]] = []
+    for name in table_names:
+        table_result = await session.execute(
+            _SQL_TABLE_COLUMNS, {"name": name},
+        )
+        rows = table_result.fetchall()
+        columns = [
+            {
+                "name": r[0],
+                "data_type": r[2],
+                "sensitivity": r[1],
+            }
+            for r in rows
+        ]
+        tables.append(
+            build_introspection_table(name, columns)
+        )
+
+    return tables
+
+
+async def introspect_table(
+    session: AsyncSession, table_name: str
+) -> dict[str, object] | None:
+    """Introspect a single table with queryable info."""
+    validate_table_name(table_name)
+    await ensure_metadata_table(session)
+
+    result = await session.execute(
+        _SQL_TABLE_COLUMNS, {"name": table_name},
+    )
+    rows = result.fetchall()
+    if not rows:
+        return None
+
+    columns = [
+        {
+            "name": r[0],
+            "data_type": r[2],
+            "sensitivity": r[1],
+        }
+        for r in rows
+    ]
+    return build_introspection_table(table_name, columns)
+
+
 def _build_table_response(
     table: TableDefinition,
 ) -> dict[str, object]:

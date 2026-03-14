@@ -24,6 +24,8 @@ from pqdb_api.services.schema_engine import (
     TableDefinition,
     create_table,
     get_table,
+    introspect_all_tables,
+    introspect_table,
     list_tables,
 )
 
@@ -44,7 +46,11 @@ class ColumnSchema(BaseModel):
     @classmethod
     def validate_sensitivity(cls, v: str) -> str:
         if v not in ("plain", "private", "searchable"):
-            raise ValueError("sensitivity must be 'plain', 'private', or 'searchable'")
+            msg = (
+                "sensitivity must be 'plain', "
+                "'private', or 'searchable'"
+            )
+            raise ValueError(msg)
         return v
 
 
@@ -62,7 +68,7 @@ class CreateTableRequest(BaseModel):
 async def db_health(
     context: ProjectContext = Depends(get_project_context),
 ) -> dict[str, object]:
-    """Project database health — confirms API key resolves to a valid project."""
+    """Project database health check."""
     return {
         "status": "ok",
         "project_id": str(context.project_id),
@@ -75,13 +81,7 @@ async def create_table_endpoint(
     body: CreateTableRequest,
     session: AsyncSession = Depends(get_project_session),
 ) -> dict[str, Any]:
-    """Create a table with column sensitivity metadata.
-
-    Creates physical shadow columns based on sensitivity levels:
-    - plain: column as-is with declared SQL type
-    - private: {col}_encrypted (bytea)
-    - searchable: {col}_encrypted (bytea) + {col}_index (text)
-    """
+    """Create a table with column sensitivity metadata."""
     try:
         table_def = TableDefinition(
             name=body.name,
@@ -89,18 +89,24 @@ async def create_table_endpoint(
                 ColumnDefinition(
                     name=c.name,
                     data_type=c.data_type,
-                    sensitivity=cast(Sensitivity, c.sensitivity),
+                    sensitivity=cast(
+                        Sensitivity, c.sensitivity
+                    ),
                 )
                 for c in body.columns
             ],
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=400, detail=str(exc),
+        ) from exc
 
     try:
         result = await create_table(session, table_def)
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=409, detail=str(exc),
+        ) from exc
 
     return result
 
@@ -109,7 +115,7 @@ async def create_table_endpoint(
 async def list_tables_endpoint(
     session: AsyncSession = Depends(get_project_session),
 ) -> list[dict[str, Any]]:
-    """List all tables in the project database with column metadata."""
+    """List all tables with column metadata."""
     tables = await list_tables(session)
     return tables
 
@@ -119,11 +125,46 @@ async def get_table_endpoint(
     table_name: str,
     session: AsyncSession = Depends(get_project_session),
 ) -> dict[str, Any]:
-    """Get full schema for a table including sensitivity levels."""
+    """Get full schema for a table."""
     try:
         result = await get_table(session, table_name)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=400, detail=str(exc),
+        ) from exc
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Table {table_name!r} not found",
+        )
+
+    return result
+
+
+@router.get("/introspect")
+async def introspect_all_endpoint(
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, Any]:
+    """Introspect all tables with queryable info."""
+    tables = await introspect_all_tables(session)
+    return {"tables": tables}
+
+
+@router.get("/introspect/{table_name}")
+async def introspect_table_endpoint(
+    table_name: str,
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, Any]:
+    """Introspect a single table with queryable info."""
+    try:
+        result = await introspect_table(
+            session, table_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail=str(exc),
+        ) from exc
 
     if result is None:
         raise HTTPException(
