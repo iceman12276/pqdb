@@ -36,3 +36,4 @@ docker-compose.override.yml
 
 # Binary docs
 *.docx
+.claude/worktrees/
