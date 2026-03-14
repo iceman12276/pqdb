@@ -50,7 +50,7 @@ export async function encrypt(
   // Step 2: Use shared secret as AES-256-GCM key
   const aesKey = await crypto.subtle.importKey(
     "raw",
-    sharedSecret,
+    new Uint8Array(sharedSecret).buffer as ArrayBuffer,
     "AES-GCM",
     false,
     ["encrypt"],
@@ -105,7 +105,7 @@ export async function decrypt(
   // Step 3: Use shared secret as AES-256-GCM key
   const aesKey = await crypto.subtle.importKey(
     "raw",
-    sharedSecret,
+    new Uint8Array(sharedSecret).buffer as ArrayBuffer,
     "AES-GCM",
     false,
     ["decrypt"],

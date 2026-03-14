@@ -3,10 +3,12 @@ import { column, defineTableSchema } from "../../src/query/schema.js";
 import { QueryBuilder } from "../../src/query/builder.js";
 import { HttpClient } from "../../src/client/http.js";
 
+// Plain-only schema for testing query builder payload construction.
+// Encryption-related behavior is tested in encryption-integration.test.ts.
 const usersSchema = defineTableSchema("users", {
   id: column.uuid().primaryKey(),
-  email: column.text().sensitive("searchable"),
-  name: column.text().sensitive("private"),
+  email: column.text(),
+  name: column.text(),
   age: column.integer(),
   active: column.boolean(),
 });
