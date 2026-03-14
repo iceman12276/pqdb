@@ -56,7 +56,7 @@ describe("SDK encryption integration", () => {
     // First call should be HMAC key retrieval
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [hmacUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(hmacUrl).toContain("/v1/projects/hmac-key");
+    expect(hmacUrl).toContain("/v1/db/hmac-key");
 
     // Second call should be the insert
     const [insertUrl, insertInit] = fetchMock.mock.calls[1] as [string, RequestInit];
