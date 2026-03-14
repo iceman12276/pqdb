@@ -1,6 +1,6 @@
 """Integration tests for auth endpoints.
 
-Boots the real FastAPI app with an in-process SQLite database,
+Boots the real FastAPI app with a real Postgres database,
 exercises signup -> login -> authenticated request -> refresh flow.
 """
 
@@ -11,46 +11,35 @@ from contextlib import asynccontextmanager
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import StaticPool, event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from pqdb_api.database import get_session
 from pqdb_api.middleware.auth import get_current_developer_id
-from pqdb_api.models.base import Base
 from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.services.auth import generate_ed25519_keypair
 
 
-def _create_test_app() -> FastAPI:
-    """Create a test FastAPI app with in-memory SQLite."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+def _create_test_app(test_db_url: str) -> FastAPI:
+    """Create a test FastAPI app with real Postgres.
 
-    # Enable foreign keys for SQLite
-    @event.listens_for(engine.sync_engine, "connect")
-    def _set_sqlite_pragma(dbapi_conn, connection_record):  # type: ignore[no-untyped-def]
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    test_session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
-
-    async def _override_get_session() -> AsyncIterator[AsyncSession]:
-        async with test_session_factory() as session:
-            yield session
-
+    Creates its own engine inside the lifespan so it runs on
+    the TestClient's event loop.
+    """
     private_key, public_key = generate_ed25519_keypair()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+        engine = create_async_engine(test_db_url)
+        session_factory = async_sessionmaker(
+            engine, class_=AsyncSession, expire_on_commit=False
+        )
+
+        async def _override_get_session() -> AsyncIterator[AsyncSession]:
+            async with session_factory() as session:
+                yield session
+
+        app.dependency_overrides[get_session] = _override_get_session
         app.state.jwt_private_key = private_key
         app.state.jwt_public_key = public_key
         yield
@@ -72,13 +61,12 @@ def _create_test_app() -> FastAPI:
         return {"developer_id": str(developer_id)}
 
     app.include_router(protected_router)
-    app.dependency_overrides[get_session] = _override_get_session
     return app
 
 
 @pytest.fixture()
-def client() -> Iterator[TestClient]:
-    app = _create_test_app()
+def client(test_db_url: str) -> Iterator[TestClient]:
+    app = _create_test_app(test_db_url)
     with TestClient(app) as c:
         yield c
 
