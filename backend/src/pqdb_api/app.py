@@ -20,6 +20,8 @@ from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.services.auth import generate_ed25519_keypair
 from pqdb_api.services.provisioner import DatabaseProvisioner
+from pqdb_api.services.rate_limiter import RateLimiter
+from pqdb_api.services.vault import VaultClient
 
 
 def _init_jwt_keys(app: FastAPI, settings: Settings) -> None:
@@ -46,6 +48,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _init_jwt_keys(app, settings)
     app.state.provisioner = DatabaseProvisioner(
         superuser_dsn=settings.superuser_dsn,
+    )
+    app.state.vault_client = VaultClient(
+        vault_addr=settings.vault_addr,
+        vault_token=settings.vault_token,
+    )
+    app.state.hmac_rate_limiter = RateLimiter(
+        max_requests=10, window_seconds=60
     )
     yield
     await dispose_engine()

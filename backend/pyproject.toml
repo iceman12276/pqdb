@@ -9,6 +9,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "email-validator>=2.3.0",
     "fastapi>=0.135.1",
+    "hvac>=2.4.0",
     "pydantic-settings>=2.13.1",
     "pyjwt[crypto]>=2.12.1",
     "sqlalchemy[asyncio]>=2.0.48",
@@ -31,6 +32,10 @@ packages = ["pqdb_api"]
 
 [[tool.mypy.overrides]]
 module = ["asyncpg", "asyncpg.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["hvac", "hvac.*"]
 ignore_missing_imports = true
 
 [tool.ruff]
