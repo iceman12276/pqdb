@@ -147,9 +147,14 @@ def validate_columns_for_insert(
         if sensitivity == "plain":
             physical[key] = value
         elif sensitivity == "searchable":
-            physical[f"{key}_encrypted"] = value
+            # Encrypted columns are bytea in Postgres — convert str to bytes
+            physical[f"{key}_encrypted"] = (
+                value.encode("utf-8") if isinstance(value, str) else value
+            )
         else:  # private
-            physical[f"{key}_encrypted"] = value
+            physical[f"{key}_encrypted"] = (
+                value.encode("utf-8") if isinstance(value, str) else value
+            )
 
         seen_logical.add(key)
 

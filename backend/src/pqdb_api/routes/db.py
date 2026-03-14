@@ -164,10 +164,23 @@ async def _get_column_meta(
 
 
 def _rows_to_dicts(result: Any) -> list[dict[str, Any]]:
-    """Convert SQLAlchemy row results to list of dicts."""
+    """Convert SQLAlchemy row results to list of dicts.
+
+    Bytea columns (encrypted data) are decoded to UTF-8 strings
+    so they can be serialized as JSON in the response.
+    """
     if result.returns_rows:
         keys = list(result.keys())
-        return [dict(zip(keys, row)) for row in result.fetchall()]
+        rows: list[dict[str, Any]] = []
+        for row in result.fetchall():
+            d: dict[str, Any] = {}
+            for k, v in zip(keys, row):
+                if isinstance(v, (bytes, bytearray, memoryview)):
+                    d[k] = bytes(v).decode("utf-8")
+                else:
+                    d[k] = v
+            rows.append(d)
+        return rows
     return []
 
 
@@ -474,8 +487,11 @@ async def update_rows(
         physical_updates: dict[str, Any] = {}
         for col, val in body.values.items():
             physical_col = resolve_physical_column(col, columns_meta, for_insert=True)
-            physical_updates[physical_col] = val
-            # Also include index if searchable and _index is provided
+            # Encrypted columns are bytea — convert str to bytes
+            if physical_col.endswith("_encrypted") and isinstance(val, str):
+                physical_updates[physical_col] = val.encode("utf-8")
+            else:
+                physical_updates[physical_col] = val
     except CrudError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

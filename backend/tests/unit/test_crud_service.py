@@ -94,18 +94,18 @@ class TestValidateColumnsForInsert:
 
     def test_searchable_maps_to_encrypted(self) -> None:
         result = validate_columns_for_insert({"email": "cipher"}, COLUMNS_META)
-        assert result == {"email_encrypted": "cipher"}
+        assert result == {"email_encrypted": b"cipher"}
 
     def test_searchable_with_index(self) -> None:
         result = validate_columns_for_insert(
             {"email": "cipher", "email_index": "hmac_hex"}, COLUMNS_META
         )
-        assert result["email_encrypted"] == "cipher"
+        assert result["email_encrypted"] == b"cipher"
         assert result["email_index"] == "hmac_hex"
 
     def test_private_maps_to_encrypted(self) -> None:
         result = validate_columns_for_insert({"ssn": "ssn_cipher"}, COLUMNS_META)
-        assert result == {"ssn_encrypted": "ssn_cipher"}
+        assert result == {"ssn_encrypted": b"ssn_cipher"}
 
     def test_unknown_column_raises(self) -> None:
         with pytest.raises(CrudError, match="Unknown column"):
