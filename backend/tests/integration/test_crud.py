@@ -228,9 +228,7 @@ class TestSelect:
         resp = client.post(
             "/v1/db/users/select",
             json={
-                "filters": [
-                    {"column": "display_name", "op": "eq", "value": "Alice"}
-                ]
+                "filters": [{"column": "display_name", "op": "eq", "value": "Alice"}]
             },
         )
         assert resp.status_code == 200
@@ -262,11 +260,7 @@ class TestSelect:
         )
         resp = client.post(
             "/v1/db/users/select",
-            json={
-                "filters": [
-                    {"column": "email", "op": "eq", "value": "hmac_alice"}
-                ]
-            },
+            json={"filters": [{"column": "email", "op": "eq", "value": "hmac_alice"}]},
         )
         assert resp.status_code == 200
         data = resp.json()["data"]
@@ -332,49 +326,33 @@ class TestSelect:
         ages = [r["age"] for r in data]
         assert ages == [1, 2, 3]
 
-    def test_select_range_on_searchable_returns_400(
-        self, client: TestClient
-    ) -> None:
+    def test_select_range_on_searchable_returns_400(self, client: TestClient) -> None:
         """Range ops on searchable columns should fail."""
         _create_table(client)
         resp = client.post(
             "/v1/db/users/select",
-            json={
-                "filters": [{"column": "email", "op": "gt", "value": "x"}]
-            },
+            json={"filters": [{"column": "email", "op": "gt", "value": "x"}]},
         )
         assert resp.status_code == 400
 
-    def test_select_filter_on_private_returns_400(
-        self, client: TestClient
-    ) -> None:
+    def test_select_filter_on_private_returns_400(self, client: TestClient) -> None:
         """Filtering on private columns should fail."""
         _create_table(client)
         resp = client.post(
             "/v1/db/users/select",
-            json={
-                "filters": [{"column": "ssn", "op": "eq", "value": "x"}]
-            },
+            json={"filters": [{"column": "ssn", "op": "eq", "value": "x"}]},
         )
         assert resp.status_code == 400
 
-    def test_select_unknown_filter_column_returns_400(
-        self, client: TestClient
-    ) -> None:
+    def test_select_unknown_filter_column_returns_400(self, client: TestClient) -> None:
         _create_table(client)
         resp = client.post(
             "/v1/db/users/select",
-            json={
-                "filters": [
-                    {"column": "nonexistent", "op": "eq", "value": "x"}
-                ]
-            },
+            json={"filters": [{"column": "nonexistent", "op": "eq", "value": "x"}]},
         )
         assert resp.status_code == 400
 
-    def test_select_empty_table_returns_empty_data(
-        self, client: TestClient
-    ) -> None:
+    def test_select_empty_table_returns_empty_data(self, client: TestClient) -> None:
         _create_table(client)
         resp = client.post("/v1/db/users/select", json={})
         assert resp.status_code == 200
@@ -394,9 +372,7 @@ class TestSelect:
         )
         resp = client.post(
             "/v1/db/users/select",
-            json={
-                "filters": [{"column": "age", "op": "in", "value": [25, 35]}]
-            },
+            json={"filters": [{"column": "age", "op": "in", "value": [25, 35]}]},
         )
         data = resp.json()["data"]
         assert len(data) == 2
@@ -420,9 +396,7 @@ class TestUpdate:
             "/v1/db/users/update",
             json={
                 "values": {"display_name": "Alice Updated"},
-                "filters": [
-                    {"column": "display_name", "op": "eq", "value": "Alice"}
-                ],
+                "filters": [{"column": "display_name", "op": "eq", "value": "Alice"}],
             },
         )
         assert resp.status_code == 200
@@ -450,9 +424,7 @@ class TestUpdate:
             "/v1/db/users/update",
             json={
                 "values": {"display_name": "Alice V2"},
-                "filters": [
-                    {"column": "email", "op": "eq", "value": "hmac_alice"}
-                ],
+                "filters": [{"column": "email", "op": "eq", "value": "hmac_alice"}],
             },
         )
         assert resp.status_code == 200
@@ -460,9 +432,7 @@ class TestUpdate:
         assert len(data) == 1
         assert data[0]["display_name"] == "Alice V2"
 
-    def test_update_no_match_returns_empty_data(
-        self, client: TestClient
-    ) -> None:
+    def test_update_no_match_returns_empty_data(self, client: TestClient) -> None:
         _create_table(client)
         resp = client.post(
             "/v1/db/users/update",
@@ -480,32 +450,24 @@ class TestUpdate:
         assert resp.status_code == 200
         assert resp.json()["data"] == []
 
-    def test_update_unknown_column_returns_400(
-        self, client: TestClient
-    ) -> None:
+    def test_update_unknown_column_returns_400(self, client: TestClient) -> None:
         _create_table(client)
         resp = client.post(
             "/v1/db/users/update",
             json={
                 "values": {"fake_col": "value"},
-                "filters": [
-                    {"column": "display_name", "op": "eq", "value": "Alice"}
-                ],
+                "filters": [{"column": "display_name", "op": "eq", "value": "Alice"}],
             },
         )
         assert resp.status_code == 400
 
-    def test_update_empty_values_returns_400(
-        self, client: TestClient
-    ) -> None:
+    def test_update_empty_values_returns_400(self, client: TestClient) -> None:
         _create_table(client)
         resp = client.post(
             "/v1/db/users/update",
             json={
                 "values": {},
-                "filters": [
-                    {"column": "display_name", "op": "eq", "value": "Alice"}
-                ],
+                "filters": [{"column": "display_name", "op": "eq", "value": "Alice"}],
             },
         )
         assert resp.status_code == 400
@@ -531,9 +493,7 @@ class TestDelete:
         resp = client.post(
             "/v1/db/users/delete",
             json={
-                "filters": [
-                    {"column": "display_name", "op": "eq", "value": "Alice"}
-                ]
+                "filters": [{"column": "display_name", "op": "eq", "value": "Alice"}]
             },
         )
         assert resp.status_code == 200
@@ -570,18 +530,12 @@ class TestDelete:
         )
         resp = client.post(
             "/v1/db/users/delete",
-            json={
-                "filters": [
-                    {"column": "email", "op": "eq", "value": "hmac_a"}
-                ]
-            },
+            json={"filters": [{"column": "email", "op": "eq", "value": "hmac_a"}]},
         )
         assert resp.status_code == 200
         assert len(resp.json()["data"]) == 1
 
-    def test_delete_without_filters_returns_400(
-        self, client: TestClient
-    ) -> None:
+    def test_delete_without_filters_returns_400(self, client: TestClient) -> None:
         _create_table(client)
         resp = client.post(
             "/v1/db/users/delete",
@@ -620,11 +574,7 @@ class TestFullRoundTrip:
         # 2. Select by searchable column (routes to blind index)
         select_resp = client.post(
             "/v1/db/users/select",
-            json={
-                "filters": [
-                    {"column": "email", "op": "eq", "value": "hmac_alice"}
-                ]
-            },
+            json={"filters": [{"column": "email", "op": "eq", "value": "hmac_alice"}]},
         )
         assert select_resp.status_code == 200
         found = select_resp.json()["data"]
@@ -637,9 +587,7 @@ class TestFullRoundTrip:
             "/v1/db/users/update",
             json={
                 "values": {"display_name": "Alice V2"},
-                "filters": [
-                    {"column": "email", "op": "eq", "value": "hmac_alice"}
-                ],
+                "filters": [{"column": "email", "op": "eq", "value": "hmac_alice"}],
             },
         )
         assert update_resp.status_code == 200
@@ -649,22 +597,14 @@ class TestFullRoundTrip:
         # 4. Verify update via select
         verify_resp = client.post(
             "/v1/db/users/select",
-            json={
-                "filters": [
-                    {"column": "email", "op": "eq", "value": "hmac_alice"}
-                ]
-            },
+            json={"filters": [{"column": "email", "op": "eq", "value": "hmac_alice"}]},
         )
         assert verify_resp.json()["data"][0]["display_name"] == "Alice V2"
 
         # 5. Delete via searchable column
         delete_resp = client.post(
             "/v1/db/users/delete",
-            json={
-                "filters": [
-                    {"column": "email", "op": "eq", "value": "hmac_alice"}
-                ]
-            },
+            json={"filters": [{"column": "email", "op": "eq", "value": "hmac_alice"}]},
         )
         assert delete_resp.status_code == 200
         assert len(delete_resp.json()["data"]) == 1

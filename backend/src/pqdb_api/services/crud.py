@@ -79,9 +79,7 @@ def resolve_physical_column(
         return f"{col_name}_encrypted"
     else:  # private
         if for_filter:
-            raise CrudError(
-                f"Cannot filter on private column {col_name!r}"
-            )
+            raise CrudError(f"Cannot filter on private column {col_name!r}")
         return f"{col_name}_encrypted"
 
 
@@ -105,14 +103,10 @@ def validate_filter_column(
     sensitivity = meta["sensitivity"]
 
     if sensitivity == "private":
-        raise CrudError(
-            f"Cannot filter on private column {col_name!r}"
-        )
+        raise CrudError(f"Cannot filter on private column {col_name!r}")
 
     if sensitivity == "searchable" and op not in _SEARCHABLE_ALLOWED_OPS:
-        raise CrudError(
-            f"Searchable column {col_name!r} only supports eq/in filters"
-        )
+        raise CrudError(f"Searchable column {col_name!r} only supports eq/in filters")
 
 
 def validate_columns_for_insert(

@@ -375,9 +375,7 @@ async def update_rows(
     try:
         physical_updates: dict[str, Any] = {}
         for col, val in body.values.items():
-            physical_col = resolve_physical_column(
-                col, columns_meta, for_insert=True
-            )
+            physical_col = resolve_physical_column(col, columns_meta, for_insert=True)
             physical_updates[physical_col] = val
             # Also include index if searchable and _index is provided
     except CrudError as exc:
