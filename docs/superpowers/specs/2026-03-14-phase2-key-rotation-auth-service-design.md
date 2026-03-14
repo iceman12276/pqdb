@@ -34,8 +34,8 @@ Vault stores versioned HMAC keys at `secret/pqdb/projects/{project_id}/hmac`:
 {
   "current_version": 2,
   "keys": {
-    "1": "aabbcc...",
-    "2": "ddeeff..."
+    "1": { "key": "aabbcc...", "created_at": "2026-03-01T00:00:00Z" },
+    "2": { "key": "ddeeff...", "created_at": "2026-03-14T00:00:00Z" }
   }
 }
 ```
@@ -52,17 +52,19 @@ Vault stores versioned HMAC keys at `secret/pqdb/projects/{project_id}/hmac`:
 
 `_index` columns gain a version prefix: `v2:aabbcc1122...` (version number + colon + hash).
 
-- On SELECT with `.eq()`: server extracts version from stored index, uses matching HMAC key to verify
-- On INSERT: SDK computes index with current key version, prefixes with version number
+- On INSERT: SDK computes index with current key version only, prefixes with version number
+- On SELECT with `.eq()`: SDK computes HMAC with **all active key versions** and sends `WHERE col_index IN ('v1:hash_v1', 'v2:hash_v2')`. This ensures rows indexed with any active key version are found — no silent data loss during the rotation window.
+
+This multi-version query approach means the HMAC key endpoint must return all active keys, not just the current one.
 
 ### Re-indexing (developer-triggered)
 
-`POST /v1/projects/{id}/reindex` — background job reads all rows, re-computes blind indexes with current key. After completion, old key versions can be retired. Not required — old indexes remain functional indefinitely.
+`POST /v1/projects/{id}/reindex` — background job reads all rows, re-computes blind indexes with current key. Returns `{ job_id }`. `GET /v1/projects/{id}/reindex/status` returns progress (`{ status: "running"|"complete"|"failed", tables_done, tables_total }`). After completion, old key versions can be retired. Not required — old indexes remain functional indefinitely.
 
 ### SDK changes
 
-- `GET /v1/projects/{id}/hmac-key` returns `{ key, version }` instead of just the key
-- SDK caches current version, prefixes blind indexes with version number
+- `GET /v1/projects/{id}/hmac-key` returns `{ current_version, keys: { "1": "aa...", "2": "dd..." } }` — all active keys
+- SDK caches all active keys; uses current version for inserts, all versions for queries
 - SDK invalidates cache on 401/version-mismatch errors
 
 ### Encryption layer — unchanged
@@ -109,6 +111,8 @@ PUT  /v1/auth/users/me        — update profile/metadata
 
 These are under `/v1/auth/users/*` to distinguish from developer auth at `/v1/auth/*`.
 
+**Routing rule:** `/v1/auth/users/*` endpoints use the `apikey` header for project resolution (same as `/v1/db/*`), not developer JWT. Developer auth at `/v1/auth/*` uses `Authorization: Bearer` JWT. FastAPI router ordering: more specific prefix (`/v1/auth/users`) registered before `/v1/auth` to prevent path conflicts.
+
 ### JWT structure for end-users
 
 ```json
@@ -123,6 +127,23 @@ These are under `/v1/auth/users/*` to distinguish from developer auth at `/v1/au
 ```
 
 The `type: "user_access"` distinguishes end-user tokens from developer tokens (`type: "access"`). Same Ed25519 signing, same 15-min access + 7-day refresh pattern.
+
+### Session storage (refresh token revocation)
+
+Unlike developer auth (stateless refresh tokens), end-user auth requires server-side session tracking to support revocation (password reset invalidates all sessions, logout invalidates specific session):
+
+```sql
+_pqdb_sessions (
+  id                  UUID PRIMARY KEY,
+  user_id             UUID REFERENCES _pqdb_users(id),
+  refresh_token_hash  TEXT NOT NULL,
+  expires_at          TIMESTAMPTZ NOT NULL,
+  revoked             BOOLEAN DEFAULT FALSE,
+  created_at          TIMESTAMPTZ
+)
+```
+
+On refresh, the server validates the token against this table (hash match + not revoked + not expired). Password reset sets `revoked = true` on all sessions for that user.
 
 ### SDK interface
 
@@ -160,6 +181,8 @@ const posts = client.defineTable('posts', {
 
 The `.owner()` marker tells the server which column to filter on. The `_pqdb_columns` metadata table gets a new `is_owner` boolean field.
 
+**Migration for existing projects:** Project databases are created dynamically (not via Alembic). The `ensure_metadata_table` function in `schema_engine.py` must add the column if missing: `ALTER TABLE _pqdb_columns ADD COLUMN IF NOT EXISTS is_owner BOOLEAN DEFAULT FALSE`. New project databases get `is_owner` in the initial `_pqdb_columns` schema.
+
 ---
 
 ## Section 3: OAuth Provider System (Phase 2b)
@@ -194,12 +217,15 @@ Provider credentials stored in Vault at `secret/pqdb/projects/{project_id}/oauth
 ```
 1. SDK calls client.auth.users.signInWithOAuth('google')
 2. SDK opens browser to: /v1/auth/users/oauth/google/authorize?redirect_uri=...
-3. Server generates state token, redirects to Google's consent screen
-4. User consents, Google redirects back with code
-5. Server exchanges code -> gets user info from Google
+3. Server generates state token (signed JWT with 10-min expiry containing redirect_uri and nonce),
+   redirects to Google's consent screen with state parameter
+4. User consents, Google redirects back with code + state
+5. Server validates state JWT signature + expiry (prevents CSRF), exchanges code -> gets user info
 6. Server finds-or-creates user in _pqdb_users (linked via _pqdb_oauth_identities)
 7. Server issues JWT, redirects to SDK's redirect_uri with tokens
 ```
+
+State tokens are signed JWTs (not stored in DB) — the signature prevents forgery and the expiry prevents replay. No additional table needed.
 
 ### OAuth identity linking
 
@@ -219,6 +245,8 @@ _pqdb_oauth_identities (
 ```
 
 One user can have multiple OAuth identities. Linking happens by email match — if a user signed up with email/password and later signs in with Google using the same email, the accounts merge.
+
+**Security:** Account linking by email only occurs when the existing account's email is verified (`email_verified = true`). This prevents an attacker from pre-registering with a victim's email and later hijacking their OAuth login.
 
 ### SDK interface
 
@@ -265,6 +293,8 @@ Payload:
 ```
 
 The webhook is reused for email verification, password reset, and any future notification.
+
+**Security:** The token is sent in plaintext to the webhook URL (necessary for the developer to include it in email links). pqdb MUST validate that configured webhook URLs use HTTPS — reject `http://` URLs. Developers are responsible for securing their webhook endpoint.
 
 ### Storage
 
@@ -419,7 +449,7 @@ Policy structure:
 ```
 
 Three condition types:
-- **`owner`** — `WHERE owner_id = current_user_id`
+- **`owner`** — `WHERE {owner_column} = current_user_id` (where `{owner_column}` is the column marked `is_owner = true` in `_pqdb_columns`)
 - **`all`** — no row filter
 - **`none`** — operation denied (403)
 
@@ -452,7 +482,7 @@ _pqdb_policies (
 1. Extract `role` from user JWT (or `anon` if no JWT)
 2. Look up policy for `(table, operation, role)` in `_pqdb_policies`
 3. No policy = deny (default `none`)
-4. `owner` = inject `WHERE owner_id = :user_id`
+4. `owner` = inject `WHERE {owner_column} = :user_id` (look up column with `is_owner = true` in `_pqdb_columns`)
 5. `all` = no filter
 6. `none` = return 403
 
@@ -624,3 +654,11 @@ Chain G (SDK):         US-038, US-041 (parallel) -------------------+
 - Built-in SMTP / email rendering
 - Arbitrary SQL RLS policies (complexity vs. zero-knowledge tradeoff)
 - OAuth providers beyond Google + GitHub (adapter interface supports adding more)
+
+## Security Notes
+
+- **Rate limiting:** End-user signup/login endpoints must be rate-limited (brute-force protection). Exact limits decided during implementation, but minimum: 10 signup/min per IP, 20 login/min per IP.
+- **Webhook HTTPS:** pqdb rejects `http://` webhook URLs — HTTPS required.
+- **OAuth account linking:** Only merges accounts when existing email is verified, preventing pre-registration attacks.
+- **TOTP secrets:** Stored server-side in plaintext (required for validation). Defense-in-depth: could be encrypted with per-project Vault key in future.
+- **API key role naming:** The codebase uses `service` (not `service_role`) as the role value. The API key format is `pqdb_service_*`. This spec uses `service_role` in prose for clarity but the implementation should use `service` to match Phase 1.
