@@ -20,7 +20,6 @@ from pqdb_api.services.crud import (
     validate_filter_column,
 )
 
-
 # --- Column metadata fixtures ---
 
 COLUMNS_META = [
@@ -90,15 +89,11 @@ class TestValidateColumnsForInsert:
     """Check that incoming columns are validated and mapped."""
 
     def test_plain_column_passthrough(self) -> None:
-        result = validate_columns_for_insert(
-            {"display_name": "Alice"}, COLUMNS_META
-        )
+        result = validate_columns_for_insert({"display_name": "Alice"}, COLUMNS_META)
         assert result == {"display_name": "Alice"}
 
     def test_searchable_maps_to_encrypted(self) -> None:
-        result = validate_columns_for_insert(
-            {"email": "cipher"}, COLUMNS_META
-        )
+        result = validate_columns_for_insert({"email": "cipher"}, COLUMNS_META)
         assert result == {"email_encrypted": "cipher"}
 
     def test_searchable_with_index(self) -> None:
@@ -109,9 +104,7 @@ class TestValidateColumnsForInsert:
         assert result["email_index"] == "hmac_hex"
 
     def test_private_maps_to_encrypted(self) -> None:
-        result = validate_columns_for_insert(
-            {"ssn": "ssn_cipher"}, COLUMNS_META
-        )
+        result = validate_columns_for_insert({"ssn": "ssn_cipher"}, COLUMNS_META)
         assert result == {"ssn_encrypted": "ssn_cipher"}
 
     def test_unknown_column_raises(self) -> None:
@@ -123,9 +116,7 @@ class TestBuildInsertSQL:
     """Test SQL generation for INSERT."""
 
     def test_single_row(self) -> None:
-        sql, params = build_insert_sql(
-            "users", {"display_name": "Alice", "age": 30}
-        )
+        sql, params = build_insert_sql("users", {"display_name": "Alice", "age": 30})
         assert '"users"' in sql
         assert "display_name" in sql
         assert "age" in sql
@@ -150,9 +141,7 @@ class TestBuildSelectSQL:
         assert '"users"' in sql
 
     def test_select_specific_columns(self) -> None:
-        sql, params = build_select_sql(
-            "users", columns=["display_name", "age"]
-        )
+        sql, params = build_select_sql("users", columns=["display_name", "age"])
         assert "display_name" in sql
         assert "age" in sql
 
@@ -187,9 +176,7 @@ class TestBuildSelectSQL:
         assert "OFFSET" in sql.upper()
 
     def test_order_by(self) -> None:
-        sql, _ = build_select_sql(
-            "users", order_by=[("age", "desc")]
-        )
+        sql, _ = build_select_sql("users", order_by=[("age", "desc")])
         assert "ORDER BY" in sql.upper()
         assert "DESC" in sql.upper()
 
