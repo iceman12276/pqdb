@@ -38,7 +38,7 @@ describe("client.from", () => {
     const client = createClient("http://localhost:3000", "pqdb_anon_test123");
     const users = client.defineTable("users", {
       id: column.uuid().primaryKey(),
-      email: column.text().sensitive("searchable"),
+      email: column.text(),
       age: column.integer(),
     });
 
