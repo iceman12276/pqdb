@@ -135,9 +135,7 @@ class TestHmacKeyRouteExists:
 class TestHmacKeyAuth:
     """HMAC key endpoint requires valid JWT."""
 
-    def test_hmac_key_without_auth_returns_401_or_403(
-        self, client: TestClient
-    ) -> None:
+    def test_hmac_key_without_auth_returns_401_or_403(self, client: TestClient) -> None:
         resp = client.get(f"/v1/projects/{uuid.uuid4()}/hmac-key")
         assert resp.status_code in (401, 403)
 
@@ -198,9 +196,7 @@ class TestGetHmacKey:
         )
         assert resp.status_code == 404
 
-    def test_get_hmac_key_other_developer_returns_404(
-        self, client: TestClient
-    ) -> None:
+    def test_get_hmac_key_other_developer_returns_404(self, client: TestClient) -> None:
         token_a = _signup_and_get_token(client, email="owner@test.com")
         token_b = _signup_and_get_token(client, email="intruder@test.com")
 
@@ -217,9 +213,7 @@ class TestGetHmacKey:
         )
         assert resp.status_code == 404
 
-    def test_get_hmac_key_consistent_across_requests(
-        self, client: TestClient
-    ) -> None:
+    def test_get_hmac_key_consistent_across_requests(self, client: TestClient) -> None:
         token = _signup_and_get_token(client)
         create_resp = client.post(
             "/v1/projects",
@@ -256,9 +250,7 @@ class TestHmacKeyRateLimiting:
             project_id = create_resp.json()["id"]
 
             # Override rate limiter with a very low limit
-            app.state.hmac_rate_limiter = RateLimiter(
-                max_requests=2, window_seconds=60
-            )
+            app.state.hmac_rate_limiter = RateLimiter(max_requests=2, window_seconds=60)
 
             # First 2 should succeed
             for _ in range(2):

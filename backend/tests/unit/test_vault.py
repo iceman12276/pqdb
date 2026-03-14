@@ -75,7 +75,7 @@ class TestGetHmacKey:
             mock_client_instance = MagicMock()
             mock_hvac.return_value = mock_client_instance
 
-            key_hex = ("ab" * 32)
+            key_hex = "ab" * 32
             mock_client_instance.secrets.kv.v2.read_secret_version.return_value = {
                 "data": {"data": {"key": key_hex}}
             }
@@ -138,8 +138,8 @@ class TestDeleteHmacKey:
             mock_client_instance = MagicMock()
             mock_hvac.return_value = mock_client_instance
             kv = mock_client_instance.secrets.kv.v2
-            kv.delete_metadata_and_all_versions.side_effect = (
-                Exception("connection refused")
+            kv.delete_metadata_and_all_versions.side_effect = Exception(
+                "connection refused"
             )
 
             client = VaultClient(

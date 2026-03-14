@@ -53,9 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         vault_addr=settings.vault_addr,
         vault_token=settings.vault_token,
     )
-    app.state.hmac_rate_limiter = RateLimiter(
-        max_requests=10, window_seconds=60
-    )
+    app.state.hmac_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
     yield
     await dispose_engine()
 
