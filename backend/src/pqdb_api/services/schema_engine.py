@@ -585,3 +585,6 @@ def _build_table_response(
         "name": table.name,
         "columns": columns,
     }
+
+
+# ruff format applied
