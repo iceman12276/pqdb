@@ -463,8 +463,8 @@
         "Production build succeeds"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #22 merged. Real Postgres + Vault E2E tests. Found and fixed bytea bug. 6 tests, 407 total pass. CI green."
     }
   ]
 }
