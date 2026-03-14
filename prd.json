@@ -325,8 +325,8 @@
         "Production build succeeds"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Committed directly to main (bd34e94). Add/drop columns with shadow column management, 31 tests. 336 tests pass on main."
     },
     {
       "id": "US-015",
