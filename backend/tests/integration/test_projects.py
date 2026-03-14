@@ -8,7 +8,7 @@ The provisioner is mocked to avoid needing a real Postgres superuser.
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -23,6 +23,8 @@ from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.services.auth import generate_ed25519_keypair
 from pqdb_api.services.provisioner import DatabaseProvisioner, make_database_name
+from pqdb_api.services.rate_limiter import RateLimiter
+from pqdb_api.services.vault import VaultClient
 
 
 def _create_test_app(
@@ -67,6 +69,12 @@ def _create_test_app(
 
     mock_provisioner.provision = AsyncMock(side_effect=_mock_provision)
 
+    # Mock vault client
+    mock_vault = MagicMock(spec=VaultClient)
+    mock_vault.store_hmac_key = MagicMock()
+    mock_vault.get_hmac_key = MagicMock(return_value=b"\x00" * 32)
+    mock_vault.delete_hmac_key = MagicMock()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with engine.begin() as conn:
@@ -74,6 +82,8 @@ def _create_test_app(
         app.state.jwt_private_key = private_key
         app.state.jwt_public_key = public_key
         app.state.provisioner = mock_provisioner
+        app.state.vault_client = mock_vault
+        app.state.hmac_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
         yield
         await engine.dispose()
 

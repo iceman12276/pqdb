@@ -23,3 +23,17 @@ def test_settings_debug_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PQDB_DEBUG", "true")
     settings = Settings()
     assert settings.debug is True
+
+
+def test_settings_vault_defaults() -> None:
+    settings = Settings()
+    assert settings.vault_addr == "http://localhost:8200"
+    assert settings.vault_token == "dev-root-token"
+
+
+def test_settings_vault_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PQDB_VAULT_ADDR", "http://vault:8200")
+    monkeypatch.setenv("PQDB_VAULT_TOKEN", "custom-token")
+    settings = Settings()
+    assert settings.vault_addr == "http://vault:8200"
+    assert settings.vault_token == "custom-token"

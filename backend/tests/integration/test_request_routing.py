@@ -7,7 +7,7 @@ exercises API key middleware validation and project context resolution.
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -25,6 +25,8 @@ from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.services.auth import generate_ed25519_keypair
 from pqdb_api.services.provisioner import DatabaseProvisioner, make_database_name
+from pqdb_api.services.rate_limiter import RateLimiter
+from pqdb_api.services.vault import VaultClient
 
 
 def _create_test_app() -> FastAPI:
@@ -70,6 +72,12 @@ def _create_test_app() -> FastAPI:
 
         mock_provisioner.provision = AsyncMock(side_effect=_mock_provision)
         app.state.provisioner = mock_provisioner
+        mock_vault = MagicMock(spec=VaultClient)
+        mock_vault.store_hmac_key = MagicMock()
+        mock_vault.get_hmac_key = MagicMock(return_value=b"\x00" * 32)
+        mock_vault.delete_hmac_key = MagicMock()
+        app.state.vault_client = mock_vault
+        app.state.hmac_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
         yield
         await engine.dispose()
 

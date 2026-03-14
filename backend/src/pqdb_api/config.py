@@ -18,3 +18,6 @@ class Settings(BaseSettings):
     jwt_public_key_pem: str = ""
 
     superuser_dsn: str = "postgresql://postgres:postgres@localhost:5432/postgres"
+
+    vault_addr: str = "http://localhost:8200"
+    vault_token: str = "dev-root-token"

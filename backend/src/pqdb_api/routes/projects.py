@@ -1,5 +1,6 @@
-"""Project CRUD endpoints: create, list, get, delete."""
+"""Project CRUD endpoints: create, list, get, delete, HMAC key."""
 
+import secrets
 import uuid
 from datetime import datetime
 from typing import Any
@@ -15,6 +16,8 @@ from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.project import Project
 from pqdb_api.services.api_keys import create_project_keys
 from pqdb_api.services.provisioner import DatabaseProvisioner, ProvisioningError
+from pqdb_api.services.rate_limiter import RateLimiter
+from pqdb_api.services.vault import VaultClient, VaultError
 
 logger = structlog.get_logger()
 
@@ -99,6 +102,19 @@ async def create_project(
             error=str(exc),
         )
         project.status = "provisioning_failed"
+
+    # Generate and store HMAC key in Vault
+    if project.status == "active":
+        vault_client: VaultClient = request.app.state.vault_client
+        hmac_key = secrets.token_bytes(32)
+        try:
+            vault_client.store_hmac_key(project.id, hmac_key)
+        except VaultError as exc:
+            logger.error(
+                "hmac_key_storage_failed",
+                project_id=str(project.id),
+                error=str(exc),
+            )
 
     await session.commit()
     await session.refresh(project)
@@ -191,3 +207,52 @@ async def delete_project(
         developer_id=str(developer_id),
     )
     return _project_response(project)
+
+
+class HmacKeyResponse(BaseModel):
+    """Response body for HMAC key retrieval."""
+
+    hmac_key: str
+
+
+@router.get("/{project_id}/hmac-key", response_model=HmacKeyResponse)
+async def get_hmac_key(
+    project_id: uuid.UUID,
+    request: Request,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> HmacKeyResponse:
+    """Retrieve the HMAC key for a project.
+
+    Requires developer JWT. Rate-limited to 10 requests/minute per project.
+    """
+    # Verify project exists and belongs to the developer
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == developer_id,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Rate limiting
+    rate_limiter: RateLimiter = request.app.state.hmac_rate_limiter
+    if not rate_limiter.is_allowed(project_id):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Max 10 requests per minute.",
+        )
+
+    # Retrieve key from Vault
+    vault_client: VaultClient = request.app.state.vault_client
+    try:
+        key = vault_client.get_hmac_key(project_id)
+    except VaultError:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve HMAC key",
+        )
+
+    return HmacKeyResponse(hmac_key=key.hex())
