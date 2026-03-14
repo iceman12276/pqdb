@@ -16,3 +16,20 @@ export type {
   PqdbResponse,
 } from "./client/types.js";
 export { AuthClient } from "./client/auth.js";
+
+// Query builder exports
+export { column, defineTableSchema, ColumnDef } from "./query/schema.js";
+export type {
+  Sensitivity,
+  ColumnType,
+  SchemaColumns,
+  InferRow,
+  TableSchema,
+} from "./query/schema.js";
+export { QueryBuilder } from "./query/builder.js";
+export type {
+  FilterOp,
+  FilterClause,
+  OrderDirection,
+  QueryModifiers,
+} from "./query/types.js";
