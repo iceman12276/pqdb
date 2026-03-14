@@ -301,8 +301,8 @@
         "Production build succeeds"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #16 merged. Introspection endpoints with sensitivity/queryable/operations metadata, 28 tests. CI green."
     },
     {
       "id": "US-014",
