@@ -22,7 +22,9 @@ from pqdb_api.services.schema_engine import (
     ColumnDefinition,
     Sensitivity,
     TableDefinition,
+    add_column,
     create_table,
+    drop_column,
     get_table,
     list_tables,
 )
@@ -130,5 +132,58 @@ async def get_table_endpoint(
             status_code=404,
             detail=f"Table {table_name!r} not found",
         )
+
+    return result
+
+
+@router.post("/tables/{table_name}/columns", status_code=201)
+async def add_column_endpoint(
+    table_name: str,
+    body: ColumnSchema,
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, Any]:
+    """Add a column to an existing table with sensitivity declaration.
+
+    Creates physical shadow columns based on sensitivity level:
+    - plain: column as-is with declared SQL type
+    - private: {col}_encrypted (bytea)
+    - searchable: {col}_encrypted (bytea) + {col}_index (text)
+    """
+    try:
+        col_def = ColumnDefinition(
+            name=body.name,
+            data_type=body.data_type,
+            sensitivity=cast(Sensitivity, body.sensitivity),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        result = await add_column(session, table_name, col_def)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return result
+
+
+@router.delete("/tables/{table_name}/columns/{column_name}")
+async def drop_column_endpoint(
+    table_name: str,
+    column_name: str,
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, Any]:
+    """Drop a column from a table, including shadow columns.
+
+    Removes the physical column(s) and metadata atomically.
+    Cannot drop primary key (id) or reserved columns.
+    """
+    try:
+        result = await drop_column(session, table_name, column_name)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return result

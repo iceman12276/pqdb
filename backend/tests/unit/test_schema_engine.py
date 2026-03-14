@@ -11,6 +11,8 @@ import pytest
 from pqdb_api.services.schema_engine import (
     ColumnDefinition,
     TableDefinition,
+    build_add_column_sql,
+    build_drop_column_sql,
     build_physical_columns_sql,
     map_sensitivity_to_physical,
     validate_column_name,
@@ -285,3 +287,59 @@ class TestTableDefinition:
                     ColumnDefinition(name="email", data_type="text"),
                 ],
             )
+
+
+class TestBuildAddColumnSql:
+    """Test building ALTER TABLE ADD COLUMN DDL for schema migrations."""
+
+    def test_plain_column_produces_single_alter(self) -> None:
+        col = ColumnDefinition(name="age", data_type="integer", sensitivity="plain")
+        stmts = build_add_column_sql("users", col)
+        assert len(stmts) == 1
+        assert stmts[0] == 'ALTER TABLE "users" ADD COLUMN age integer'
+
+    def test_private_column_produces_encrypted_alter(self) -> None:
+        col = ColumnDefinition(name="ssn", data_type="text", sensitivity="private")
+        stmts = build_add_column_sql("users", col)
+        assert len(stmts) == 1
+        assert stmts[0] == 'ALTER TABLE "users" ADD COLUMN ssn_encrypted bytea'
+
+    def test_searchable_column_produces_two_alters(self) -> None:
+        col = ColumnDefinition(name="email", data_type="text", sensitivity="searchable")
+        stmts = build_add_column_sql("users", col)
+        assert len(stmts) == 2
+        assert stmts[0] == 'ALTER TABLE "users" ADD COLUMN email_encrypted bytea'
+        assert stmts[1] == 'ALTER TABLE "users" ADD COLUMN email_index text'
+
+    def test_validates_table_name(self) -> None:
+        col = ColumnDefinition(name="x", data_type="text", sensitivity="plain")
+        with pytest.raises(ValueError, match="Table name must not be empty"):
+            build_add_column_sql("", col)
+
+
+class TestBuildDropColumnSql:
+    """Test building ALTER TABLE DROP COLUMN DDL for schema migrations."""
+
+    def test_plain_column_produces_single_drop(self) -> None:
+        stmts = build_drop_column_sql("users", "age", "plain")
+        assert len(stmts) == 1
+        assert stmts[0] == 'ALTER TABLE "users" DROP COLUMN age'
+
+    def test_private_column_drops_encrypted(self) -> None:
+        stmts = build_drop_column_sql("users", "ssn", "private")
+        assert len(stmts) == 1
+        assert stmts[0] == 'ALTER TABLE "users" DROP COLUMN ssn_encrypted'
+
+    def test_searchable_column_drops_encrypted_and_index(self) -> None:
+        stmts = build_drop_column_sql("users", "email", "searchable")
+        assert len(stmts) == 2
+        assert stmts[0] == 'ALTER TABLE "users" DROP COLUMN email_encrypted'
+        assert stmts[1] == 'ALTER TABLE "users" DROP COLUMN email_index'
+
+    def test_validates_table_name(self) -> None:
+        with pytest.raises(ValueError, match="Table name must not be empty"):
+            build_drop_column_sql("", "x", "plain")
+
+    def test_validates_column_name(self) -> None:
+        with pytest.raises(ValueError, match="Column name must not be empty"):
+            build_drop_column_sql("users", "", "plain")
