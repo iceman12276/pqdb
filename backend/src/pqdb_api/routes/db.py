@@ -104,6 +104,7 @@ async def create_table_endpoint(
 
     return result
 
+
 @router.get("/tables")
 async def list_tables_endpoint(
     session: AsyncSession = Depends(get_project_session),
@@ -111,6 +112,7 @@ async def list_tables_endpoint(
     """List all tables in the project database with column metadata."""
     tables = await list_tables(session)
     return tables
+
 
 @router.get("/tables/{table_name}")
 async def get_table_endpoint(

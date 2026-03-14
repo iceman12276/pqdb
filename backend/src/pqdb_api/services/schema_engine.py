@@ -23,9 +23,7 @@ _RESERVED_COLUMN_NAMES = frozenset({"id", "created_at", "updated_at"})
 _RESERVED_SUFFIXES = ("_encrypted", "_index")
 
 Sensitivity = Literal["plain", "private", "searchable"]
-_VALID_SENSITIVITIES: frozenset[str] = frozenset(
-    {"plain", "private", "searchable"}
-)
+_VALID_SENSITIVITIES: frozenset[str] = frozenset({"plain", "private", "searchable"})
 
 # --- Static SQL statements (dialect-specific) -----------------------
 # All use literal table name "_pqdb_columns" (never user-controlled)
@@ -80,8 +78,7 @@ _SQL_INSERT_METADATA = _SAFE(
 )
 
 _SQL_DISTINCT_TABLES = _SAFE(
-    "SELECT DISTINCT table_name FROM _pqdb_columns "
-    "ORDER BY table_name"
+    "SELECT DISTINCT table_name FROM _pqdb_columns ORDER BY table_name"
 )
 
 _SQL_TABLE_COLUMNS = _SAFE(
@@ -114,10 +111,7 @@ def validate_table_name(name: str) -> str:
         raise ValueError(msg)
     for prefix in _RESERVED_PREFIXES:
         if name.startswith(prefix):
-            msg = (
-                f"Table name {name!r} is reserved "
-                f"(prefix {prefix!r})"
-            )
+            msg = f"Table name {name!r} is reserved (prefix {prefix!r})"
             raise ValueError(msg)
     return name
 
@@ -135,16 +129,11 @@ def validate_column_name(name: str) -> str:
         if name[0].isdigit():
             msg = f"Column name {name!r} must start with a letter"
             raise ValueError(msg)
-        msg = (
-            f"Column name {name!r} contains invalid characters"
-        )
+        msg = f"Column name {name!r} contains invalid characters"
         raise ValueError(msg)
     for suffix in _RESERVED_SUFFIXES:
         if name.endswith(suffix):
-            msg = (
-                f"Column name {name!r} uses reserved "
-                f"suffix {suffix!r}"
-            )
+            msg = f"Column name {name!r} uses reserved suffix {suffix!r}"
             raise ValueError(msg)
     return name
 
@@ -180,9 +169,7 @@ class TableDefinition:
         seen: set[str] = set()
         for col in self.columns:
             if col.name in seen:
-                raise ValueError(
-                    f"Duplicate column name: {col.name!r}"
-                )
+                raise ValueError(f"Duplicate column name: {col.name!r}")
             seen.add(col.name)
 
 
@@ -228,26 +215,16 @@ def build_physical_columns_sql(
             parts.append(f"{phys_name} {phys_type}")
 
     if sqlite:
-        parts.append(
-            "created_at TEXT NOT NULL DEFAULT (datetime('now'))"
-        )
-        parts.append(
-            "updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
-        )
+        parts.append("created_at TEXT NOT NULL DEFAULT (datetime('now'))")
+        parts.append("updated_at TEXT NOT NULL DEFAULT (datetime('now'))")
     else:
-        parts.append(
-            "created_at timestamptz NOT NULL DEFAULT now()"
-        )
-        parts.append(
-            "updated_at timestamptz NOT NULL DEFAULT now()"
-        )
+        parts.append("created_at timestamptz NOT NULL DEFAULT now()")
+        parts.append("updated_at timestamptz NOT NULL DEFAULT now()")
 
     return parts
 
 
-def _build_create_table_sql(
-    table_name: str, col_defs: list[str]
-) -> str:
+def _build_create_table_sql(table_name: str, col_defs: list[str]) -> str:
     """Build a CREATE TABLE DDL statement.
 
     Safety: table_name passes validate_table_name() which enforces
@@ -284,12 +261,8 @@ async def create_table(
     sqlite = _is_sqlite(session)
 
     # Check if table already exists
-    exists_sql = (
-        _SQL_TABLE_EXISTS_SQLITE if sqlite else _SQL_TABLE_EXISTS_PG
-    )
-    result = await session.execute(
-        exists_sql, {"name": table.name}
-    )
+    exists_sql = _SQL_TABLE_EXISTS_SQLITE if sqlite else _SQL_TABLE_EXISTS_PG
+    result = await session.execute(exists_sql, {"name": table.name})
     if result.scalar():
         raise ValueError(f"Table {table.name!r} already exists")
 
@@ -341,9 +314,7 @@ async def list_tables(
     return tables
 
 
-async def get_table(
-    session: AsyncSession, table_name: str
-) -> dict[str, object] | None:
+async def get_table(session: AsyncSession, table_name: str) -> dict[str, object] | None:
     """Get full schema for a table including sensitivity metadata."""
     validate_table_name(table_name)
     await ensure_metadata_table(session)
@@ -354,9 +325,7 @@ async def _get_table_metadata(
     session: AsyncSession, table_name: str
 ) -> dict[str, object] | None:
     """Load column metadata for a table from _pqdb_columns."""
-    result = await session.execute(
-        _SQL_TABLE_COLUMNS, {"name": table_name}
-    )
+    result = await session.execute(_SQL_TABLE_COLUMNS, {"name": table_name})
     rows = result.fetchall()
     if not rows:
         return None

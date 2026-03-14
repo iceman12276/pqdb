@@ -158,7 +158,11 @@ class TestCreateTableSensitiveColumns:
             json={
                 "name": "profiles",
                 "columns": [
-                    {"name": "display_name", "data_type": "text", "sensitivity": "plain"},
+                    {
+                        "name": "display_name",
+                        "data_type": "text",
+                        "sensitivity": "plain",
+                    },
                     {"name": "email", "data_type": "text", "sensitivity": "searchable"},
                     {"name": "ssn", "data_type": "text", "sensitivity": "private"},
                 ],
@@ -306,7 +310,11 @@ class TestGetTable:
             json={
                 "name": "fullmeta",
                 "columns": [
-                    {"name": "display_name", "data_type": "text", "sensitivity": "plain"},
+                    {
+                        "name": "display_name",
+                        "data_type": "text",
+                        "sensitivity": "plain",
+                    },
                     {"name": "ssn", "data_type": "text", "sensitivity": "private"},
                     {"name": "email", "data_type": "text", "sensitivity": "searchable"},
                 ],
