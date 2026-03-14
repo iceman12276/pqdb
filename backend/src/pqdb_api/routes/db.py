@@ -46,10 +46,7 @@ class ColumnSchema(BaseModel):
     @classmethod
     def validate_sensitivity(cls, v: str) -> str:
         if v not in ("plain", "private", "searchable"):
-            msg = (
-                "sensitivity must be 'plain', "
-                "'private', or 'searchable'"
-            )
+            msg = "sensitivity must be 'plain', 'private', or 'searchable'"
             raise ValueError(msg)
         return v
 
@@ -89,23 +86,23 @@ async def create_table_endpoint(
                 ColumnDefinition(
                     name=c.name,
                     data_type=c.data_type,
-                    sensitivity=cast(
-                        Sensitivity, c.sensitivity
-                    ),
+                    sensitivity=cast(Sensitivity, c.sensitivity),
                 )
                 for c in body.columns
             ],
         )
     except ValueError as exc:
         raise HTTPException(
-            status_code=400, detail=str(exc),
+            status_code=400,
+            detail=str(exc),
         ) from exc
 
     try:
         result = await create_table(session, table_def)
     except ValueError as exc:
         raise HTTPException(
-            status_code=409, detail=str(exc),
+            status_code=409,
+            detail=str(exc),
         ) from exc
 
     return result
@@ -130,7 +127,8 @@ async def get_table_endpoint(
         result = await get_table(session, table_name)
     except ValueError as exc:
         raise HTTPException(
-            status_code=400, detail=str(exc),
+            status_code=400,
+            detail=str(exc),
         ) from exc
 
     if result is None:
@@ -159,11 +157,13 @@ async def introspect_table_endpoint(
     """Introspect a single table with queryable info."""
     try:
         result = await introspect_table(
-            session, table_name,
+            session,
+            table_name,
         )
     except ValueError as exc:
         raise HTTPException(
-            status_code=400, detail=str(exc),
+            status_code=400,
+            detail=str(exc),
         ) from exc
 
     if result is None:

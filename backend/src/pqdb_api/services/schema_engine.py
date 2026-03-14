@@ -389,7 +389,13 @@ async def _get_table_metadata(
 
 
 _PLAIN_OPERATIONS: list[str] = [
-    "eq", "gt", "lt", "gte", "lte", "in", "between",
+    "eq",
+    "gt",
+    "lt",
+    "gte",
+    "lte",
+    "in",
+    "between",
 ]
 _SEARCHABLE_OPERATIONS: list[str] = ["eq", "in"]
 
@@ -415,9 +421,7 @@ def build_introspection_column(
         result["operations"] = list(_SEARCHABLE_OPERATIONS)
     else:  # private
         result["queryable"] = False
-        result["note"] = (
-            "retrieve only \u2014 no server-side filtering"
-        )
+        result["note"] = "retrieve only \u2014 no server-side filtering"
     return result
 
 
@@ -432,14 +436,18 @@ def build_introspection_table(
     """
     introspection_columns: list[dict[str, object]] = []
     summary: dict[str, int] = {
-        "searchable": 0, "private": 0, "plain": 0,
+        "searchable": 0,
+        "private": 0,
+        "plain": 0,
     }
     for col in columns:
         sensitivity = col["sensitivity"]
         summary[sensitivity] = summary.get(sensitivity, 0) + 1
         introspection_columns.append(
             build_introspection_column(
-                col["name"], col["data_type"], sensitivity,
+                col["name"],
+                col["data_type"],
+                sensitivity,
             )
         )
     return {
@@ -461,7 +469,8 @@ async def introspect_all_tables(
     tables: list[dict[str, object]] = []
     for name in table_names:
         table_result = await session.execute(
-            _SQL_TABLE_COLUMNS, {"name": name},
+            _SQL_TABLE_COLUMNS,
+            {"name": name},
         )
         rows = table_result.fetchall()
         columns = [
@@ -472,9 +481,7 @@ async def introspect_all_tables(
             }
             for r in rows
         ]
-        tables.append(
-            build_introspection_table(name, columns)
-        )
+        tables.append(build_introspection_table(name, columns))
 
     return tables
 
@@ -487,7 +494,8 @@ async def introspect_table(
     await ensure_metadata_table(session)
 
     result = await session.execute(
-        _SQL_TABLE_COLUMNS, {"name": table_name},
+        _SQL_TABLE_COLUMNS,
+        {"name": table_name},
     )
     rows = result.fetchall()
     if not rows:

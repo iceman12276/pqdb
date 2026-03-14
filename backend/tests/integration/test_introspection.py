@@ -34,7 +34,8 @@ def _create_test_app() -> FastAPI:
 
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragma(  # type: ignore[no-untyped-def]
-        dbapi_conn, connection_record,
+        dbapi_conn,
+        connection_record,
     ):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
@@ -53,9 +54,7 @@ def _create_test_app() -> FastAPI:
     app = FastAPI()
     app.include_router(health_router)
     app.include_router(db_router)
-    app.dependency_overrides[get_project_session] = (
-        _override
-    )
+    app.dependency_overrides[get_project_session] = _override
     return app
 
 
@@ -67,7 +66,8 @@ def client() -> Iterator[TestClient]:
 
 
 def _create_mixed_table(
-    client: TestClient, name: str = "users",
+    client: TestClient,
+    name: str = "users",
 ) -> None:
     """Helper to create a table with mixed sensitivity."""
     client.post(
@@ -99,14 +99,16 @@ class TestIntrospectRouteExists:
     """Verify introspection routes are registered."""
 
     def test_introspect_all_route_exists(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         resp = client.get("/v1/db/introspect")
         assert resp.status_code != 404
         assert resp.status_code != 405
 
     def test_introspect_table_route_exists(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         resp = client.get("/v1/db/introspect/anything")
         assert resp.status_code != 405
@@ -116,7 +118,8 @@ class TestIntrospectAllEmpty:
     """Test GET /v1/db/introspect with no tables."""
 
     def test_returns_empty_tables_list(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         resp = client.get("/v1/db/introspect")
         assert resp.status_code == 200
@@ -127,7 +130,8 @@ class TestIntrospectAllWithTables:
     """Test GET /v1/db/introspect after creating tables."""
 
     def test_returns_created_tables(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         _create_mixed_table(client)
         resp = client.get("/v1/db/introspect")
@@ -137,15 +141,14 @@ class TestIntrospectAllWithTables:
         assert data["tables"][0]["name"] == "users"
 
     def test_returns_correct_column_metadata(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         _create_mixed_table(client, "profiles")
         resp = client.get("/v1/db/introspect")
         data = resp.json()
         table = data["tables"][0]
-        col_map = {
-            c["name"]: c for c in table["columns"]
-        }
+        col_map = {c["name"]: c for c in table["columns"]}
 
         # plain column
         assert col_map["display_name"]["type"] == "text"
@@ -153,8 +156,13 @@ class TestIntrospectAllWithTables:
         assert s == "plain"
         assert col_map["display_name"]["queryable"] is True
         assert col_map["display_name"]["operations"] == [
-            "eq", "gt", "lt", "gte", "lte",
-            "in", "between",
+            "eq",
+            "gt",
+            "lt",
+            "gte",
+            "lte",
+            "in",
+            "between",
         ]
 
         # searchable column
@@ -162,7 +170,8 @@ class TestIntrospectAllWithTables:
         assert col_map["email"]["sensitivity"] == "searchable"
         assert col_map["email"]["queryable"] is True
         assert col_map["email"]["operations"] == [
-            "eq", "in",
+            "eq",
+            "in",
         ]
 
         # private column
@@ -175,7 +184,8 @@ class TestIntrospectAllWithTables:
         )
 
     def test_returns_sensitivity_summary(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         client.post(
             "/v1/db/tables",
@@ -211,7 +221,8 @@ class TestIntrospectAllWithTables:
         }
 
     def test_introspect_multiple_tables(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         client.post(
             "/v1/db/tables",
@@ -243,7 +254,8 @@ class TestIntrospectSingleTable:
     """Test GET /v1/db/introspect/{table_name}."""
 
     def test_introspect_existing_table(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         _create_mixed_table(client, "target")
         resp = client.get("/v1/db/introspect/target")
@@ -254,34 +266,41 @@ class TestIntrospectSingleTable:
         assert "sensitivity_summary" in data
 
     def test_nonexistent_table_returns_404(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         resp = client.get("/v1/db/introspect/missing")
         assert resp.status_code == 404
 
     def test_returns_full_metadata(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         _create_mixed_table(client, "fullmeta")
         resp = client.get("/v1/db/introspect/fullmeta")
         data = resp.json()
-        col_map = {
-            c["name"]: c for c in data["columns"]
-        }
+        col_map = {c["name"]: c for c in data["columns"]}
 
         assert col_map["display_name"]["queryable"] is True
         assert col_map["display_name"]["operations"] == [
-            "eq", "gt", "lt", "gte", "lte",
-            "in", "between",
+            "eq",
+            "gt",
+            "lt",
+            "gte",
+            "lte",
+            "in",
+            "between",
         ]
         assert col_map["ssn"]["queryable"] is False
         assert col_map["email"]["queryable"] is True
         assert col_map["email"]["operations"] == [
-            "eq", "in",
+            "eq",
+            "in",
         ]
 
     def test_sensitivity_summary(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         client.post(
             "/v1/db/tables",
@@ -316,7 +335,8 @@ class TestIntrospectSingleTable:
         }
 
     def test_invalid_table_name_returns_400(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         resp = client.get("/v1/db/introspect/1invalid")
         assert resp.status_code == 400
@@ -326,7 +346,8 @@ class TestHealthStillWorks:
     """Health check still works with introspect routes."""
 
     def test_health_returns_200(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         resp = client.get("/health")
         assert resp.status_code == 200

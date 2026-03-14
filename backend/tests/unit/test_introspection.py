@@ -19,68 +19,91 @@ class TestBuildIntrospectionColumn:
 
     def test_plain_column_is_queryable(self) -> None:
         col = build_introspection_column(
-            "age", "integer", "plain",
+            "age",
+            "integer",
+            "plain",
         )
         assert col["queryable"] is True
 
     def test_plain_column_operations(self) -> None:
         col = build_introspection_column(
-            "age", "integer", "plain",
+            "age",
+            "integer",
+            "plain",
         )
         assert col["operations"] == [
-            "eq", "gt", "lt", "gte", "lte",
-            "in", "between",
+            "eq",
+            "gt",
+            "lt",
+            "gte",
+            "lte",
+            "in",
+            "between",
         ]
 
     def test_plain_column_has_no_note(self) -> None:
         col = build_introspection_column(
-            "age", "integer", "plain",
+            "age",
+            "integer",
+            "plain",
         )
         assert "note" not in col
 
     def test_searchable_column_is_queryable(self) -> None:
         col = build_introspection_column(
-            "email", "text", "searchable",
+            "email",
+            "text",
+            "searchable",
         )
         assert col["queryable"] is True
 
     def test_searchable_column_operations(self) -> None:
         col = build_introspection_column(
-            "email", "text", "searchable",
+            "email",
+            "text",
+            "searchable",
         )
         assert col["operations"] == ["eq", "in"]
 
     def test_searchable_column_has_no_note(self) -> None:
         col = build_introspection_column(
-            "email", "text", "searchable",
+            "email",
+            "text",
+            "searchable",
         )
         assert "note" not in col
 
     def test_private_column_not_queryable(self) -> None:
         col = build_introspection_column(
-            "ssn", "text", "private",
+            "ssn",
+            "text",
+            "private",
         )
         assert col["queryable"] is False
 
     def test_private_column_no_operations(self) -> None:
         col = build_introspection_column(
-            "ssn", "text", "private",
+            "ssn",
+            "text",
+            "private",
         )
         assert "operations" not in col
 
     def test_private_column_has_note(self) -> None:
         col = build_introspection_column(
-            "ssn", "text", "private",
+            "ssn",
+            "text",
+            "private",
         )
-        assert col["note"] == (
-            "retrieve only \u2014 no server-side filtering"
-        )
+        assert col["note"] == ("retrieve only \u2014 no server-side filtering")
 
     def test_column_includes_name_type_sensitivity(
         self,
     ) -> None:
         col = build_introspection_column(
-            "email", "text", "searchable",
+            "email",
+            "text",
+            "searchable",
         )
         assert col["name"] == "email"
         assert col["type"] == "text"
@@ -114,9 +137,7 @@ class TestBuildIntrospectionTable:
             "private": 0,
             "plain": 1,
         }
-        cols: list[dict[str, Any]] = (
-            result["columns"]  # type: ignore[assignment]
-        )
+        cols: list[dict[str, Any]] = result["columns"]  # type: ignore[assignment]
         assert len(cols) == 1
         assert cols[0]["queryable"] is True
 
@@ -139,7 +160,8 @@ class TestBuildIntrospectionTable:
             },
         ]
         result = build_introspection_table(
-            "profiles", columns,
+            "profiles",
+            columns,
         )
         assert result["sensitivity_summary"] == {
             "searchable": 1,
@@ -191,15 +213,14 @@ class TestBuildIntrospectionTable:
             },
         ]
         result = build_introspection_table("users", columns)
-        cols: list[dict[str, Any]] = (
-            result["columns"]  # type: ignore[assignment]
-        )
+        cols: list[dict[str, Any]] = result["columns"]  # type: ignore[assignment]
         col_map = {c["name"]: c for c in cols}
 
         # searchable
         assert col_map["email"]["queryable"] is True
         assert col_map["email"]["operations"] == [
-            "eq", "in",
+            "eq",
+            "in",
         ]
 
         # private
@@ -211,6 +232,11 @@ class TestBuildIntrospectionTable:
         # plain
         assert col_map["age"]["queryable"] is True
         assert col_map["age"]["operations"] == [
-            "eq", "gt", "lt", "gte", "lte",
-            "in", "between",
+            "eq",
+            "gt",
+            "lt",
+            "gte",
+            "lte",
+            "in",
+            "between",
         ]
