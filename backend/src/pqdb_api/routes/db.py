@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +44,7 @@ from pqdb_api.services.schema_engine import (
     introspect_table,
     list_tables,
 )
+from pqdb_api.services.vault import VaultClient
 
 logger = structlog.get_logger()
 
@@ -221,6 +222,35 @@ async def db_health(
         "project_id": str(context.project_id),
         "role": context.key_role,
     }
+
+
+@router.get("/hmac-key")
+async def get_hmac_key_by_apikey(
+    request: Request,
+    context: ProjectContext = Depends(get_project_context),
+) -> dict[str, str]:
+    """Retrieve the HMAC key for the project identified by the API key.
+
+    This endpoint allows SDK clients to fetch the HMAC key using only
+    the ``apikey`` header, without needing a developer JWT or project ID.
+    Only ``service_role`` keys are allowed.
+    """
+    if context.key_role != "service":
+        raise HTTPException(
+            status_code=403,
+            detail="Only service_role API keys can retrieve HMAC keys",
+        )
+
+    vault_client: VaultClient = request.app.state.vault_client
+    try:
+        key = vault_client.get_hmac_key(context.project_id)
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve HMAC key",
+        )
+
+    return {"hmac_key": key.hex()}
 
 
 @router.post("/tables", status_code=201)

@@ -5,10 +5,20 @@ import {
   transformFilters,
   validateFilterOperations,
 } from "../../src/query/crypto-transform.js";
-import { deriveKeyPair } from "../../src/crypto/encryption.js";
+import { deriveKeyPair, encrypt } from "../../src/crypto/encryption.js";
+import { computeBlindIndex } from "../../src/crypto/blind-index.js";
 import { generateHmacKey } from "../../src/crypto/hmac.js";
 import { column, defineTableSchema } from "../../src/query/schema.js";
 import type { FilterClause } from "../../src/query/types.js";
+
+/** Encode binary ciphertext as base64. */
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
 
 const usersSchema = defineTableSchema("users", {
   id: column.uuid().primaryKey(),
@@ -18,7 +28,7 @@ const usersSchema = defineTableSchema("users", {
 });
 
 describe("transformInsertRows", () => {
-  it("maps searchable columns to _encrypted and _index shadow columns", async () => {
+  it("sends searchable columns under the logical name plus _index", async () => {
     const kp = await deriveKeyPair("test-key");
     const hmacKey = generateHmacKey();
 
@@ -29,18 +39,17 @@ describe("transformInsertRows", () => {
     expect(transformed).toHaveLength(1);
     const row = transformed[0];
 
-    // Original searchable column should be removed
-    expect(row).not.toHaveProperty("email");
-    // Shadow columns should be present
-    expect(row).toHaveProperty("email_encrypted");
+    // Logical column name contains the ciphertext (backend maps to _encrypted)
+    expect(row).toHaveProperty("email");
+    expect(typeof row.email).toBe("string");
+    expect(row.email).not.toBe("alice@example.com"); // encrypted, not plaintext
+    // Blind index column is sent directly
     expect(row).toHaveProperty("email_index");
-    // email_encrypted should be a base64 string (for JSON serialization)
-    expect(typeof row.email_encrypted).toBe("string");
     // email_index should be a hex string (64 chars for SHA3-256)
     expect(row.email_index).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("maps private columns to _encrypted shadow column only", async () => {
+  it("sends private columns under the logical name only", async () => {
     const kp = await deriveKeyPair("test-key");
     const hmacKey = generateHmacKey();
 
@@ -49,13 +58,12 @@ describe("transformInsertRows", () => {
     const transformed = await transformInsertRows(rows, usersSchema, kp, hmacKey);
     const row = transformed[0];
 
-    // Original private column should be removed
-    expect(row).not.toHaveProperty("name");
-    // Should have encrypted column
-    expect(row).toHaveProperty("name_encrypted");
-    // Should NOT have index column
+    // Logical column name contains the ciphertext (backend maps to _encrypted)
+    expect(row).toHaveProperty("name");
+    expect(typeof row.name).toBe("string");
+    expect(row.name).not.toBe("Alice"); // encrypted, not plaintext
+    // Should NOT have index column for private
     expect(row).not.toHaveProperty("name_index");
-    expect(typeof row.name_encrypted).toBe("string");
   });
 
   it("passes plain columns through unchanged", async () => {
@@ -84,13 +92,11 @@ describe("transformInsertRows", () => {
     const transformed = await transformInsertRows(rows, usersSchema, kp, hmacKey);
     expect(transformed).toHaveLength(2);
 
-    // Both should have shadow columns
+    // Both should have logical column names (ciphertext) and _index
     for (const row of transformed) {
-      expect(row).toHaveProperty("email_encrypted");
+      expect(row).toHaveProperty("email"); // ciphertext under logical name
       expect(row).toHaveProperty("email_index");
-      expect(row).toHaveProperty("name_encrypted");
-      expect(row).not.toHaveProperty("email");
-      expect(row).not.toHaveProperty("name");
+      expect(row).toHaveProperty("name"); // ciphertext under logical name
     }
   });
 
@@ -108,7 +114,7 @@ describe("transformInsertRows", () => {
     // Same email → same blind index
     expect(transformed[0].email_index).toBe(transformed[1].email_index);
     // But different ciphertexts (randomized encryption)
-    expect(transformed[0].email_encrypted).not.toBe(transformed[1].email_encrypted);
+    expect(transformed[0].email).not.toBe(transformed[1].email);
   });
 });
 
@@ -117,12 +123,20 @@ describe("transformSelectResponse", () => {
     const kp = await deriveKeyPair("test-key");
     const hmacKey = generateHmacKey();
 
-    // First, encrypt some data
-    const original = [{ id: "1", email: "alice@example.com", name: "Alice", age: 30 }];
-    const encrypted = await transformInsertRows(original, usersSchema, kp, hmacKey);
+    // Simulate server response: backend returns _encrypted and _index columns
+    const emailCt = await encrypt("alice@example.com", kp.publicKey);
+    const nameCt = await encrypt("Alice", kp.publicKey);
+    const serverResponse = [
+      {
+        id: "1",
+        email_encrypted: toBase64(emailCt),
+        email_index: computeBlindIndex("alice@example.com", hmacKey),
+        name_encrypted: toBase64(nameCt),
+        age: 30,
+      },
+    ];
 
-    // Now decrypt it (as if the server returned it)
-    const decrypted = await transformSelectResponse(encrypted, usersSchema, kp.secretKey);
+    const decrypted = await transformSelectResponse(serverResponse, usersSchema, kp.secretKey);
 
     expect(decrypted).toHaveLength(1);
     const row = decrypted[0];
@@ -143,13 +157,30 @@ describe("transformSelectResponse", () => {
     const kp = await deriveKeyPair("test-key");
     const hmacKey = generateHmacKey();
 
-    const original = [
-      { id: "1", email: "alice@example.com", name: "Alice", age: 30 },
-      { id: "2", email: "bob@example.com", name: "Bob", age: 25 },
+    // Simulate server responses
+    const aliceEmailCt = await encrypt("alice@example.com", kp.publicKey);
+    const bobEmailCt = await encrypt("bob@example.com", kp.publicKey);
+    const aliceNameCt = await encrypt("Alice", kp.publicKey);
+    const bobNameCt = await encrypt("Bob", kp.publicKey);
+
+    const serverResponse = [
+      {
+        id: "1",
+        email_encrypted: toBase64(aliceEmailCt),
+        email_index: computeBlindIndex("alice@example.com", hmacKey),
+        name_encrypted: toBase64(aliceNameCt),
+        age: 30,
+      },
+      {
+        id: "2",
+        email_encrypted: toBase64(bobEmailCt),
+        email_index: computeBlindIndex("bob@example.com", hmacKey),
+        name_encrypted: toBase64(bobNameCt),
+        age: 25,
+      },
     ];
 
-    const encrypted = await transformInsertRows(original, usersSchema, kp, hmacKey);
-    const decrypted = await transformSelectResponse(encrypted, usersSchema, kp.secretKey);
+    const decrypted = await transformSelectResponse(serverResponse, usersSchema, kp.secretKey);
 
     expect(decrypted).toHaveLength(2);
     expect(decrypted[0].email).toBe("alice@example.com");
@@ -158,7 +189,7 @@ describe("transformSelectResponse", () => {
 });
 
 describe("transformFilters", () => {
-  it("rewrites .eq() on searchable column to use _index", () => {
+  it("hashes .eq() values on searchable columns for blind index lookup", () => {
     const hmacKey = generateHmacKey();
     const filters: FilterClause[] = [
       { column: "email", op: "eq", value: "alice@example.com" },
@@ -167,14 +198,15 @@ describe("transformFilters", () => {
     const transformed = transformFilters(filters, usersSchema, hmacKey);
 
     expect(transformed).toHaveLength(1);
-    expect(transformed[0].column).toBe("email_index");
+    // Column name stays logical — backend maps to _index
+    expect(transformed[0].column).toBe("email");
     expect(transformed[0].op).toBe("eq");
     // Value should be a hex hash, not plaintext
     expect(transformed[0].value).toMatch(/^[0-9a-f]{64}$/);
     expect(transformed[0].value).not.toBe("alice@example.com");
   });
 
-  it("rewrites .in() on searchable column to use _index with hashed values", () => {
+  it("hashes .in() values on searchable columns for blind index lookup", () => {
     const hmacKey = generateHmacKey();
     const filters: FilterClause[] = [
       { column: "email", op: "in", value: ["a@x.com", "b@x.com"] },
@@ -183,7 +215,8 @@ describe("transformFilters", () => {
     const transformed = transformFilters(filters, usersSchema, hmacKey);
 
     expect(transformed).toHaveLength(1);
-    expect(transformed[0].column).toBe("email_index");
+    // Column name stays logical — backend maps to _index
+    expect(transformed[0].column).toBe("email");
     expect(transformed[0].op).toBe("in");
     const values = transformed[0].value as string[];
     expect(values).toHaveLength(2);

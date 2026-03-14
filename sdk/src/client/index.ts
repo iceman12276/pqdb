@@ -65,7 +65,7 @@ export function createClient(
 
             const result = await http.request<{ hmac_key: string }>({
               method: "GET",
-              path: "/v1/projects/hmac-key",
+              path: "/v1/db/hmac-key",
             });
 
             if (result.error) {

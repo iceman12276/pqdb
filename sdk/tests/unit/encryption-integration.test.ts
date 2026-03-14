@@ -56,7 +56,7 @@ describe("SDK encryption integration", () => {
     // First call should be HMAC key retrieval
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [hmacUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(hmacUrl).toContain("/v1/projects/hmac-key");
+    expect(hmacUrl).toContain("/v1/db/hmac-key");
 
     // Second call should be the insert
     const [insertUrl, insertInit] = fetchMock.mock.calls[1] as [string, RequestInit];
@@ -64,14 +64,14 @@ describe("SDK encryption integration", () => {
     const body = JSON.parse(insertInit.body as string);
     const row = body.rows[0];
 
-    // Original sensitive columns should NOT be present
-    expect(row).not.toHaveProperty("email");
-    expect(row).not.toHaveProperty("name");
+    // Logical column names should contain ciphertext (backend maps to _encrypted)
+    expect(row).toHaveProperty("email");
+    expect(row.email).not.toBe("alice@example.com"); // encrypted, not plaintext
+    expect(row).toHaveProperty("name");
+    expect(row.name).not.toBe("Alice"); // encrypted, not plaintext
 
-    // Shadow columns should be present
-    expect(row).toHaveProperty("email_encrypted");
+    // Blind index should be present for searchable columns
     expect(row).toHaveProperty("email_index");
-    expect(row).toHaveProperty("name_encrypted");
     expect(row).not.toHaveProperty("name_index");
 
     // Plain columns should pass through
@@ -114,9 +114,9 @@ describe("SDK encryption integration", () => {
     const [, selectInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     const body = JSON.parse(selectInit.body as string);
 
-    // Filter should be rewritten
+    // Filter value should be hashed, column name stays logical
     expect(body.filters).toHaveLength(1);
-    expect(body.filters[0].column).toBe("email_index");
+    expect(body.filters[0].column).toBe("email");
     expect(body.filters[0].op).toBe("eq");
     expect(body.filters[0].value).toBe(
       computeBlindIndex("alice@example.com", TEST_HMAC_KEY),

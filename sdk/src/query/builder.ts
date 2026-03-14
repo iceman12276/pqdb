@@ -24,6 +24,25 @@ import {
 type QueryOp = "select" | "insert" | "update" | "delete";
 
 /**
+ * Unwrap backend response envelope.
+ *
+ * The backend wraps all CRUD responses in `{"data": [...]}`.
+ * If the response has this shape, return the inner array;
+ * otherwise return the value as-is (for backwards compat with mocks).
+ */
+function unwrapDataEnvelope<T>(value: unknown): T {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "data" in (value as Record<string, unknown>)
+  ) {
+    return (value as Record<string, unknown>).data as T;
+  }
+  return value as T;
+}
+
+/**
  * Check whether a schema contains any sensitive (searchable or private) columns.
  */
 function hasSensitiveColumns<S extends SchemaColumns>(schema: TableSchema<S>): boolean {
@@ -144,11 +163,15 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
     // If no sensitive columns, skip all crypto transforms
     if (!sensitive) {
       const body = this.buildBody(this.filters);
-      return this.http.request<Row[]>({
+      const result = await this.http.request<Row[]>({
         method: "POST",
         path: `/v1/db/${this.tableName}/${this.op}`,
         body,
       });
+      if (result.data) {
+        return { data: unwrapDataEnvelope<Row[]>(result.data), error: null };
+      }
+      return result;
     }
 
     // Sensitive columns exist — require crypto context
@@ -206,17 +229,22 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
         body,
       });
 
+      if (!result.data) return result;
+
+      // Unwrap backend {data: [...]} envelope
+      const rows = unwrapDataEnvelope<Row[]>(result.data);
+
       // Decrypt response for select
-      if (this.op === "select" && result.data) {
+      if (this.op === "select") {
         const decryptedData = await transformSelectResponse(
-          result.data as unknown as Record<string, unknown>[],
+          rows as unknown as Record<string, unknown>[],
           this.schema,
           keyPair.secretKey,
         );
         return { data: decryptedData as Row[], error: null };
       }
 
-      return result;
+      return { data: rows, error: null };
     } catch (err) {
       return {
         data: null,
@@ -284,7 +312,7 @@ export class QueryBuilder<S extends SchemaColumns> {
 
   /** Build a SELECT query. Optionally specify columns to select. */
   select(...columns: (keyof S & string)[]): ExecutableQuery<InferRow<S>, S> {
-    const cols = columns.length > 0 ? columns : "*";
+    const cols = columns.length > 0 ? columns : ["*"];
     return new ExecutableQuery<InferRow<S>, S>(
       this.http,
       this.schema.name,

@@ -46,7 +46,7 @@ describe("QueryBuilder.select", () => {
     expect(url).toBe("http://localhost:3000/v1/db/users/select");
     expect(init.method).toBe("POST");
     const body = JSON.parse(init.body as string);
-    expect(body.columns).toBe("*");
+    expect(body.columns).toEqual(["*"]);
     expect(body.filters).toEqual([]);
     expect(body.modifiers).toEqual({});
   });
