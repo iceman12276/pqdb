@@ -115,6 +115,7 @@ async def create_project(
                 project_id=str(project.id),
                 error=str(exc),
             )
+            project.status = "hmac_failed"
 
     await session.commit()
     await session.refresh(project)
