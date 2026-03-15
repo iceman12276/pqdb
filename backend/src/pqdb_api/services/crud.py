@@ -390,3 +390,27 @@ def validate_owner_for_insert(
 
     if str(row[owner_col]) != str(user_id):
         raise CrudError(f"Owner column {owner_col!r} must match authenticated user")
+
+
+def validate_owner_for_update(
+    *,
+    updates: dict[str, Any],
+    columns_meta: list[dict[str, Any]],
+    key_role: str,
+    user_id: uuid.UUID | None,
+) -> None:
+    """Validate that update values do not change the owner column.
+
+    - service role: no validation (admin can reassign ownership)
+    - anon role + owner column in updates: reject unconditionally
+    - no owner column in table: no validation
+    """
+    owner_col = _find_owner_column(columns_meta)
+    if owner_col is None:
+        return
+
+    if key_role == "service":
+        return
+
+    if owner_col in updates:
+        raise CrudError("Cannot change owner column")

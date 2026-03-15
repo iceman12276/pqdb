@@ -446,6 +446,91 @@ class TestRlsUpdateDeleteIsolation:
             assert resp.json()["data"][0]["title"] == "B item"
 
 
+class TestRlsUpdateOwnerEscalation:
+    """Anon user cannot change owner column value on UPDATE."""
+
+    def test_anon_update_owner_column_to_different_user_rejected(
+        self, test_db_url: str
+    ) -> None:
+        """Anon tries to transfer row ownership to another user — must get 403."""
+        user_a = uuid.uuid4()
+        user_b = uuid.uuid4()
+        project_id = uuid.uuid4()
+
+        # Service role creates table and inserts a row for user_a
+        svc_app = _make_rls_app(test_db_url, key_role="service", project_id=project_id)
+        with TestClient(svc_app) as svc:
+            _create_owner_table(svc)
+            svc.post(
+                "/v1/db/items/insert",
+                json={"rows": [{"title": "A item", "user_id": str(user_a)}]},
+            )
+
+        # User A (anon) tries to change user_id to user_b
+        anon_app = _make_rls_app(
+            test_db_url, key_role="anon", user_id=user_a, project_id=project_id
+        )
+        with TestClient(anon_app) as anon:
+            resp = anon.post(
+                "/v1/db/items/update",
+                json={
+                    "values": {"user_id": str(user_b)},
+                    "filters": [{"column": "title", "op": "eq", "value": "A item"}],
+                },
+            )
+            assert resp.status_code == 403
+            assert "Cannot change owner column" in resp.json()["detail"]
+
+    def test_anon_update_owner_to_same_value_rejected(self, test_db_url: str) -> None:
+        """Even setting owner to the same user_id is rejected."""
+        user_a = uuid.uuid4()
+        project_id = uuid.uuid4()
+
+        svc_app = _make_rls_app(test_db_url, key_role="service", project_id=project_id)
+        with TestClient(svc_app) as svc:
+            _create_owner_table(svc)
+            svc.post(
+                "/v1/db/items/insert",
+                json={"rows": [{"title": "A item", "user_id": str(user_a)}]},
+            )
+
+        anon_app = _make_rls_app(
+            test_db_url, key_role="anon", user_id=user_a, project_id=project_id
+        )
+        with TestClient(anon_app) as anon:
+            resp = anon.post(
+                "/v1/db/items/update",
+                json={
+                    "values": {"user_id": str(user_a)},
+                    "filters": [{"column": "title", "op": "eq", "value": "A item"}],
+                },
+            )
+            assert resp.status_code == 403
+
+    def test_service_role_can_update_owner_column(self, test_db_url: str) -> None:
+        """Service role can reassign ownership (admin operation)."""
+        user_a = uuid.uuid4()
+        user_b = uuid.uuid4()
+        project_id = uuid.uuid4()
+
+        svc_app = _make_rls_app(test_db_url, key_role="service", project_id=project_id)
+        with TestClient(svc_app) as svc:
+            _create_owner_table(svc)
+            svc.post(
+                "/v1/db/items/insert",
+                json={"rows": [{"title": "A item", "user_id": str(user_a)}]},
+            )
+            resp = svc.post(
+                "/v1/db/items/update",
+                json={
+                    "values": {"user_id": str(user_b)},
+                    "filters": [{"column": "title", "op": "eq", "value": "A item"}],
+                },
+            )
+            assert resp.status_code == 200
+            assert resp.json()["data"][0]["user_id"] == str(user_b)
+
+
 class TestRlsNoUserContext:
     """Anon without user context on owner table returns 403."""
 

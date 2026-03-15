@@ -33,6 +33,7 @@ from pqdb_api.services.crud import (
     validate_columns_for_insert,
     validate_filter_column,
     validate_owner_for_insert,
+    validate_owner_for_update,
 )
 from pqdb_api.services.schema_engine import (
     ColumnDefinition,
@@ -561,6 +562,17 @@ async def update_rows(
                 physical_updates[physical_col] = val
     except CrudError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Reject owner column changes for non-service roles
+    try:
+        validate_owner_for_update(
+            updates=body.values,
+            columns_meta=columns_meta,
+            key_role=context.key_role,
+            user_id=user.user_id if user else None,
+        )
+    except CrudError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     # Parse filters
     try:

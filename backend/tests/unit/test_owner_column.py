@@ -21,6 +21,7 @@ from pqdb_api.services.crud import (
     build_select_sql,
     inject_rls_filters,
     validate_owner_for_insert,
+    validate_owner_for_update,
 )
 from pqdb_api.services.schema_engine import (
     ColumnDefinition,
@@ -253,6 +254,67 @@ class TestValidateOwnerForInsert:
         row = {"display_name": "Alice", "age": 30}
         validate_owner_for_insert(
             row=row,
+            columns_meta=COLUMNS_WITHOUT_OWNER,
+            key_role="anon",
+            user_id=uuid.uuid4(),
+        )
+
+
+class TestValidateOwnerForUpdate:
+    """validate_owner_for_update prevents changing owner column on non-service roles."""
+
+    def test_anon_update_with_owner_column_rejected(self) -> None:
+        """Anon user cannot include owner column in update values."""
+        user_id = uuid.uuid4()
+        updates = {"display_name": "New Name", "user_id": str(uuid.uuid4())}
+        with pytest.raises(CrudError, match="Cannot change owner column"):
+            validate_owner_for_update(
+                updates=updates,
+                columns_meta=COLUMNS_WITH_OWNER,
+                key_role="anon",
+                user_id=user_id,
+            )
+
+    def test_anon_update_owner_to_same_value_rejected(self) -> None:
+        """Even setting owner to same user_id is rejected — simplest safe policy."""
+        user_id = uuid.uuid4()
+        updates = {"user_id": str(user_id)}
+        with pytest.raises(CrudError, match="Cannot change owner column"):
+            validate_owner_for_update(
+                updates=updates,
+                columns_meta=COLUMNS_WITH_OWNER,
+                key_role="anon",
+                user_id=user_id,
+            )
+
+    def test_anon_update_without_owner_column_ok(self) -> None:
+        """Anon user can update non-owner columns freely."""
+        user_id = uuid.uuid4()
+        updates = {"display_name": "New Name", "age": 25}
+        # Should not raise
+        validate_owner_for_update(
+            updates=updates,
+            columns_meta=COLUMNS_WITH_OWNER,
+            key_role="anon",
+            user_id=user_id,
+        )
+
+    def test_service_role_can_update_owner_column(self) -> None:
+        """Service role can change owner column (admin operation)."""
+        updates = {"user_id": str(uuid.uuid4())}
+        # Should not raise
+        validate_owner_for_update(
+            updates=updates,
+            columns_meta=COLUMNS_WITH_OWNER,
+            key_role="service",
+            user_id=None,
+        )
+
+    def test_no_owner_column_no_validation(self) -> None:
+        """Tables without owner column skip validation entirely."""
+        updates = {"display_name": "Test"}
+        validate_owner_for_update(
+            updates=updates,
             columns_meta=COLUMNS_WITHOUT_OWNER,
             key_role="anon",
             user_id=uuid.uuid4(),
