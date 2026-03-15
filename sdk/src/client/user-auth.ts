@@ -22,6 +22,7 @@ export class UserAuthClient {
   private readonly http: HttpClient;
   private userAccessToken: string | null = null;
   private userRefreshToken: string | null = null;
+  private userId: string | null = null;
 
   constructor(http: HttpClient) {
     this.http = http;
@@ -37,6 +38,7 @@ export class UserAuthClient {
     if (result.data) {
       this.userAccessToken = result.data.access_token;
       this.userRefreshToken = result.data.refresh_token;
+      this.userId = result.data.user.id;
     }
 
     return result;
@@ -52,6 +54,7 @@ export class UserAuthClient {
     if (result.data) {
       this.userAccessToken = result.data.access_token;
       this.userRefreshToken = result.data.refresh_token;
+      this.userId = result.data.user.id;
     }
 
     return result;
@@ -67,6 +70,7 @@ export class UserAuthClient {
     // Clear tokens regardless of server response
     this.userAccessToken = null;
     this.userRefreshToken = null;
+    this.userId = null;
 
     return result;
   }
@@ -84,6 +88,11 @@ export class UserAuthClient {
       path: "/v1/auth/users/me",
       body: data,
     });
+  }
+
+  /** Get the current user's ID, or null if not signed in. */
+  getUserId(): string | null {
+    return this.userId;
   }
 
   /**
