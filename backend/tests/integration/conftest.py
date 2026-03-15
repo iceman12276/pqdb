@@ -226,25 +226,31 @@ def _clean_tables(test_db_name: str, test_db_url: str) -> Iterator[None]:
                     capture_output=True,
                 )
 
-    # Drop the _pqdb_columns metadata table
-    subprocess.run(
-        [
-            "psql",
-            "-h",
-            PG_HOST,
-            "-p",
-            str(PG_PORT),
-            "-U",
-            PG_USER,
-            "-d",
-            db_name,
-            "-c",
-            "DROP TABLE IF EXISTS _pqdb_columns CASCADE",
-        ],
-        env=env,
-        check=False,
-        capture_output=True,
-    )
+    # Drop the _pqdb_ internal tables
+    for internal_table in [
+        "_pqdb_sessions",
+        "_pqdb_users",
+        "_pqdb_auth_settings",
+        "_pqdb_columns",
+    ]:
+        subprocess.run(
+            [
+                "psql",
+                "-h",
+                PG_HOST,
+                "-p",
+                str(PG_PORT),
+                "-U",
+                PG_USER,
+                "-d",
+                db_name,
+                "-c",
+                f"DROP TABLE IF EXISTS {internal_table} CASCADE",
+            ],
+            env=env,
+            check=False,
+            capture_output=True,
+        )
 
     # 2. Truncate platform tables using a short-lived engine
     loop = asyncio.new_event_loop()
