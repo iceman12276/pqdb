@@ -17,7 +17,7 @@ from pqdb_api.models.project import Project
 from pqdb_api.services.api_keys import create_project_keys
 from pqdb_api.services.provisioner import DatabaseProvisioner, ProvisioningError
 from pqdb_api.services.rate_limiter import RateLimiter
-from pqdb_api.services.vault import VaultClient, VaultError
+from pqdb_api.services.vault import VaultClient, VaultError, VersionedHmacKeys
 
 logger = structlog.get_logger()
 
@@ -211,9 +211,10 @@ async def delete_project(
 
 
 class HmacKeyResponse(BaseModel):
-    """Response body for HMAC key retrieval."""
+    """Response body for HMAC key retrieval (versioned)."""
 
-    hmac_key: str
+    current_version: int
+    keys: dict[str, str]
 
 
 @router.get("/{project_id}/hmac-key", response_model=HmacKeyResponse)
@@ -223,9 +224,10 @@ async def get_hmac_key(
     developer_id: uuid.UUID = Depends(get_current_developer_id),
     session: AsyncSession = Depends(get_session),
 ) -> HmacKeyResponse:
-    """Retrieve the HMAC key for a project.
+    """Retrieve all HMAC keys for a project with version metadata.
 
     Requires developer JWT. Rate-limited to 10 requests/minute per project.
+    Returns all active keys so the SDK can decrypt data encrypted with any version.
     """
     # Verify project exists and belongs to the developer
     result = await session.execute(
@@ -246,14 +248,17 @@ async def get_hmac_key(
             detail="Rate limit exceeded. Max 10 requests per minute.",
         )
 
-    # Retrieve key from Vault
+    # Retrieve all keys from Vault
     vault_client: VaultClient = request.app.state.vault_client
     try:
-        key = vault_client.get_hmac_key(project_id)
+        versioned_keys: VersionedHmacKeys = vault_client.get_hmac_keys(project_id)
     except VaultError:
         raise HTTPException(
             status_code=500,
             detail="Failed to retrieve HMAC key",
         )
 
-    return HmacKeyResponse(hmac_key=key.hex())
+    return HmacKeyResponse(
+        current_version=versioned_keys.current_version,
+        keys=versioned_keys.keys,
+    )

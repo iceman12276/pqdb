@@ -315,11 +315,22 @@ def _make_platform_app(
             raise VaultError("Key not found")
         return key
 
+    def _mock_get_keys(project_id: uuid.UUID) -> Any:
+        from pqdb_api.services.vault import VersionedHmacKeys
+
+        key = stored_keys.get(str(project_id))
+        if key is None:
+            from pqdb_api.services.vault import VaultError
+
+            raise VaultError("Key not found")
+        return VersionedHmacKeys(current_version=1, keys={"1": key.hex()})
+
     def _mock_delete(project_id: uuid.UUID) -> None:
         stored_keys.pop(str(project_id), None)
 
     mock_vault.store_hmac_key = MagicMock(side_effect=_mock_store)
     mock_vault.get_hmac_key = MagicMock(side_effect=_mock_get)
+    mock_vault.get_hmac_keys = MagicMock(side_effect=_mock_get_keys)
     mock_vault.delete_hmac_key = MagicMock(side_effect=_mock_delete)
 
     from pqdb_api.config import Settings
