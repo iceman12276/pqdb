@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from pqdb_api.services.auth_engine import (
+    AuthEngineError,
     ensure_auth_tables,
     get_auth_settings,
     update_auth_settings,
@@ -173,6 +174,35 @@ class TestGetAuthSettings:
             settings = await get_auth_settings(session)
             assert settings is not None
             assert settings["password_min_length"] == 8
+
+    @pytest.mark.asyncio()
+    async def test_raises_runtime_error_when_row_missing(
+        self, session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """get_auth_settings raises RuntimeError if settings row is missing."""
+        from unittest.mock import AsyncMock, patch
+
+        async with session_factory() as session:
+            await ensure_auth_tables(session)
+            # Delete the settings row to simulate corruption
+            await session.execute(text("DELETE FROM _pqdb_auth_settings"))
+            await session.commit()
+            # Patch ensure_auth_tables to no-op so it doesn't re-insert the row
+            with patch(
+                "pqdb_api.services.auth_engine.ensure_auth_tables",
+                new_callable=AsyncMock,
+            ):
+                with pytest.raises(RuntimeError, match="Auth settings row missing"):
+                    await get_auth_settings(session)
+
+
+class TestAuthEngineError:
+    """Tests for AuthEngineError exception class."""
+
+    def test_auth_engine_error_is_exception(self) -> None:
+        err = AuthEngineError("test")
+        assert isinstance(err, Exception)
+        assert str(err) == "test"
 
 
 class TestUpdateAuthSettings:

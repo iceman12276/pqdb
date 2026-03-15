@@ -17,6 +17,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import jwt
+import pydantic
 import structlog
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -25,6 +27,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pqdb_api.middleware.api_key import (
@@ -55,14 +58,14 @@ class UserSignupRequest(BaseModel):
     """Request body for user signup."""
 
     email: EmailStr
-    password: str
+    password: str = pydantic.Field(max_length=1024)
 
 
 class UserLoginRequest(BaseModel):
     """Request body for user login."""
 
     email: EmailStr
-    password: str
+    password: str = pydantic.Field(max_length=1024)
 
 
 class UserLogoutRequest(BaseModel):
@@ -120,10 +123,11 @@ def _get_user_auth_service(request: Request) -> UserAuthService:
 
 
 def _get_client_ip(request: Request) -> str:
-    """Extract client IP for rate limiting."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Extract client IP for rate limiting.
+
+    Uses request.client.host only — does NOT trust X-Forwarded-For
+    because it can be spoofed by clients to bypass rate limiting.
+    """
     client = request.client
     if client:
         return client.host
@@ -179,7 +183,9 @@ async def _get_current_user(
 
     try:
         payload = service.decode_user_token(token, expected_type="user_access")
-    except Exception:
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    except (jwt.PyJWTError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # Verify project_id matches the apikey project
@@ -287,7 +293,11 @@ async def user_signup(
         },
     )
 
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Email already registered")
 
     logger.info(
         "user_signup",
@@ -410,8 +420,14 @@ async def user_logout(
         payload = service.decode_user_token(
             body.refresh_token, expected_type="user_refresh"
         )
-    except Exception:
+    except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+    except (jwt.PyJWTError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    # Verify project_id matches the apikey project
+    if payload.get("project_id") != str(context.project_id):
+        raise HTTPException(status_code=401, detail="Token does not match project")
 
     # Find and revoke matching session
     result = await session.execute(
@@ -467,8 +483,14 @@ async def user_refresh(
         payload = service.decode_user_token(
             body.refresh_token, expected_type="user_refresh"
         )
-    except Exception:
+    except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    except (jwt.PyJWTError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    # Verify project_id matches the apikey project
+    if payload.get("project_id") != str(context.project_id):
+        raise HTTPException(status_code=401, detail="Token does not match project")
 
     user_id = payload["sub"]
 

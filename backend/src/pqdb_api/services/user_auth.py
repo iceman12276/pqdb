@@ -110,11 +110,15 @@ class UserAuthService:
             raise ValueError(f"Invalid token type: expected {expected_type}")
         return payload
 
-    def validate_password(self, password: str, *, min_length: int = 8) -> None:
-        """Validate password meets minimum length requirement.
+    def validate_password(
+        self, password: str, *, min_length: int = 8, max_length: int = 1024
+    ) -> None:
+        """Validate password meets length requirements.
 
-        Raises ValueError if password is too short.
+        Raises ValueError if password is too short or too long.
         """
+        if len(password) > max_length:
+            raise ValueError(f"Password must not exceed {max_length} characters")
         if len(password) < min_length:
             raise ValueError(f"Password must be at least {min_length} characters")
 
