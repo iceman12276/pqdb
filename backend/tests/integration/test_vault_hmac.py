@@ -2,7 +2,7 @@
 
 Boots the real FastAPI app with a real Postgres database, mocked provisioner,
 and mock VaultClient. Exercises HMAC key storage on project creation and
-retrieval via endpoint.
+retrieval via endpoint with versioned response format.
 """
 
 import uuid
@@ -55,22 +55,25 @@ class TestHmacKeyStoredOnProjectCreation:
         assert resp.status_code == 201
         project_id = resp.json()["id"]
 
-        # HMAC key should be retrievable
+        # HMAC key should be retrievable in versioned format
         hmac_resp = client.get(
             f"/v1/projects/{project_id}/hmac-key",
             headers=auth_headers(token),
         )
         assert hmac_resp.status_code == 200
         data = hmac_resp.json()
-        assert "hmac_key" in data
+        assert "current_version" in data
+        assert data["current_version"] == 1
+        assert "keys" in data
+        assert "1" in data["keys"]
         # Key should be 256-bit (32 bytes = 64 hex chars)
-        assert len(data["hmac_key"]) == 64
+        assert len(data["keys"]["1"]) == 64
 
 
 class TestGetHmacKey:
-    """Tests for GET /v1/projects/{id}/hmac-key."""
+    """Tests for GET /v1/projects/{id}/hmac-key — versioned response."""
 
-    def test_get_hmac_key_returns_key(self, client: TestClient) -> None:
+    def test_get_hmac_key_returns_versioned_keys(self, client: TestClient) -> None:
         token = signup_and_get_token(client)
         create_resp = client.post(
             "/v1/projects",
@@ -85,8 +88,11 @@ class TestGetHmacKey:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "hmac_key" in data
-        assert isinstance(data["hmac_key"], str)
+        assert "current_version" in data
+        assert isinstance(data["current_version"], int)
+        assert "keys" in data
+        assert isinstance(data["keys"], dict)
+        assert len(data["keys"]) >= 1
 
     def test_get_hmac_key_nonexistent_project_returns_404(
         self, client: TestClient
@@ -132,7 +138,8 @@ class TestGetHmacKey:
             f"/v1/projects/{project_id}/hmac-key",
             headers=auth_headers(token),
         )
-        assert resp1.json()["hmac_key"] == resp2.json()["hmac_key"]
+        assert resp1.json()["keys"] == resp2.json()["keys"]
+        assert resp1.json()["current_version"] == resp2.json()["current_version"]
 
 
 class TestHmacKeyRateLimiting:
