@@ -124,7 +124,7 @@ class TestBuildIntrospectionTable:
         }
 
     def test_single_plain_column(self) -> None:
-        columns = [
+        columns: list[dict[str, object]] = [
             {
                 "name": "age",
                 "data_type": "integer",
@@ -142,7 +142,7 @@ class TestBuildIntrospectionTable:
         assert cols[0]["queryable"] is True
 
     def test_mixed_sensitivity_summary(self) -> None:
-        columns = [
+        columns: list[dict[str, object]] = [
             {
                 "name": "display_name",
                 "data_type": "text",
@@ -170,7 +170,7 @@ class TestBuildIntrospectionTable:
         }
 
     def test_multiple_same_sensitivity(self) -> None:
-        columns = [
+        columns: list[dict[str, object]] = [
             {
                 "name": "name",
                 "data_type": "text",
@@ -195,7 +195,7 @@ class TestBuildIntrospectionTable:
         }
 
     def test_columns_have_correct_structure(self) -> None:
-        columns = [
+        columns: list[dict[str, object]] = [
             {
                 "name": "email",
                 "data_type": "text",

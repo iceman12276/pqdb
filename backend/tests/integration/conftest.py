@@ -438,8 +438,11 @@ def _make_project_app(test_db_url: str) -> FastAPI:
     """Build a minimal test app for project-scoped endpoints.
 
     Creates its own engine inside the lifespan so it runs on
-    the TestClient's event loop.
+    the TestClient's event loop. Uses service role by default so
+    CRUD endpoints work without user auth (no RLS filtering).
     """
+    from pqdb_api.middleware.api_key import ProjectContext, get_project_context
+    from pqdb_api.middleware.user_auth import get_current_user
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -452,7 +455,19 @@ def _make_project_app(test_db_url: str) -> FastAPI:
             async with session_factory() as session:
                 yield session
 
+        async def _override_project_context() -> ProjectContext:
+            return ProjectContext(
+                project_id=uuid.uuid4(),
+                key_role="service",
+                database_name="test",
+            )
+
+        async def _override_current_user() -> None:
+            return None
+
         app.dependency_overrides[get_project_session] = _override_get_project_session
+        app.dependency_overrides[get_project_context] = _override_project_context
+        app.dependency_overrides[get_current_user] = _override_current_user
         yield
         await engine.dispose()
 

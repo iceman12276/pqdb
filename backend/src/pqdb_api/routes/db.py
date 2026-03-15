@@ -20,6 +20,7 @@ from pqdb_api.middleware.api_key import (
     get_project_context,
     get_project_session,
 )
+from pqdb_api.middleware.user_auth import UserContext, get_current_user
 from pqdb_api.services.crud import (
     CrudError,
     FilterOp,
@@ -27,9 +28,11 @@ from pqdb_api.services.crud import (
     build_insert_sql,
     build_select_sql,
     build_update_sql,
+    inject_rls_filters,
     resolve_physical_column,
     validate_columns_for_insert,
     validate_filter_column,
+    validate_owner_for_insert,
 )
 from pqdb_api.services.schema_engine import (
     ColumnDefinition,
@@ -60,6 +63,7 @@ class ColumnSchema(BaseModel):
     name: str
     data_type: str
     sensitivity: str = "plain"
+    owner: bool = False
 
     @field_validator("sensitivity")
     @classmethod
@@ -134,16 +138,16 @@ class DeleteRequest(BaseModel):
 
 async def _get_column_meta(
     session: AsyncSession, table_name: str
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """Load column metadata for a table from _pqdb_columns.
 
     Raises HTTPException 404 if the table does not exist.
-    Returns list of dicts with keys: name, sensitivity, data_type.
+    Returns list of dicts with keys: name, sensitivity, data_type, is_owner.
     """
     await ensure_metadata_table(session)
     result = await session.execute(
         text(
-            "SELECT column_name, sensitivity, data_type "
+            "SELECT column_name, sensitivity, data_type, is_owner "
             "FROM _pqdb_columns WHERE table_name = :name ORDER BY id"
         ),
         {"name": table_name},
@@ -159,6 +163,7 @@ async def _get_column_meta(
             "name": r[0],
             "sensitivity": r[1],
             "data_type": r[2],
+            "is_owner": bool(r[3]),
         }
         for r in rows
     ]
@@ -269,6 +274,7 @@ async def create_table_endpoint(
                     name=c.name,
                     data_type=c.data_type,
                     sensitivity=cast(Sensitivity, c.sensitivity),
+                    is_owner=c.owner,
                 )
                 for c in body.columns
             ],
@@ -373,6 +379,7 @@ async def add_column_endpoint(
             name=body.name,
             data_type=body.data_type,
             sensitivity=cast(Sensitivity, body.sensitivity),
+            is_owner=body.owner,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -420,11 +427,14 @@ async def insert_rows(
     table_name: str,
     body: InsertRequest,
     session: AsyncSession = Depends(get_project_session),
+    context: ProjectContext = Depends(get_project_context),
+    user: UserContext | None = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Insert rows into a project table.
 
     The SDK sends data with shadow column names already applied
     (_encrypted, _index suffixes). The server validates and stores as-is.
+    RLS: anon role must set owner column to authenticated user_id.
     """
     columns_meta = await _get_column_meta(session, table_name)
 
@@ -434,6 +444,12 @@ async def insert_rows(
     try:
         inserted: list[dict[str, Any]] = []
         for row in body.rows:
+            validate_owner_for_insert(
+                row=row,
+                columns_meta=columns_meta,
+                key_role=context.key_role,
+                user_id=user.user_id if user else None,
+            )
             physical_row = validate_columns_for_insert(row, columns_meta)
             sql, params = build_insert_sql(table_name, physical_row)
             result = await session.execute(text(sql), params)
@@ -441,6 +457,8 @@ async def insert_rows(
         await session.commit()
     except CrudError as exc:
         await session.rollback()
+        if "User context required" in str(exc):
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         await session.rollback()
@@ -460,11 +478,14 @@ async def select_rows(
     table_name: str,
     body: SelectRequest,
     session: AsyncSession = Depends(get_project_session),
+    context: ProjectContext = Depends(get_project_context),
+    user: UserContext | None = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Select rows from a project table.
 
     Supports filtering by blind index (eq, in) and plain columns
     (eq, gt, lt, gte, lte, in). Private columns are not filterable.
+    RLS: anon role only sees rows where owner column matches user_id.
     """
     columns_meta = await _get_column_meta(session, table_name)
 
@@ -473,6 +494,17 @@ async def select_rows(
         filters = _parse_filters(body.filters, columns_meta)
     except HTTPException:
         raise
+
+    # Inject RLS filters
+    try:
+        filters = inject_rls_filters(
+            filters=filters,
+            columns_meta=columns_meta,
+            key_role=context.key_role,
+            user_id=user.user_id if user else None,
+        )
+    except CrudError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     # Build order_by as list of tuples
     order_by: list[tuple[str, str]] | None = None
@@ -503,11 +535,14 @@ async def update_rows(
     table_name: str,
     body: UpdateRequest,
     session: AsyncSession = Depends(get_project_session),
+    context: ProjectContext = Depends(get_project_context),
+    user: UserContext | None = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Update rows in a project table.
 
     Matches rows via filters (typically blind index), updates the
     specified columns. Returns updated rows.
+    RLS: anon role can only update own rows (WHERE owner_col = user_id).
     """
     columns_meta = await _get_column_meta(session, table_name)
 
@@ -532,6 +567,17 @@ async def update_rows(
         filters = _parse_filters(body.filters, columns_meta)
     except HTTPException:
         raise
+
+    # Inject RLS filters
+    try:
+        filters = inject_rls_filters(
+            filters=filters,
+            columns_meta=columns_meta,
+            key_role=context.key_role,
+            user_id=user.user_id if user else None,
+        )
+    except CrudError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     try:
         sql, params = build_update_sql(
@@ -564,11 +610,14 @@ async def delete_rows(
     table_name: str,
     body: DeleteRequest,
     session: AsyncSession = Depends(get_project_session),
+    context: ProjectContext = Depends(get_project_context),
+    user: UserContext | None = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Delete rows from a project table.
 
     Requires at least one filter to prevent accidental full-table deletion.
     Returns deleted rows.
+    RLS: anon role can only delete own rows (WHERE owner_col = user_id).
     """
     columns_meta = await _get_column_meta(session, table_name)
 
@@ -577,6 +626,17 @@ async def delete_rows(
         filters = _parse_filters(body.filters, columns_meta)
     except HTTPException:
         raise
+
+    # Inject RLS filters
+    try:
+        filters = inject_rls_filters(
+            filters=filters,
+            columns_meta=columns_meta,
+            key_role=context.key_role,
+            user_id=user.user_id if user else None,
+        )
+    except CrudError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     try:
         sql, params = build_delete_sql(
