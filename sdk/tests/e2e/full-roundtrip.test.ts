@@ -306,7 +306,7 @@ describe("E2E: full SDK round-trip", () => {
     expect(phoneEnc).not.toBe("+1-555-0100");
     // Blind index is an HMAC hex hash — definitely not the email
     expect(emailIdx).not.toBe("alice@example.com");
-    expect(emailIdx).toMatch(/^[0-9a-f]{64}$/); // 32-byte HMAC as hex
+    expect(emailIdx).toMatch(/^v\d+:[0-9a-f]{64}$/); // version-prefixed HMAC blind index
 
     // Plain column should pass through
     expect(rawRow.nickname).toBe("Ali");
