@@ -206,9 +206,7 @@ class TestRotateHmacKeyRoute:
         assert "2" in data["keys"]
         assert len(data["keys"]["2"]) == 64
 
-    def test_rotate_nonexistent_project_returns_404(
-        self, client: TestClient
-    ) -> None:
+    def test_rotate_nonexistent_project_returns_404(self, client: TestClient) -> None:
         token = signup_and_get_token(client)
         resp = client.post(
             f"/v1/projects/{uuid.uuid4()}/hmac-key/rotate",
