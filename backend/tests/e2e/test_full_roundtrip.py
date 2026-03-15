@@ -103,14 +103,17 @@ class TestPlatformFlow:
         resp = await client.get("/v1/db/health", headers={"apikey": service_key})
         assert resp.status_code == 200
 
-        # 5. HMAC key retrievable from Vault
+        # 5. HMAC key retrievable from Vault (versioned format)
         resp = await client.get(
             f"/v1/projects/{project_id}/hmac-key",
             headers=auth_headers(token),
         )
         assert resp.status_code == 200
-        hmac_hex = resp.json()["hmac_key"]
-        assert len(bytes.fromhex(hmac_hex)) == 32
+        hmac_data = resp.json()
+        assert "current_version" in hmac_data
+        assert "keys" in hmac_data
+        current_key = hmac_data["keys"][str(hmac_data["current_version"])]
+        assert len(bytes.fromhex(current_key)) == 32
 
 
 # ---------------------------------------------------------------------------
@@ -214,12 +217,13 @@ class TestInsertSelect:
         anon_key = _get_anon_key(keys)
         api_headers: dict[str, str] = {"apikey": anon_key}
 
-        # Get HMAC key from Vault
+        # Get HMAC key from Vault (versioned format)
         resp = await client.get(
             f"/v1/projects/{project_id}/hmac-key",
             headers=auth_headers(token),
         )
-        hmac_key = bytes.fromhex(resp.json()["hmac_key"])
+        hmac_data = resp.json()
+        hmac_key = bytes.fromhex(hmac_data["keys"][str(hmac_data["current_version"])])
 
         # Create table
         resp = await client.post(
@@ -318,12 +322,13 @@ class TestZeroKnowledge:
         anon_key = _get_anon_key(keys)
         api_headers: dict[str, str] = {"apikey": anon_key}
 
-        # Get HMAC key
+        # Get HMAC key (versioned format)
         resp = await client.get(
             f"/v1/projects/{project_id}/hmac-key",
             headers=auth_headers(token),
         )
-        hmac_key = bytes.fromhex(resp.json()["hmac_key"])
+        hmac_data = resp.json()
+        hmac_key = bytes.fromhex(hmac_data["keys"][str(hmac_data["current_version"])])
 
         # Create table + insert
         await client.post(
@@ -422,12 +427,13 @@ class TestUpdateDelete:
         anon_key = _get_anon_key(keys)
         api_headers: dict[str, str] = {"apikey": anon_key}
 
-        # Get HMAC key
+        # Get HMAC key (versioned format)
         resp = await client.get(
             f"/v1/projects/{project_id}/hmac-key",
             headers=auth_headers(token),
         )
-        hmac_key = bytes.fromhex(resp.json()["hmac_key"])
+        hmac_data = resp.json()
+        hmac_key = bytes.fromhex(hmac_data["keys"][str(hmac_data["current_version"])])
 
         # Create table
         await client.post(
