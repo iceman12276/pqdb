@@ -1,4 +1,4 @@
-"""Project CRUD endpoints: create, list, get, delete, HMAC key."""
+"""Project CRUD endpoints: create, list, get, delete, HMAC key, reindex."""
 
 import secrets
 import uuid
@@ -9,14 +9,22 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+)
 
 from pqdb_api.database import get_session
+from pqdb_api.middleware.api_key import (
+    _build_project_database_url,
+    _get_or_create_engine,
+)
 from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.project import Project
 from pqdb_api.services.api_keys import create_project_keys
 from pqdb_api.services.provisioner import DatabaseProvisioner, ProvisioningError
 from pqdb_api.services.rate_limiter import RateLimiter
+from pqdb_api.services.reindex import ReindexError, get_latest_job_status, start_reindex
 from pqdb_api.services.vault import VaultClient, VaultError, VersionedHmacKeys
 
 logger = structlog.get_logger()
@@ -311,3 +319,127 @@ async def rotate_hmac_key(
         previous_version=previous_version,
         current_version=versioned_keys.current_version,
     )
+
+
+async def _get_project_session(request: Request, project: Project) -> AsyncSession:
+    """Create a session connected to the project's database."""
+    assert project.database_name is not None
+    settings = request.app.state.settings
+    db_name: str = project.database_name
+    project_db_url = _build_project_database_url(settings.database_url, db_name)
+    engine = _get_or_create_engine(request.app.state, project_db_url, db_name)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    return factory()
+
+
+@router.post("/{project_id}/reindex", status_code=202)
+async def start_reindex_endpoint(
+    project_id: uuid.UUID,
+    request: Request,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Start a background re-indexing job for a project.
+
+    Re-computes all blind indexes using the current HMAC key version.
+    Requires developer JWT (project owner only).
+    Returns 409 if a job is already running.
+    """
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == developer_id,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.database_name is None:
+        raise HTTPException(status_code=400, detail="Project not provisioned")
+
+    vault_client: VaultClient = request.app.state.vault_client
+    project_session = await _get_project_session(request, project)
+    try:
+        job_result = await start_reindex(project_session, project_id, vault_client)
+        return job_result
+    except ReindexError as exc:
+        if "conflict" in str(exc).lower():
+            raise HTTPException(
+                status_code=409,
+                detail="A re-index job is already running",
+            )
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        await project_session.close()
+
+
+@router.get("/{project_id}/reindex/status")
+async def get_reindex_status(
+    project_id: uuid.UUID,
+    request: Request,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Get the status of the latest re-indexing job for a project."""
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == developer_id,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.database_name is None:
+        raise HTTPException(status_code=400, detail="Project not provisioned")
+
+    project_session = await _get_project_session(request, project)
+    try:
+        status = await get_latest_job_status(project_session)
+        if status is None:
+            raise HTTPException(
+                status_code=404,
+                detail="No re-index jobs found",
+            )
+        return status
+    finally:
+        await project_session.close()
+
+
+@router.delete("/{project_id}/hmac-key/versions/{version}")
+async def delete_hmac_key_version(
+    project_id: uuid.UUID,
+    version: int,
+    request: Request,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Delete an old HMAC key version after successful re-indexing.
+
+    Cannot delete the current version. Requires developer JWT (project owner only).
+    """
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == developer_id,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    vault_client: VaultClient = request.app.state.vault_client
+    try:
+        updated_keys = vault_client.delete_hmac_key_version(project_id, version)
+    except VaultError as exc:
+        msg = str(exc)
+        if "Cannot delete current" in msg:
+            raise HTTPException(status_code=400, detail=msg)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=404, detail=msg)
+        raise HTTPException(status_code=500, detail=msg)
+
+    return {
+        "current_version": updated_keys.current_version,
+        "remaining_versions": list(updated_keys.keys.keys()),
+    }
