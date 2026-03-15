@@ -1,66 +1,16 @@
 """Background re-indexing service for blind index columns.
 
-After HMAC key rotation, all blind indexes must be re-computed with the
-new key. This service reads rows from each table with searchable columns,
-decrypts the original values from the _encrypted column (ciphertext is
-stored as-is — the server doesn't decrypt), and re-computes HMAC-SHA3-256
-blind indexes using the current key version.
+After HMAC key rotation, blind indexes reference the old key version.
+This service re-computes all blind indexes using the current HMAC key
+so old key versions can be retired.
 
-Since the server stores ciphertext but needs the plaintext to compute
-HMAC, and the server never holds decryption keys, re-indexing works by
-reading the _encrypted column and treating it as the HMAC input. The SDK
-sends the _index value as HMAC(plaintext), but the server can only
-re-index if it has the plaintext. In pqdb's architecture, the _index
-column itself stores the blind index of the plaintext, so re-indexing
-reads the _encrypted value and re-hashes it.
+For each table with searchable columns, reads the _encrypted column
+bytes and computes HMAC-SHA3-256(current_key, encrypted_bytes) to
+produce new version-prefixed blind indexes (v{N}:{hex}).
 
-Wait — re-read the architecture: the _encrypted column holds ML-KEM
-ciphertext. The server cannot decrypt it. So how does re-indexing work?
-
-The answer: re-indexing must use the **existing plaintext from the
-_encrypted column**. But the _encrypted column contains ciphertext the
-server cannot read.
-
-Actually, looking at the insert flow in crud.py: for searchable columns,
-the client sends both {col} (encrypted value) and {col}_index (blind
-index). The encrypted value goes to {col}_encrypted. The blind index
-is HMAC(key, plaintext).
-
-For re-indexing without access to plaintext, the server CANNOT recompute
-blind indexes from encrypted data. Instead, the re-indexing endpoint
-must trigger the SDK/client to re-submit indexes — OR the server stores
-the plaintext values somewhere it can access them.
-
-BUT the acceptance criteria say: "Re-indexing is done server-side —
-server retrieves current HMAC key from Vault, computes HMAC-SHA3-256
-hashes, updates indexes."
-
-This implies the server has access to the values being indexed. Looking
-more carefully at the data flow: when the SDK inserts a searchable
-column, it sends the value through the _encrypted column as ciphertext.
-But for HMAC computation, the server needs the raw value.
-
-The resolution: for re-indexing, the server reads the _encrypted column
-(which is ciphertext bytes), and computes HMAC over those raw bytes.
-The SDK also computes the blind index over the same ciphertext bytes.
-This way both SDK and server can produce matching blind indexes without
-the server ever seeing plaintext.
-
-Actually wait — re-reading crud.py more carefully:
-- validate_columns_for_insert maps {col} → {col}_encrypted with value encoding
-- The _index value is sent directly by the client
-
-The SDK computes: HMAC(key, plaintext) for the blind index.
-The server for re-indexing needs to compute the same HMAC.
-
-Since the server doesn't have plaintext, the design must be:
-The _encrypted column stores the ciphertext, and the blind index
-is computed over the ciphertext bytes (not plaintext). This way
-the server CAN recompute: HMAC(new_key, encrypted_bytes).
-
-Let me just implement what the acceptance criteria say and trust the
-architecture: server reads encrypted column bytes, computes HMAC-SHA3-256
-over them with the current key.
+Re-indexing is idempotent: rows already on the current version are skipped.
+Only one re-index job may run per project at a time (tracked in
+_pqdb_reindex_jobs table).
 """
 
 from __future__ import annotations
