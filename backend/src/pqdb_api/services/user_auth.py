@@ -87,6 +87,7 @@ class UserAuthService:
             "sub": str(user_id),
             "project_id": str(project_id),
             "type": "user_refresh",
+            "jti": str(uuid.uuid4()),
             "iat": now,
             "exp": now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
         }
@@ -115,9 +116,7 @@ class UserAuthService:
         Raises ValueError if password is too short.
         """
         if len(password) < min_length:
-            raise ValueError(
-                f"Password must be at least {min_length} characters"
-            )
+            raise ValueError(f"Password must be at least {min_length} characters")
 
     def hash_refresh_token(self, token: str) -> str:
         """Hash a refresh token for storage using argon2id."""

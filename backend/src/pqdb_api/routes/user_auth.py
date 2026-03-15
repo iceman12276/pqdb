@@ -193,7 +193,10 @@ async def _get_current_user(
     # Look up user in project database
     await ensure_auth_tables(session)
     result = await session.execute(
-        _SAFE("SELECT id, email, role, email_verified, metadata FROM _pqdb_users WHERE id = :uid"),
+        _SAFE(
+            "SELECT id, email, role, email_verified, metadata "
+            "FROM _pqdb_users WHERE id = :uid"
+        ),
         {"uid": user_id},
     )
     row = result.fetchone()
@@ -222,7 +225,9 @@ async def user_signup(
     """Register a new end-user in the project database."""
     # Rate limiting: 10 signups/min per IP
     ip = _get_client_ip(request)
-    _check_rate_limit(request, key_prefix=_SIGNUP_LIMITER_PREFIX, ip=ip, max_requests=10)
+    _check_rate_limit(
+        request, key_prefix=_SIGNUP_LIMITER_PREFIX, ip=ip, max_requests=10
+    )
 
     await ensure_auth_tables(session)
 
@@ -423,16 +428,16 @@ async def user_logout(
         session_id, token_hash = row[0], row[1]
         if service.verify_refresh_token(token_hash, body.refresh_token):
             await session.execute(
-                _SAFE(
-                    "UPDATE _pqdb_sessions SET revoked = true WHERE id = :id"
-                ),
+                _SAFE("UPDATE _pqdb_sessions SET revoked = true WHERE id = :id"),
                 {"id": str(session_id)},
             )
             revoked = True
             break
 
     if not revoked:
-        raise HTTPException(status_code=401, detail="Refresh token not found or already revoked")
+        raise HTTPException(
+            status_code=401, detail="Refresh token not found or already revoked"
+        )
 
     await session.commit()
 
@@ -490,22 +495,16 @@ async def user_refresh(
                             status_code=401, detail="Refresh token expired"
                         )
                 elif expires_at < datetime.now(UTC):
-                    raise HTTPException(
-                        status_code=401, detail="Refresh token expired"
-                    )
+                    raise HTTPException(status_code=401, detail="Refresh token expired")
             matched = True
             break
 
     if not matched:
-        raise HTTPException(
-            status_code=401, detail="Invalid or revoked refresh token"
-        )
+        raise HTTPException(status_code=401, detail="Invalid or revoked refresh token")
 
     # Look up user to get current role and email_verified status
     user_result = await session.execute(
-        _SAFE(
-            "SELECT role, email_verified FROM _pqdb_users WHERE id = :uid"
-        ),
+        _SAFE("SELECT role, email_verified FROM _pqdb_users WHERE id = :uid"),
         {"uid": user_id},
     )
     user_row = user_result.fetchone()
@@ -549,7 +548,7 @@ async def update_user_profile(
 
     await session.execute(
         _SAFE(
-            "UPDATE _pqdb_users SET metadata = :metadata::jsonb, "
+            "UPDATE _pqdb_users SET metadata = CAST(:metadata AS jsonb), "
             "updated_at = now() WHERE id = :uid"
         ),
         {"metadata": metadata_json, "uid": user_id},
