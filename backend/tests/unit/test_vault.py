@@ -266,6 +266,185 @@ class TestVersionedHmacKeys:
         assert keys.keys == {"1": "aa", "2": "bb"}
 
 
+class TestRotateHmacKey:
+    """Tests for VaultClient.rotate_hmac_key — generates new key, bumps version."""
+
+    def test_rotate_adds_new_key_and_bumps_version(self) -> None:
+        """Rotating from v1 should produce v2 as current, keeping v1."""
+        with patch("pqdb_api.services.vault.hvac.Client") as mock_hvac:
+            mock_client_instance = MagicMock()
+            mock_hvac.return_value = mock_client_instance
+
+            key1_hex = "ab" * 32
+            mock_client_instance.secrets.kv.v2.read_secret_version.return_value = {
+                "data": {
+                    "data": {
+                        "current_version": 1,
+                        "keys": {
+                            "1": {
+                                "key": key1_hex,
+                                "created_at": "2026-01-01T00:00:00Z",
+                            }
+                        },
+                    }
+                }
+            }
+
+            client = VaultClient(
+                vault_addr="http://localhost:8200",
+                vault_token="test-token",
+            )
+
+            project_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
+            result = client.rotate_hmac_key(project_id)
+
+            assert result.current_version == 2
+            assert "1" in result.keys
+            assert "2" in result.keys
+            assert result.keys["1"] == key1_hex
+            # New key should be 64 hex chars (32 bytes)
+            assert len(result.keys["2"]) == 64
+            assert result.keys["2"] != key1_hex
+
+            # Verify write-back to Vault
+            write_call = (
+                mock_client_instance.secrets.kv.v2.create_or_update_secret.call_args
+            )
+            secret = write_call.kwargs["secret"]
+            assert secret["current_version"] == 2
+            assert "1" in secret["keys"]
+            assert "2" in secret["keys"]
+
+    def test_rotate_returns_versioned_hmac_keys(self) -> None:
+        """rotate_hmac_key should return VersionedHmacKeys dataclass."""
+        with patch("pqdb_api.services.vault.hvac.Client") as mock_hvac:
+            mock_client_instance = MagicMock()
+            mock_hvac.return_value = mock_client_instance
+
+            mock_client_instance.secrets.kv.v2.read_secret_version.return_value = {
+                "data": {
+                    "data": {
+                        "current_version": 1,
+                        "keys": {
+                            "1": {
+                                "key": "aa" * 32,
+                                "created_at": "2026-01-01T00:00:00Z",
+                            }
+                        },
+                    }
+                }
+            }
+
+            client = VaultClient(
+                vault_addr="http://localhost:8200",
+                vault_token="test-token",
+            )
+
+            project_id = uuid.uuid4()
+            result = client.rotate_hmac_key(project_id)
+            assert isinstance(result, VersionedHmacKeys)
+
+    def test_rotate_raises_vault_error_on_read_failure(self) -> None:
+        with patch("pqdb_api.services.vault.hvac.Client") as mock_hvac:
+            mock_client_instance = MagicMock()
+            mock_hvac.return_value = mock_client_instance
+            mock_client_instance.secrets.kv.v2.read_secret_version.side_effect = (
+                Exception("connection refused")
+            )
+
+            client = VaultClient(
+                vault_addr="http://localhost:8200",
+                vault_token="test-token",
+            )
+
+            project_id = uuid.uuid4()
+            with pytest.raises(VaultError, match="Failed to rotate HMAC key"):
+                client.rotate_hmac_key(project_id)
+
+    def test_rotate_raises_vault_error_on_write_failure(self) -> None:
+        with patch("pqdb_api.services.vault.hvac.Client") as mock_hvac:
+            mock_client_instance = MagicMock()
+            mock_hvac.return_value = mock_client_instance
+
+            mock_client_instance.secrets.kv.v2.read_secret_version.return_value = {
+                "data": {
+                    "data": {
+                        "current_version": 1,
+                        "keys": {
+                            "1": {
+                                "key": "aa" * 32,
+                                "created_at": "2026-01-01T00:00:00Z",
+                            }
+                        },
+                    }
+                }
+            }
+            mock_client_instance.secrets.kv.v2.create_or_update_secret.side_effect = (
+                Exception("write failed")
+            )
+
+            client = VaultClient(
+                vault_addr="http://localhost:8200",
+                vault_token="test-token",
+            )
+
+            project_id = uuid.uuid4()
+            with pytest.raises(VaultError, match="Failed to rotate HMAC key"):
+                client.rotate_hmac_key(project_id)
+
+    def test_rotate_migrates_unversioned_before_rotating(self) -> None:
+        """Unversioned format should be migrated to v1, then rotated to v2."""
+        with patch("pqdb_api.services.vault.hvac.Client") as mock_hvac:
+            mock_client_instance = MagicMock()
+            mock_hvac.return_value = mock_client_instance
+
+            key_hex = "bb" * 32
+            mock_client_instance.secrets.kv.v2.read_secret_version.return_value = {
+                "data": {"data": {"key": key_hex}}
+            }
+
+            client = VaultClient(
+                vault_addr="http://localhost:8200",
+                vault_token="test-token",
+            )
+
+            project_id = uuid.uuid4()
+            result = client.rotate_hmac_key(project_id)
+
+            assert result.current_version == 2
+            assert result.keys["1"] == key_hex
+            assert "2" in result.keys
+
+
+class TestMigrateToVersionedErrorHandling:
+    """_migrate_to_versioned write-back should have its own try/except."""
+
+    def test_migrate_write_failure_logs_warning_returns_data(self) -> None:
+        """If write-back fails, log warning but return successfully-read data."""
+        with patch("pqdb_api.services.vault.hvac.Client") as mock_hvac:
+            mock_client_instance = MagicMock()
+            mock_hvac.return_value = mock_client_instance
+
+            key_hex = "dd" * 32
+            mock_client_instance.secrets.kv.v2.read_secret_version.return_value = {
+                "data": {"data": {"key": key_hex}}
+            }
+            mock_client_instance.secrets.kv.v2.create_or_update_secret.side_effect = (
+                Exception("Vault write failed")
+            )
+
+            client = VaultClient(
+                vault_addr="http://localhost:8200",
+                vault_token="test-token",
+            )
+
+            project_id = uuid.uuid4()
+            # Should NOT raise — should return the read data despite write failure
+            result = client.get_hmac_keys(project_id)
+            assert result.current_version == 1
+            assert result.keys == {"1": key_hex}
+
+
 class TestDeleteHmacKey:
     """Tests for VaultClient.delete_hmac_key."""
 
