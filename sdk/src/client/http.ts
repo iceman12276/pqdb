@@ -48,12 +48,15 @@ export class HttpClient {
   async request<T>(options: HttpRequestOptions): Promise<PqdbResponse<T>> {
     const headers: Record<string, string> = {
       apikey: this.apiKey,
-      ...options.headers,
     };
 
-    if (this.accessToken) {
+    // Apply default developer token only if not explicitly overridden
+    if (this.accessToken && !options.headers?.["Authorization"]) {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
     }
+
+    // Spread caller-provided headers last so they take precedence
+    Object.assign(headers, options.headers);
 
     if (options.body !== undefined) {
       headers["Content-Type"] = "application/json";
@@ -78,7 +81,7 @@ export class HttpClient {
       };
     }
 
-    if (response.status === 401 && this.refreshToken && this.onRefreshNeeded) {
+    if (response.status === 401 && !options.skipRefresh && this.refreshToken && this.onRefreshNeeded) {
       const refreshed = await this.onRefreshNeeded();
       if (refreshed) {
         return this.request(options);

@@ -51,10 +51,37 @@ export type PqdbResponse<T> = SuccessResponse<T> | ErrorResponse;
 /** Auth method response type. */
 export type AuthResponse = PqdbResponse<AuthTokens>;
 
+/** User profile returned by the backend. */
+export interface UserProfile {
+  id: string;
+  email: string;
+  role: string;
+  email_verified: boolean;
+  metadata: Record<string, unknown>;
+}
+
+/** User auth response (signup/login) — includes user profile and tokens. */
+export interface UserAuthTokens {
+  user: UserProfile;
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+}
+
+/** User auth method response type. */
+export type UserAuthResponse = PqdbResponse<UserAuthTokens>;
+
+/** Data for updating user metadata. */
+export interface UserMetadataUpdate {
+  metadata: Record<string, unknown>;
+}
+
 /** Options for HTTP requests. */
 export interface HttpRequestOptions {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
   body?: unknown;
   headers?: Record<string, string>;
+  /** Skip the automatic 401 refresh handler (used by UserAuthClient which manages its own refresh). */
+  skipRefresh?: boolean;
 }
