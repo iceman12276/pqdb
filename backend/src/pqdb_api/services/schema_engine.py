@@ -63,6 +63,7 @@ _SQL_CREATE_METADATA_PG = _SAFE(
     "  column_name text NOT NULL,"
     "  sensitivity text NOT NULL,"
     "  data_type text NOT NULL,"
+    "  is_owner boolean NOT NULL DEFAULT false,"
     "  created_at timestamptz NOT NULL DEFAULT now(),"
     "  UNIQUE(table_name, column_name)"
     ")"
@@ -75,9 +76,15 @@ _SQL_CREATE_METADATA_SQLITE = _SAFE(
     "  column_name TEXT NOT NULL,"
     "  sensitivity TEXT NOT NULL,"
     "  data_type TEXT NOT NULL,"
+    "  is_owner BOOLEAN NOT NULL DEFAULT 0,"
     "  created_at TEXT NOT NULL DEFAULT (datetime('now')),"
     "  UNIQUE(table_name, column_name)"
     ")"
+)
+
+_SQL_MIGRATE_IS_OWNER_PG = _SAFE(
+    "ALTER TABLE _pqdb_columns "
+    "ADD COLUMN IF NOT EXISTS is_owner boolean NOT NULL DEFAULT false"
 )
 
 _SQL_TABLE_EXISTS_PG = _SAFE(
@@ -96,8 +103,8 @@ _SQL_TABLE_EXISTS_SQLITE = _SAFE(
 
 _SQL_INSERT_METADATA = _SAFE(
     "INSERT INTO _pqdb_columns "
-    "(table_name, column_name, sensitivity, data_type) "
-    "VALUES (:table_name, :column_name, :sensitivity, :data_type)"
+    "(table_name, column_name, sensitivity, data_type, is_owner) "
+    "VALUES (:table_name, :column_name, :sensitivity, :data_type, :is_owner)"
 )
 
 _SQL_DISTINCT_TABLES = _SAFE(
@@ -105,7 +112,7 @@ _SQL_DISTINCT_TABLES = _SAFE(
 )
 
 _SQL_TABLE_COLUMNS = _SAFE(
-    "SELECT column_name, sensitivity, data_type "
+    "SELECT column_name, sensitivity, data_type, is_owner "
     "FROM _pqdb_columns "
     "WHERE table_name = :name ORDER BY id"
 )
@@ -198,6 +205,7 @@ class ColumnDefinition:
     name: str
     data_type: str
     sensitivity: Sensitivity = "plain"
+    is_owner: bool = False
 
     def __post_init__(self) -> None:
         if self.sensitivity not in _VALID_SENSITIVITIES:
@@ -208,6 +216,12 @@ class ColumnDefinition:
         validate_column_name(self.name)
         # Normalize and validate data_type to prevent SQL injection in DDL
         object.__setattr__(self, "data_type", validate_data_type(self.data_type))
+        # Owner column constraints
+        if self.is_owner:
+            if self.data_type != "uuid":
+                raise ValueError("Owner column must be uuid type")
+            if self.sensitivity != "plain":
+                raise ValueError("Owner column must have plain sensitivity")
 
 
 @dataclass
@@ -222,10 +236,15 @@ class TableDefinition:
         if not self.columns:
             raise ValueError("Table must have at least one column")
         seen: set[str] = set()
+        owner_count = 0
         for col in self.columns:
             if col.name in seen:
                 raise ValueError(f"Duplicate column name: {col.name!r}")
             seen.add(col.name)
+            if col.is_owner:
+                owner_count += 1
+        if owner_count > 1:
+            raise ValueError("At most one column can be marked is_owner")
 
 
 def map_sensitivity_to_physical(
@@ -329,11 +348,17 @@ def _build_create_table_sql(table_name: str, col_defs: list[str]) -> str:
 
 
 async def ensure_metadata_table(session: AsyncSession) -> None:
-    """Create the _pqdb_columns metadata table if needed."""
+    """Create the _pqdb_columns metadata table if needed.
+
+    Also runs migrations to add columns introduced in later versions
+    (e.g. is_owner) so existing project databases stay up to date.
+    """
     if _is_sqlite(session):
         await session.execute(_SQL_CREATE_METADATA_SQLITE)
     else:
         await session.execute(_SQL_CREATE_METADATA_PG)
+        # Migration: add is_owner column for existing projects
+        await session.execute(_SQL_MIGRATE_IS_OWNER_PG)
 
 
 async def create_table(
@@ -372,6 +397,7 @@ async def create_table(
                 "column_name": col.name,
                 "sensitivity": col.sensitivity,
                 "data_type": col.data_type,
+                "is_owner": col.is_owner,
             },
         )
 
@@ -420,13 +446,14 @@ async def _get_table_metadata(
     if not rows:
         return None
 
-    columns: list[dict[str, str]] = []
+    columns: list[dict[str, object]] = []
     for row in rows:
         columns.append(
             {
                 "name": row[0],
                 "sensitivity": row[1],
                 "data_type": row[2],
+                "is_owner": bool(row[3]),
             }
         )
 
@@ -449,17 +476,22 @@ _SEARCHABLE_OPERATIONS: list[str] = ["eq", "in"]
 
 
 def build_introspection_column(
-    name: str, data_type: str, sensitivity: str
+    name: str,
+    data_type: str,
+    sensitivity: str,
+    *,
+    is_owner: bool = False,
 ) -> dict[str, object]:
     """Build introspection metadata for a single column.
 
-    Returns name, type, sensitivity, queryable flag, and
+    Returns name, type, sensitivity, is_owner, queryable flag, and
     operations/note based on sensitivity level.
     """
     result: dict[str, object] = {
         "name": name,
         "type": data_type,
         "sensitivity": sensitivity,
+        "is_owner": is_owner,
     }
     if sensitivity == "plain":
         result["queryable"] = True
@@ -474,13 +506,13 @@ def build_introspection_column(
 
 
 def build_introspection_table(
-    table_name: str, columns: list[dict[str, str]]
+    table_name: str, columns: list[dict[str, object]]
 ) -> dict[str, object]:
     """Build introspection metadata for a table.
 
     Includes sensitivity_summary with counts per level.
     ``columns`` is a list of dicts with keys:
-    name, data_type, sensitivity.
+    name, data_type, sensitivity, is_owner.
     """
     introspection_columns: list[dict[str, object]] = []
     summary: dict[str, int] = {
@@ -489,13 +521,14 @@ def build_introspection_table(
         "plain": 0,
     }
     for col in columns:
-        sensitivity = col["sensitivity"]
+        sensitivity = str(col["sensitivity"])
         summary[sensitivity] = summary.get(sensitivity, 0) + 1
         introspection_columns.append(
             build_introspection_column(
-                col["name"],
-                col["data_type"],
+                str(col["name"]),
+                str(col["data_type"]),
                 sensitivity,
+                is_owner=bool(col.get("is_owner", False)),
             )
         )
     return {
@@ -521,11 +554,12 @@ async def introspect_all_tables(
             {"name": name},
         )
         rows = table_result.fetchall()
-        columns = [
+        columns: list[dict[str, object]] = [
             {
                 "name": r[0],
                 "data_type": r[2],
                 "sensitivity": r[1],
+                "is_owner": bool(r[3]),
             }
             for r in rows
         ]
@@ -549,11 +583,12 @@ async def introspect_table(
     if not rows:
         return None
 
-    columns = [
+    columns: list[dict[str, object]] = [
         {
             "name": r[0],
             "data_type": r[2],
             "sensitivity": r[1],
+            "is_owner": bool(r[3]),
         }
         for r in rows
     ]
@@ -564,13 +599,14 @@ def _build_table_response(
     table: TableDefinition,
 ) -> dict[str, object]:
     """Build the API response for a created table."""
-    columns: list[dict[str, str]] = []
+    columns: list[dict[str, object]] = []
     for col in table.columns:
         columns.append(
             {
                 "name": col.name,
                 "sensitivity": col.sensitivity,
                 "data_type": col.data_type,
+                "is_owner": col.is_owner,
             }
         )
     return {
@@ -583,7 +619,7 @@ async def add_column(
     session: AsyncSession,
     table_name: str,
     col: ColumnDefinition,
-) -> dict[str, str]:
+) -> dict[str, object]:
     """Add a column to an existing table with shadow column mapping.
 
     1. Validates table exists (via _pqdb_columns metadata)
@@ -610,6 +646,13 @@ async def add_column(
     if result.fetchone() is not None:
         raise ValueError(f"Column {col.name!r} already exists in table {table_name!r}")
 
+    # If marking as owner, check no existing owner column
+    if col.is_owner:
+        assert isinstance(table_meta["columns"], list)
+        for existing_col in table_meta["columns"]:
+            if existing_col.get("is_owner"):
+                raise ValueError(f"Table {table_name!r} already has an owner column")
+
     # Execute DDL
     for stmt in build_add_column_ddl(table_name, col):
         await session.execute(_SAFE(stmt))
@@ -622,6 +665,7 @@ async def add_column(
             "column_name": col.name,
             "sensitivity": col.sensitivity,
             "data_type": col.data_type,
+            "is_owner": col.is_owner,
         },
     )
 
@@ -632,12 +676,14 @@ async def add_column(
         table=table_name,
         column=col.name,
         sensitivity=col.sensitivity,
+        is_owner=col.is_owner,
     )
 
     return {
         "name": col.name,
         "sensitivity": col.sensitivity,
         "data_type": col.data_type,
+        "is_owner": col.is_owner,
     }
 
 

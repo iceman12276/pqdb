@@ -10,6 +10,7 @@ Sensitive columns are routed to their physical shadow columns:
 from __future__ import annotations
 
 import enum
+import uuid
 from typing import Any
 
 from pqdb_api.services.schema_engine import validate_table_name
@@ -313,3 +314,79 @@ def build_delete_sql(
 
     sql += " RETURNING *"
     return sql, where_params
+
+
+# --- RLS enforcement helpers ---
+
+
+def _find_owner_column(
+    columns_meta: list[dict[str, Any]],
+) -> str | None:
+    """Find the owner column name from column metadata, if any."""
+    for col in columns_meta:
+        if col.get("is_owner"):
+            return str(col["name"])
+    return None
+
+
+def inject_rls_filters(
+    *,
+    filters: list[tuple[str, FilterOp, Any]],
+    columns_meta: list[dict[str, Any]],
+    key_role: str,
+    user_id: uuid.UUID | None,
+) -> list[tuple[str, FilterOp, Any]]:
+    """Inject RLS WHERE filters based on owner column and user context.
+
+    - service role: no RLS filtering (admin access)
+    - anon role + table has owner column + user context present:
+      appends WHERE {owner_col} = user_id
+    - anon role + table has owner column + NO user context:
+      raises CrudError (403)
+    - table has no owner column: no RLS applied
+    """
+    owner_col = _find_owner_column(columns_meta)
+    if owner_col is None:
+        return list(filters)
+
+    if key_role == "service":
+        return list(filters)
+
+    # anon role with owner column
+    if user_id is None:
+        raise CrudError("User context required for tables with owner column")
+
+    result = list(filters)
+    result.append((owner_col, FilterOp.EQ, str(user_id)))
+    return result
+
+
+def validate_owner_for_insert(
+    *,
+    row: dict[str, Any],
+    columns_meta: list[dict[str, Any]],
+    key_role: str,
+    user_id: uuid.UUID | None,
+) -> None:
+    """Validate that insert rows respect owner column constraints.
+
+    - service role: no validation
+    - anon role + owner column: row must include owner column matching user_id
+    - no owner column: no validation
+    """
+    owner_col = _find_owner_column(columns_meta)
+    if owner_col is None:
+        return
+
+    if key_role == "service":
+        return
+
+    # anon role with owner column
+    if user_id is None:
+        raise CrudError("User context required for tables with owner column")
+
+    if owner_col not in row:
+        raise CrudError(f"Owner column {owner_col!r} required in insert data")
+
+    if str(row[owner_col]) != str(user_id):
+        raise CrudError(f"Owner column {owner_col!r} must match authenticated user")
