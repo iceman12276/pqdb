@@ -12,10 +12,15 @@ export type {
   AuthCredentials,
   AuthTokens,
   AuthResponse,
+  UserProfile,
+  UserAuthTokens,
+  UserAuthResponse,
+  UserMetadataUpdate,
   PqdbError,
   PqdbResponse,
 } from "./client/types.js";
 export { AuthClient } from "./client/auth.js";
+export { UserAuthClient } from "./client/user-auth.js";
 
 // Query builder exports
 export { column, defineTableSchema, ColumnDef } from "./query/schema.js";
