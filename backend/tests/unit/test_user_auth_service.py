@@ -211,6 +211,20 @@ class TestPasswordValidation:
         with pytest.raises(ValueError, match="at least 12 characters"):
             user_auth_service.validate_password("short12345", min_length=12)
 
+    def test_password_exceeds_max_length_raises(
+        self, user_auth_service: UserAuthService
+    ) -> None:
+        long_password = "a" * 1025
+        with pytest.raises(ValueError, match="must not exceed 1024 characters"):
+            user_auth_service.validate_password(long_password, min_length=8)
+
+    def test_password_at_max_length_passes(
+        self, user_auth_service: UserAuthService
+    ) -> None:
+        password_1024 = "a" * 1024
+        # Should not raise
+        user_auth_service.validate_password(password_1024, min_length=8)
+
 
 class TestHashAndStoreRefreshToken:
     """Test that refresh tokens are hashed for storage."""

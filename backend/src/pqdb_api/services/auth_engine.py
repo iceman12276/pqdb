@@ -123,6 +123,10 @@ def _is_sqlite(session: AsyncSession) -> bool:
     return bind.dialect.name == "sqlite"
 
 
+class AuthEngineError(Exception):
+    """Raised when auth engine operations fail."""
+
+
 async def ensure_auth_tables(session: AsyncSession) -> None:
     """Create auth tables if they don't exist. Idempotent.
 
@@ -132,21 +136,26 @@ async def ensure_auth_tables(session: AsyncSession) -> None:
     - _pqdb_auth_settings: single-row project auth config
 
     Called lazily on first auth-related request.
+    Raises AuthEngineError if table creation fails.
     """
     sqlite = _is_sqlite(session)
 
-    if sqlite:
-        await session.execute(_SQL_CREATE_USERS_SQLITE)
-        await session.execute(_SQL_CREATE_SESSIONS_SQLITE)
-        await session.execute(_SQL_CREATE_AUTH_SETTINGS_SQLITE)
-        await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_SQLITE)
-    else:
-        await session.execute(_SQL_CREATE_USERS_PG)
-        await session.execute(_SQL_CREATE_SESSIONS_PG)
-        await session.execute(_SQL_CREATE_AUTH_SETTINGS_PG)
-        await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_PG)
+    try:
+        if sqlite:
+            await session.execute(_SQL_CREATE_USERS_SQLITE)
+            await session.execute(_SQL_CREATE_SESSIONS_SQLITE)
+            await session.execute(_SQL_CREATE_AUTH_SETTINGS_SQLITE)
+            await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_SQLITE)
+        else:
+            await session.execute(_SQL_CREATE_USERS_PG)
+            await session.execute(_SQL_CREATE_SESSIONS_PG)
+            await session.execute(_SQL_CREATE_AUTH_SETTINGS_PG)
+            await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_PG)
 
-    await session.commit()
+        await session.commit()
+    except Exception as exc:
+        logger.error("auth_tables_creation_failed", error=str(exc))
+        raise AuthEngineError(f"Failed to create auth tables: {exc}") from exc
 
     logger.info("auth_tables_ensured", dialect="sqlite" if sqlite else "postgresql")
 
@@ -168,13 +177,11 @@ async def get_auth_settings(session: AsyncSession) -> dict[str, Any]:
     )
     row = result.fetchone()
     if row is None:
-        # Should never happen after ensure_auth_tables
-        return {
-            "require_email_verification": False,
-            "magic_link_webhook": None,
-            "password_min_length": 8,
-            "mfa_enabled": False,
-        }
+        # Should never happen after ensure_auth_tables — indicates a serious bug
+        raise RuntimeError(
+            "Auth settings row missing after ensure_auth_tables. "
+            "This indicates a bug in table initialization."
+        )
 
     return {
         "require_email_verification": bool(row[0]),

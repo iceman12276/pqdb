@@ -16,10 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
-    create_async_engine,
 )
 
 from pqdb_api.database import get_session
+from pqdb_api.middleware.api_key import _get_or_create_engine
 from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.project import Project
 from pqdb_api.services.auth_engine import (
@@ -104,14 +104,13 @@ async def get_project_auth_settings(
 
     platform_url: str = request.app.state.settings.database_url
     project_url = _build_project_db_url(platform_url, project.database_name)
-    engine = create_async_engine(project_url)
+    engine = _get_or_create_engine(
+        request.app.state, project_url, project.database_name
+    )
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    try:
-        async with factory() as project_session:
-            await ensure_auth_tables(project_session)
-            settings = await get_auth_settings(project_session)
-    finally:
-        await engine.dispose()
+    async with factory() as project_session:
+        await ensure_auth_tables(project_session)
+        settings = await get_auth_settings(project_session)
 
     return AuthSettingsResponse(**settings)
 
@@ -147,14 +146,14 @@ async def update_project_auth_settings(
 
     platform_url: str = request.app.state.settings.database_url
     project_url = _build_project_db_url(platform_url, project.database_name)
-    engine = create_async_engine(project_url)
+    engine = _get_or_create_engine(
+        request.app.state, project_url, project.database_name
+    )
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     try:
         async with factory() as project_session:
             settings = await update_auth_settings(project_session, updates)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    finally:
-        await engine.dispose()
 
     return AuthSettingsResponse(**settings)
