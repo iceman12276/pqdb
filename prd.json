@@ -198,8 +198,8 @@
         "Production build succeeds"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #33 merged. Owner column + RLS. Three-layer verification: CI green, LSP confirmed RLS wired into all 4 CRUD ops."
     },
     {
       "id": "US-029",
