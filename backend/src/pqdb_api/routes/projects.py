@@ -322,7 +322,16 @@ async def rotate_hmac_key(
 
 
 async def _get_project_session(request: Request, project: Project) -> AsyncSession:
-    """Create a session connected to the project's database."""
+    """Create a session connected to the project's database.
+
+    If app.state has a _test_project_session_factory, uses it instead
+    of building a real project-scoped connection. This allows integration
+    tests to route project sessions to the test database.
+    """
+    test_factory = getattr(request.app.state, "_test_project_session_factory", None)
+    if test_factory is not None:
+        session: AsyncSession = test_factory()
+        return session
     assert project.database_name is not None
     settings = request.app.state.settings
     db_name: str = project.database_name
