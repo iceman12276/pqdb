@@ -241,8 +241,8 @@
         "Production build succeeds"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #36 merged. 6 E2E tests: key rotation, re-indexing, user auth + RLS, service bypass, cross-project isolation, session revocation. All full-stack against real Postgres + Vault. Three-layer verification passed."
     }
   ]
 }
