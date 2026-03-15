@@ -124,8 +124,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #27 merged. 6 endpoints, user JWT with type:user_access, rate limiting, 42 tests. CI green."
     },
     {
       "id": "US-026",
