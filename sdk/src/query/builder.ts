@@ -17,6 +17,7 @@ import {
   transformInsertRows,
   transformSelectResponse,
   transformFilters,
+  transformFiltersMultiVersion,
   validateFilterOperations,
 } from "./crypto-transform.js";
 
@@ -190,8 +191,9 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
       // Validate filters before doing any work
       validateFilterOperations(this.filters, this.schema);
 
-      // Ensure HMAC key is available
-      const hmacKey = await this.cryptoCtx.getHmacKey();
+      // Fetch versioned HMAC keys
+      const versionedKeys = await this.cryptoCtx.getVersionedHmacKeys();
+      const currentKey = versionedKeys.keys[String(versionedKeys.currentVersion)];
       const keyPair = this.cryptoCtx.keyPair;
 
       // Transform based on operation
@@ -199,11 +201,13 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
 
       if (this.op === "insert") {
         const rows = this.payload.rows as Record<string, unknown>[];
+        // Inserts always use current key version
         const transformedRows = await transformInsertRows(
           rows,
           this.schema,
           keyPair,
-          hmacKey,
+          currentKey,
+          versionedKeys.currentVersion,
         );
         body = this.buildBody(this.filters, { rows: transformedRows });
       } else if (this.op === "update") {
@@ -213,13 +217,19 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
           [values],
           this.schema,
           keyPair,
-          hmacKey,
+          currentKey,
+          versionedKeys.currentVersion,
         );
-        const transformedFilters = transformFilters(this.filters, this.schema, hmacKey);
+        // Filters use all versions to find rows indexed with any key
+        const transformedFilters = transformFiltersMultiVersion(
+          this.filters, this.schema, versionedKeys,
+        );
         body = this.buildBody(transformedFilters, { values: transformedValues });
       } else {
-        // select or delete — just transform filters
-        const transformedFilters = transformFilters(this.filters, this.schema, hmacKey);
+        // select or delete — use all versions for filters
+        const transformedFilters = transformFiltersMultiVersion(
+          this.filters, this.schema, versionedKeys,
+        );
         body = this.buildBody(transformedFilters);
       }
 

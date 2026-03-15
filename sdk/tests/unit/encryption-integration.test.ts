@@ -24,11 +24,11 @@ describe("SDK encryption integration", () => {
   });
 
   it("encrypts insert rows with searchable and private columns", async () => {
-    // Mock HMAC key retrieval
+    // Mock HMAC key retrieval (versioned format)
     fetchMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => ({ hmac_key: TEST_HMAC_KEY_HEX }),
+      json: async () => ({ current_version: 1, keys: { "1": TEST_HMAC_KEY_HEX } }),
     });
 
     // Mock insert response
@@ -70,7 +70,7 @@ describe("SDK encryption integration", () => {
     expect(row).toHaveProperty("name");
     expect(row.name).not.toBe("Alice"); // encrypted, not plaintext
 
-    // Blind index should be present for searchable columns
+    // Blind index should be present for searchable columns (version-prefixed)
     expect(row).toHaveProperty("email_index");
     expect(row).not.toHaveProperty("name_index");
 
@@ -78,17 +78,18 @@ describe("SDK encryption integration", () => {
     expect(row.id).toBe("1");
     expect(row.age).toBe(30);
 
-    // Verify the blind index is correct
-    const expectedIndex = computeBlindIndex("alice@example.com", TEST_HMAC_KEY);
+    // Verify the blind index is version-prefixed
+    const expectedIndex = computeBlindIndex("alice@example.com", TEST_HMAC_KEY, 1);
     expect(row.email_index).toBe(expectedIndex);
+    expect(row.email_index).toMatch(/^v1:[0-9a-f]{64}$/);
   });
 
-  it("rewrites .eq() filter on searchable column to use _index", async () => {
-    // Mock HMAC key retrieval
+  it("rewrites .eq() filter on searchable column to multi-version IN", async () => {
+    // Mock HMAC key retrieval (versioned format)
     fetchMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => ({ hmac_key: TEST_HMAC_KEY_HEX }),
+      json: async () => ({ current_version: 1, keys: { "1": TEST_HMAC_KEY_HEX } }),
     });
 
     // Mock select response (return encrypted data)
@@ -114,12 +115,14 @@ describe("SDK encryption integration", () => {
     const [, selectInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     const body = JSON.parse(selectInit.body as string);
 
-    // Filter value should be hashed, column name stays logical
+    // .eq() on searchable column should be expanded to IN with all version hashes
     expect(body.filters).toHaveLength(1);
     expect(body.filters[0].column).toBe("email");
-    expect(body.filters[0].op).toBe("eq");
-    expect(body.filters[0].value).toBe(
-      computeBlindIndex("alice@example.com", TEST_HMAC_KEY),
+    expect(body.filters[0].op).toBe("in");
+    const values = body.filters[0].value as string[];
+    expect(values).toHaveLength(1); // single version
+    expect(values[0]).toBe(
+      computeBlindIndex("alice@example.com", TEST_HMAC_KEY, 1),
     );
   });
 
@@ -132,13 +135,13 @@ describe("SDK encryption integration", () => {
 
     const emailB64 = btoa(String.fromCharCode(...emailCt));
     const nameB64 = btoa(String.fromCharCode(...nameCt));
-    const emailIndex = computeBlindIndex("alice@example.com", TEST_HMAC_KEY);
+    const emailIndex = computeBlindIndex("alice@example.com", TEST_HMAC_KEY, 1);
 
-    // Mock HMAC key retrieval
+    // Mock HMAC key retrieval (versioned format)
     fetchMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => ({ hmac_key: TEST_HMAC_KEY_HEX }),
+      json: async () => ({ current_version: 1, keys: { "1": TEST_HMAC_KEY_HEX } }),
     });
 
     // Mock select response with encrypted data
@@ -182,11 +185,11 @@ describe("SDK encryption integration", () => {
   });
 
   it("caches HMAC key across multiple queries", async () => {
-    // Mock HMAC key retrieval (only once)
+    // Mock HMAC key retrieval (only once, versioned format)
     fetchMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => ({ hmac_key: TEST_HMAC_KEY_HEX }),
+      json: async () => ({ current_version: 1, keys: { "1": TEST_HMAC_KEY_HEX } }),
     });
 
     // Mock two query responses
