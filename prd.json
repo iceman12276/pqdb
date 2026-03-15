@@ -47,8 +47,8 @@
         "Production build succeeds"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #28 merged. rotate_hmac_key(), version-prefixed blind indexes, SDK multi-version queries. Three-layer verification passed."
     },
     {
       "id": "US-023",
