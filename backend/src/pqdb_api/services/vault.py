@@ -226,6 +226,58 @@ class VaultClient:
             )
             raise VaultError(f"Failed to rotate HMAC key: {exc}") from exc
 
+    def delete_hmac_key_version(
+        self, project_id: uuid.UUID, version: int
+    ) -> VersionedHmacKeys:
+        """Delete a specific HMAC key version from a project.
+
+        Cannot delete the current version. Reads existing keys, removes the
+        specified version, writes back, and returns the updated keys.
+
+        Raises VaultError if the version is the current one or not found.
+        """
+        try:
+            data = self._read_raw(project_id)
+            if not self._is_versioned(data):
+                data = self._migrate_to_versioned(project_id, data)
+
+            current_version: int = data["current_version"]
+            if version == current_version:
+                raise VaultError(f"Cannot delete current key version {version}")
+
+            version_str = str(version)
+            if version_str not in data["keys"]:
+                raise VaultError(f"Key version {version} not found")
+
+            del data["keys"][version_str]
+
+            path = f"pqdb/projects/{project_id}/hmac"
+            self._client.secrets.kv.v2.create_or_update_secret(
+                path=path,
+                secret=data,
+            )
+
+            logger.info(
+                "hmac_key_version_deleted",
+                project_id=str(project_id),
+                deleted_version=version,
+            )
+
+            keys: dict[str, str] = {
+                ver: info["key"] for ver, info in data["keys"].items()
+            }
+            return VersionedHmacKeys(current_version=current_version, keys=keys)
+        except VaultError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "hmac_key_version_delete_failed",
+                project_id=str(project_id),
+                version=version,
+                error=str(exc),
+            )
+            raise VaultError(f"Failed to delete HMAC key version: {exc}") from exc
+
     def delete_hmac_key(self, project_id: uuid.UUID) -> None:
         """Delete the HMAC key for the given project from Vault."""
         path = f"pqdb/projects/{project_id}/hmac"

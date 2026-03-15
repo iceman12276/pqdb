@@ -445,6 +445,109 @@ class TestMigrateToVersionedErrorHandling:
             assert result.keys == {"1": key_hex}
 
 
+class TestDeleteHmacKeyVersion:
+    """Tests for VaultClient.delete_hmac_key_version."""
+
+    def test_delete_old_version_removes_it(self) -> None:
+        """Deleting a non-current version should remove it and write back."""
+        with patch("pqdb_api.services.vault.hvac.Client") as mock_hvac:
+            mock_client_instance = MagicMock()
+            mock_hvac.return_value = mock_client_instance
+
+            key1_hex = "ab" * 32
+            key2_hex = "cd" * 32
+            mock_client_instance.secrets.kv.v2.read_secret_version.return_value = {
+                "data": {
+                    "data": {
+                        "current_version": 2,
+                        "keys": {
+                            "1": {
+                                "key": key1_hex,
+                                "created_at": "2026-01-01T00:00:00Z",
+                            },
+                            "2": {
+                                "key": key2_hex,
+                                "created_at": "2026-02-01T00:00:00Z",
+                            },
+                        },
+                    }
+                }
+            }
+
+            client = VaultClient(
+                vault_addr="http://localhost:8200",
+                vault_token="test-token",
+            )
+
+            project_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
+            result = client.delete_hmac_key_version(project_id, version=1)
+
+            assert result.current_version == 2
+            assert "1" not in result.keys
+            assert "2" in result.keys
+            assert result.keys["2"] == key2_hex
+
+    def test_cannot_delete_current_version(self) -> None:
+        with patch("pqdb_api.services.vault.hvac.Client") as mock_hvac:
+            mock_client_instance = MagicMock()
+            mock_hvac.return_value = mock_client_instance
+
+            mock_client_instance.secrets.kv.v2.read_secret_version.return_value = {
+                "data": {
+                    "data": {
+                        "current_version": 2,
+                        "keys": {
+                            "1": {
+                                "key": "ab" * 32,
+                                "created_at": "2026-01-01T00:00:00Z",
+                            },
+                            "2": {
+                                "key": "cd" * 32,
+                                "created_at": "2026-02-01T00:00:00Z",
+                            },
+                        },
+                    }
+                }
+            }
+
+            client = VaultClient(
+                vault_addr="http://localhost:8200",
+                vault_token="test-token",
+            )
+
+            project_id = uuid.uuid4()
+            with pytest.raises(VaultError, match="Cannot delete current key version"):
+                client.delete_hmac_key_version(project_id, version=2)
+
+    def test_delete_nonexistent_version_raises(self) -> None:
+        with patch("pqdb_api.services.vault.hvac.Client") as mock_hvac:
+            mock_client_instance = MagicMock()
+            mock_hvac.return_value = mock_client_instance
+
+            mock_client_instance.secrets.kv.v2.read_secret_version.return_value = {
+                "data": {
+                    "data": {
+                        "current_version": 1,
+                        "keys": {
+                            "1": {
+                                "key": "ab" * 32,
+                                "created_at": "2026-01-01T00:00:00Z",
+                            }
+                        },
+                    }
+                }
+            }
+
+            client = VaultClient(
+                vault_addr="http://localhost:8200",
+                vault_token="test-token",
+            )
+
+            project_id = uuid.uuid4()
+            with pytest.raises(VaultError, match="Key version 99 not found"):
+                client.delete_hmac_key_version(project_id, version=99)
+
+
 class TestDeleteHmacKey:
     """Tests for VaultClient.delete_hmac_key."""
 

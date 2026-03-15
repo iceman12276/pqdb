@@ -228,6 +228,7 @@ def _clean_tables(test_db_name: str, test_db_url: str) -> Iterator[None]:
 
     # Drop the _pqdb_ internal tables
     for internal_table in [
+        "_pqdb_reindex_jobs",
         "_pqdb_sessions",
         "_pqdb_users",
         "_pqdb_auth_settings",
@@ -369,11 +370,28 @@ def _make_platform_app(
         keys_hex = {v: k.hex() for v, k in versioned_store[pid].items()}
         return VersionedHmacKeys(current_version=new_ver, keys=keys_hex)
 
+    def _mock_delete_version(project_id: uuid.UUID, version: int) -> Any:
+        from pqdb_api.services.vault import VaultError, VersionedHmacKeys
+
+        pid = str(project_id)
+        if pid not in versioned_store:
+            raise VaultError("Key not found")
+        current_ver = version_counters.get(pid, 1)
+        if version == current_ver:
+            raise VaultError(f"Cannot delete current key version {version}")
+        version_str = str(version)
+        if version_str not in versioned_store[pid]:
+            raise VaultError(f"Key version {version} not found")
+        del versioned_store[pid][version_str]
+        keys_hex = {v: k.hex() for v, k in versioned_store[pid].items()}
+        return VersionedHmacKeys(current_version=current_ver, keys=keys_hex)
+
     mock_vault.store_hmac_key = MagicMock(side_effect=_mock_store_versioned)
     mock_vault.get_hmac_key = MagicMock(side_effect=_mock_get)
     mock_vault.get_hmac_keys = MagicMock(side_effect=_mock_get_keys_versioned)
     mock_vault.rotate_hmac_key = MagicMock(side_effect=_mock_rotate)
     mock_vault.delete_hmac_key = MagicMock(side_effect=_mock_delete)
+    mock_vault.delete_hmac_key_version = MagicMock(side_effect=_mock_delete_version)
 
     from pqdb_api.config import Settings
 
