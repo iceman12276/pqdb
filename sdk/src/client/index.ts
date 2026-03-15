@@ -10,6 +10,7 @@ import type { SchemaColumns, TableSchema } from "../query/schema.js";
 import type { PqdbClientOptions } from "./types.js";
 import type { CryptoContext } from "../query/crypto-context.js";
 import type { KeyPair } from "../crypto/pqc.js";
+import type { VersionedHmacKeys } from "../crypto/blind-index.js";
 
 export interface PqdbClient {
   auth: AuthClient;
@@ -32,6 +33,12 @@ function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
+/** Response shape from /v1/db/hmac-key (versioned). */
+interface HmacKeyVersionedResponse {
+  current_version: number;
+  keys: Record<string, string>; // version -> hex key
+}
+
 /**
  * Create a pqdb client instance.
  *
@@ -50,7 +57,32 @@ export function createClient(
   // Crypto state — lazily initialized
   let resolvedCryptoCtx: CryptoContext | null = null;
   let cryptoCtxPromise: Promise<CryptoContext> | null = null;
-  let cachedHmacKey: Uint8Array | null = null;
+  let cachedVersionedKeys: VersionedHmacKeys | null = null;
+
+  async function fetchVersionedHmacKeys(): Promise<VersionedHmacKeys> {
+    if (cachedVersionedKeys) return cachedVersionedKeys;
+
+    const result = await http.request<HmacKeyVersionedResponse>({
+      method: "GET",
+      path: "/v1/db/hmac-key",
+    });
+
+    if (result.error) {
+      throw new Error(`Failed to retrieve HMAC keys: ${result.error.message}`);
+    }
+
+    const data = result.data!;
+    const keys: Record<string, Uint8Array> = {};
+    for (const [ver, hex] of Object.entries(data.keys)) {
+      keys[ver] = hexToBytes(hex);
+    }
+
+    cachedVersionedKeys = {
+      currentVersion: data.current_version,
+      keys,
+    };
+    return cachedVersionedKeys;
+  }
 
   async function getResolvedCryptoContext(): Promise<CryptoContext> {
     if (resolvedCryptoCtx) return resolvedCryptoCtx;
@@ -61,20 +93,10 @@ export function createClient(
         const ctx: CryptoContext = {
           keyPair,
           getHmacKey: async () => {
-            if (cachedHmacKey) return cachedHmacKey;
-
-            const result = await http.request<{ hmac_key: string }>({
-              method: "GET",
-              path: "/v1/db/hmac-key",
-            });
-
-            if (result.error) {
-              throw new Error(`Failed to retrieve HMAC key: ${result.error.message}`);
-            }
-
-            cachedHmacKey = hexToBytes(result.data!.hmac_key);
-            return cachedHmacKey;
+            const versioned = await fetchVersionedHmacKeys();
+            return versioned.keys[String(versioned.currentVersion)];
           },
+          getVersionedHmacKeys: fetchVersionedHmacKeys,
         };
         resolvedCryptoCtx = ctx;
         return ctx;
@@ -102,6 +124,10 @@ export function createClient(
       getHmacKey: async () => {
         const ctx = await getResolvedCryptoContext();
         return ctx.getHmacKey();
+      },
+      getVersionedHmacKeys: async () => {
+        const ctx = await getResolvedCryptoContext();
+        return ctx.getVersionedHmacKeys();
       },
     };
 

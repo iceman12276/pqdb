@@ -17,6 +17,7 @@ Legacy (unversioned) format { "key": "hex" } is auto-migrated on first read.
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -112,14 +113,21 @@ class VaultClient:
             },
         }
         path = f"pqdb/projects/{project_id}/hmac"
-        self._client.secrets.kv.v2.create_or_update_secret(
-            path=path,
-            secret=versioned,
-        )
-        logger.info(
-            "hmac_key_migrated_to_versioned",
-            project_id=str(project_id),
-        )
+        try:
+            self._client.secrets.kv.v2.create_or_update_secret(
+                path=path,
+                secret=versioned,
+            )
+            logger.info(
+                "hmac_key_migrated_to_versioned",
+                project_id=str(project_id),
+            )
+        except Exception as exc:
+            logger.warning(
+                "hmac_key_migration_write_failed",
+                project_id=str(project_id),
+                error=str(exc),
+            )
         return versioned
 
     def get_hmac_key(self, project_id: uuid.UUID) -> bytes:
@@ -168,6 +176,55 @@ class VaultClient:
                 error=str(exc),
             )
             raise VaultError(f"Failed to retrieve HMAC keys: {exc}") from exc
+
+    def rotate_hmac_key(self, project_id: uuid.UUID) -> VersionedHmacKeys:
+        """Generate a new HMAC key version for a project.
+
+        Reads existing keys, generates a new 256-bit key, increments
+        current_version, writes back, and returns all keys.
+        """
+        try:
+            data = self._read_raw(project_id)
+            if not self._is_versioned(data):
+                data = self._migrate_to_versioned(project_id, data)
+
+            current_version: int = data["current_version"]
+            new_version = current_version + 1
+            new_key = secrets.token_bytes(32)
+            now = datetime.now(timezone.utc).isoformat()
+
+            data["keys"][str(new_version)] = {
+                "key": new_key.hex(),
+                "created_at": now,
+            }
+            data["current_version"] = new_version
+
+            path = f"pqdb/projects/{project_id}/hmac"
+            self._client.secrets.kv.v2.create_or_update_secret(
+                path=path,
+                secret=data,
+            )
+
+            logger.info(
+                "hmac_key_rotated",
+                project_id=str(project_id),
+                previous_version=current_version,
+                current_version=new_version,
+            )
+
+            keys: dict[str, str] = {
+                ver: info["key"] for ver, info in data["keys"].items()
+            }
+            return VersionedHmacKeys(current_version=new_version, keys=keys)
+        except VaultError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "hmac_key_rotate_failed",
+                project_id=str(project_id),
+                error=str(exc),
+            )
+            raise VaultError(f"Failed to rotate HMAC key: {exc}") from exc
 
     def delete_hmac_key(self, project_id: uuid.UUID) -> None:
         """Delete the HMAC key for the given project from Vault."""

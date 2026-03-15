@@ -328,9 +328,51 @@ def _make_platform_app(
     def _mock_delete(project_id: uuid.UUID) -> None:
         stored_keys.pop(str(project_id), None)
 
-    mock_vault.store_hmac_key = MagicMock(side_effect=_mock_store)
+    # Track versioned keys: { project_id_str: { version_str: key_bytes } }
+    versioned_store: dict[str, dict[str, bytes]] = {}
+    version_counters: dict[str, int] = {}
+
+    def _mock_store_versioned(project_id: uuid.UUID, key: bytes) -> None:
+        pid = str(project_id)
+        stored_keys[pid] = key
+        versioned_store[pid] = {"1": key}
+        version_counters[pid] = 1
+
+    def _mock_get_keys_versioned(project_id: uuid.UUID) -> Any:
+        from pqdb_api.services.vault import VersionedHmacKeys
+
+        pid = str(project_id)
+        if pid not in versioned_store:
+            from pqdb_api.services.vault import VaultError
+
+            raise VaultError("Key not found")
+        current_ver = version_counters.get(pid, 1)
+        keys_hex = {v: k.hex() for v, k in versioned_store[pid].items()}
+        return VersionedHmacKeys(current_version=current_ver, keys=keys_hex)
+
+    def _mock_rotate(project_id: uuid.UUID) -> Any:
+        import secrets as _secrets
+
+        from pqdb_api.services.vault import VersionedHmacKeys
+
+        pid = str(project_id)
+        if pid not in versioned_store:
+            from pqdb_api.services.vault import VaultError
+
+            raise VaultError("Key not found")
+        current_ver = version_counters.get(pid, 1)
+        new_ver = current_ver + 1
+        new_key = _secrets.token_bytes(32)
+        versioned_store[pid][str(new_ver)] = new_key
+        version_counters[pid] = new_ver
+        stored_keys[pid] = new_key
+        keys_hex = {v: k.hex() for v, k in versioned_store[pid].items()}
+        return VersionedHmacKeys(current_version=new_ver, keys=keys_hex)
+
+    mock_vault.store_hmac_key = MagicMock(side_effect=_mock_store_versioned)
     mock_vault.get_hmac_key = MagicMock(side_effect=_mock_get)
-    mock_vault.get_hmac_keys = MagicMock(side_effect=_mock_get_keys)
+    mock_vault.get_hmac_keys = MagicMock(side_effect=_mock_get_keys_versioned)
+    mock_vault.rotate_hmac_key = MagicMock(side_effect=_mock_rotate)
     mock_vault.delete_hmac_key = MagicMock(side_effect=_mock_delete)
 
     from pqdb_api.config import Settings
