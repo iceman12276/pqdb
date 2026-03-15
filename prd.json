@@ -147,8 +147,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #30 merged. UserContext middleware, project_id validation, optional dependency. CI green."
     },
     {
       "id": "US-027",
@@ -172,8 +172,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #29 merged. SDK user-auth.ts, auth.ts updated, auto-refresh, 539-line test suite. CI green."
     },
     {
       "id": "US-028",
