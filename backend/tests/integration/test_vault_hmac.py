@@ -142,6 +142,98 @@ class TestGetHmacKey:
         assert resp1.json()["current_version"] == resp2.json()["current_version"]
 
 
+class TestRotateHmacKeyRoute:
+    """Tests for POST /v1/projects/{id}/hmac-key/rotate."""
+
+    def test_rotate_route_exists(self, client: TestClient) -> None:
+        resp = client.post(f"/v1/projects/{uuid.uuid4()}/hmac-key/rotate")
+        assert resp.status_code != 404
+
+    def test_rotate_without_auth_returns_401_or_403(self, client: TestClient) -> None:
+        resp = client.post(f"/v1/projects/{uuid.uuid4()}/hmac-key/rotate")
+        assert resp.status_code in (401, 403)
+
+    def test_rotate_returns_previous_and_current_version(
+        self, client: TestClient
+    ) -> None:
+        token = signup_and_get_token(client)
+        create_resp = client.post(
+            "/v1/projects",
+            json={"name": "rotate-project"},
+            headers=auth_headers(token),
+        )
+        project_id = create_resp.json()["id"]
+
+        rotate_resp = client.post(
+            f"/v1/projects/{project_id}/hmac-key/rotate",
+            headers=auth_headers(token),
+        )
+        assert rotate_resp.status_code == 200
+        data = rotate_resp.json()
+        assert data["previous_version"] == 1
+        assert data["current_version"] == 2
+
+    def test_rotate_preserves_old_keys(self, client: TestClient) -> None:
+        token = signup_and_get_token(client)
+        create_resp = client.post(
+            "/v1/projects",
+            json={"name": "rotate-preserve"},
+            headers=auth_headers(token),
+        )
+        project_id = create_resp.json()["id"]
+
+        # Get original key
+        hmac_resp = client.get(
+            f"/v1/projects/{project_id}/hmac-key",
+            headers=auth_headers(token),
+        )
+        original_key = hmac_resp.json()["keys"]["1"]
+
+        # Rotate
+        client.post(
+            f"/v1/projects/{project_id}/hmac-key/rotate",
+            headers=auth_headers(token),
+        )
+
+        # Verify old key is preserved
+        hmac_resp2 = client.get(
+            f"/v1/projects/{project_id}/hmac-key",
+            headers=auth_headers(token),
+        )
+        data = hmac_resp2.json()
+        assert data["current_version"] == 2
+        assert data["keys"]["1"] == original_key
+        assert "2" in data["keys"]
+        assert len(data["keys"]["2"]) == 64
+
+    def test_rotate_nonexistent_project_returns_404(
+        self, client: TestClient
+    ) -> None:
+        token = signup_and_get_token(client)
+        resp = client.post(
+            f"/v1/projects/{uuid.uuid4()}/hmac-key/rotate",
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 404
+
+    def test_rotate_other_developer_returns_404(self, client: TestClient) -> None:
+        token_a = signup_and_get_token(client, email="owner-rot@test.com")
+        token_b = signup_and_get_token(client, email="intruder-rot@test.com")
+
+        create_resp = client.post(
+            "/v1/projects",
+            json={"name": "private-rotate"},
+            headers=auth_headers(token_a),
+        )
+        project_id = create_resp.json()["id"]
+
+        resp = client.post(
+            f"/v1/projects/{project_id}/hmac-key/rotate",
+            headers=auth_headers(token_b),
+        )
+        assert resp.status_code == 404
+
+
 class TestHmacKeyRateLimiting:
     """HMAC key endpoint is rate-limited per project."""
 

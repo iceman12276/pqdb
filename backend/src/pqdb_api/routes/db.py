@@ -228,12 +228,11 @@ async def db_health(
 async def get_hmac_key_by_apikey(
     request: Request,
     context: ProjectContext = Depends(get_project_context),
-) -> dict[str, str]:
-    """Retrieve the HMAC key for the project identified by the API key.
+) -> dict[str, object]:
+    """Retrieve all HMAC keys for the project identified by the API key.
 
-    This endpoint allows SDK clients to fetch the HMAC key using only
-    the ``apikey`` header, without needing a developer JWT or project ID.
-    Only ``service_role`` keys are allowed.
+    Returns versioned keys so the SDK can compute blind indexes with all
+    active key versions. Only ``service_role`` keys are allowed.
     """
     if context.key_role != "service":
         raise HTTPException(
@@ -243,14 +242,17 @@ async def get_hmac_key_by_apikey(
 
     vault_client: VaultClient = request.app.state.vault_client
     try:
-        key = vault_client.get_hmac_key(context.project_id)
+        versioned = vault_client.get_hmac_keys(context.project_id)
     except Exception:
         raise HTTPException(
             status_code=500,
             detail="Failed to retrieve HMAC key",
         )
 
-    return {"hmac_key": key.hex()}
+    return {
+        "current_version": versioned.current_version,
+        "keys": versioned.keys,
+    }
 
 
 @router.post("/tables", status_code=201)

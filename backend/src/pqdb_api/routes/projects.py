@@ -217,6 +217,13 @@ class HmacKeyResponse(BaseModel):
     keys: dict[str, str]
 
 
+class HmacKeyRotateResponse(BaseModel):
+    """Response body for HMAC key rotation."""
+
+    previous_version: int
+    current_version: int
+
+
 @router.get("/{project_id}/hmac-key", response_model=HmacKeyResponse)
 async def get_hmac_key(
     project_id: uuid.UUID,
@@ -261,4 +268,46 @@ async def get_hmac_key(
     return HmacKeyResponse(
         current_version=versioned_keys.current_version,
         keys=versioned_keys.keys,
+    )
+
+
+@router.post(
+    "/{project_id}/hmac-key/rotate",
+    response_model=HmacKeyRotateResponse,
+)
+async def rotate_hmac_key(
+    project_id: uuid.UUID,
+    request: Request,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> HmacKeyRotateResponse:
+    """Rotate the HMAC key for a project.
+
+    Generates a new 256-bit key, adds as next version in Vault,
+    updates current_version. Requires developer JWT (project owner only).
+    """
+    # Verify project exists and belongs to the developer
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == developer_id,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    vault_client: VaultClient = request.app.state.vault_client
+    try:
+        versioned_keys = vault_client.rotate_hmac_key(project_id)
+    except VaultError:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to rotate HMAC key",
+        )
+
+    previous_version = versioned_keys.current_version - 1
+    return HmacKeyRotateResponse(
+        previous_version=previous_version,
+        current_version=versioned_keys.current_version,
     )
