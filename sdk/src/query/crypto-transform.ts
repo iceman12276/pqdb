@@ -10,6 +10,7 @@
  */
 import { encrypt, decrypt } from "../crypto/encryption.js";
 import { computeBlindIndex } from "../crypto/blind-index.js";
+import type { VersionedHmacKeys } from "../crypto/blind-index.js";
 import type { KeyPair } from "../crypto/pqc.js";
 import type { TableSchema, SchemaColumns } from "./schema.js";
 import type { FilterClause } from "./types.js";
@@ -46,6 +47,7 @@ export async function transformInsertRows<S extends SchemaColumns>(
   schema: TableSchema<S>,
   keyPair: KeyPair,
   hmacKey: Uint8Array,
+  keyVersion?: number,
 ): Promise<Record<string, unknown>[]> {
   return Promise.all(
     rows.map(async (row) => {
@@ -65,7 +67,7 @@ export async function transformInsertRows<S extends SchemaColumns>(
         transformed[colName] = toBase64(ciphertext);
 
         if (colDef.sensitivity === "searchable") {
-          transformed[`${colName}_index`] = computeBlindIndex(plaintext, hmacKey);
+          transformed[`${colName}_index`] = computeBlindIndex(plaintext, hmacKey, keyVersion);
         }
       }
 
@@ -168,6 +170,55 @@ export function transformFilters<S extends SchemaColumns>(
     }
 
     // Should not reach here if validateFilterOperations is called first
+    return filter;
+  });
+}
+
+/**
+ * Transform filters using all active key versions for multi-version query support.
+ *
+ * For searchable columns with eq/in, computes the blind index with every
+ * active key version and combines them into a single IN clause so queries
+ * find rows regardless of which version indexed them.
+ */
+export function transformFiltersMultiVersion<S extends SchemaColumns>(
+  filters: FilterClause[],
+  schema: TableSchema<S>,
+  versionedKeys: VersionedHmacKeys,
+): FilterClause[] {
+  return filters.map((filter) => {
+    const colDef = schema.columns[filter.column];
+    if (!colDef || colDef.sensitivity === "plain") {
+      return filter;
+    }
+
+    if (filter.op === "eq") {
+      const hashes: string[] = [];
+      for (const [ver, key] of Object.entries(versionedKeys.keys)) {
+        hashes.push(computeBlindIndex(String(filter.value), key, Number(ver)));
+      }
+      return {
+        column: filter.column,
+        op: "in" as const,
+        value: hashes,
+      };
+    }
+
+    if (filter.op === "in") {
+      const values = filter.value as unknown[];
+      const allHashes: string[] = [];
+      for (const v of values) {
+        for (const [ver, key] of Object.entries(versionedKeys.keys)) {
+          allHashes.push(computeBlindIndex(String(v), key, Number(ver)));
+        }
+      }
+      return {
+        column: filter.column,
+        op: "in" as const,
+        value: allHashes,
+      };
+    }
+
     return filter;
   });
 }

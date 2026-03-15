@@ -3,6 +3,7 @@ import {
   transformInsertRows,
   transformSelectResponse,
   transformFilters,
+  transformFiltersMultiVersion,
   validateFilterOperations,
 } from "../../src/query/crypto-transform.js";
 import { deriveKeyPair, encrypt } from "../../src/crypto/encryption.js";
@@ -10,6 +11,7 @@ import { computeBlindIndex } from "../../src/crypto/blind-index.js";
 import { generateHmacKey } from "../../src/crypto/hmac.js";
 import { column, defineTableSchema } from "../../src/query/schema.js";
 import type { FilterClause } from "../../src/query/types.js";
+import type { VersionedHmacKeys } from "../../src/crypto/blind-index.js";
 
 /** Encode binary ciphertext as base64. */
 function toBase64(bytes: Uint8Array): string {
@@ -246,6 +248,121 @@ describe("transformFilters", () => {
     const t2 = transformFilters(filters, usersSchema, hmacKey);
 
     expect(t1[0].value).toBe(t2[0].value);
+  });
+});
+
+describe("transformInsertRows with version-prefixed indexes", () => {
+  it("produces version-prefixed blind indexes when version is provided", async () => {
+    const kp = await deriveKeyPair("test-key");
+    const hmacKey = generateHmacKey();
+
+    const rows = [{ id: "1", email: "alice@example.com", name: "Alice", age: 30 }];
+
+    const transformed = await transformInsertRows(rows, usersSchema, kp, hmacKey, 2);
+
+    const row = transformed[0];
+    expect(row.email_index).toMatch(/^v2:[0-9a-f]{64}$/);
+  });
+
+  it("produces unversioned blind indexes when no version is provided", async () => {
+    const kp = await deriveKeyPair("test-key");
+    const hmacKey = generateHmacKey();
+
+    const rows = [{ id: "1", email: "alice@example.com", name: "Alice", age: 30 }];
+
+    const transformed = await transformInsertRows(rows, usersSchema, kp, hmacKey);
+
+    const row = transformed[0];
+    expect(row.email_index).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("transformFiltersMultiVersion", () => {
+  it("generates IN clause with all versions for .eq() on searchable columns", () => {
+    const key1 = generateHmacKey();
+    const key2 = generateHmacKey();
+    const versionedKeys: VersionedHmacKeys = {
+      currentVersion: 2,
+      keys: {
+        "1": key1,
+        "2": key2,
+      },
+    };
+
+    const filters: FilterClause[] = [
+      { column: "email", op: "eq", value: "alice@example.com" },
+    ];
+
+    const transformed = transformFiltersMultiVersion(filters, usersSchema, versionedKeys);
+
+    expect(transformed).toHaveLength(1);
+    // Should be converted to an "in" filter with all version hashes
+    expect(transformed[0].column).toBe("email");
+    expect(transformed[0].op).toBe("in");
+    const values = transformed[0].value as string[];
+    expect(values).toHaveLength(2);
+    expect(values[0]).toMatch(/^v1:[0-9a-f]{64}$/);
+    expect(values[1]).toMatch(/^v2:[0-9a-f]{64}$/);
+  });
+
+  it("generates IN clause with all versions for .in() on searchable columns", () => {
+    const key1 = generateHmacKey();
+    const key2 = generateHmacKey();
+    const versionedKeys: VersionedHmacKeys = {
+      currentVersion: 2,
+      keys: {
+        "1": key1,
+        "2": key2,
+      },
+    };
+
+    const filters: FilterClause[] = [
+      { column: "email", op: "in", value: ["alice@example.com", "bob@example.com"] },
+    ];
+
+    const transformed = transformFiltersMultiVersion(filters, usersSchema, versionedKeys);
+
+    expect(transformed).toHaveLength(1);
+    expect(transformed[0].op).toBe("in");
+    const values = transformed[0].value as string[];
+    // 2 values * 2 versions = 4 hashes
+    expect(values).toHaveLength(4);
+    values.forEach((v) => expect(v).toMatch(/^v[12]:[0-9a-f]{64}$/));
+  });
+
+  it("passes through plain column filters unchanged", () => {
+    const key1 = generateHmacKey();
+    const versionedKeys: VersionedHmacKeys = {
+      currentVersion: 1,
+      keys: { "1": key1 },
+    };
+
+    const filters: FilterClause[] = [
+      { column: "age", op: "gt", value: 18 },
+    ];
+
+    const transformed = transformFiltersMultiVersion(filters, usersSchema, versionedKeys);
+    expect(transformed).toEqual([{ column: "age", op: "gt", value: 18 }]);
+  });
+
+  it("handles single version (no expansion needed beyond prefix)", () => {
+    const key1 = generateHmacKey();
+    const versionedKeys: VersionedHmacKeys = {
+      currentVersion: 1,
+      keys: { "1": key1 },
+    };
+
+    const filters: FilterClause[] = [
+      { column: "email", op: "eq", value: "alice@example.com" },
+    ];
+
+    const transformed = transformFiltersMultiVersion(filters, usersSchema, versionedKeys);
+
+    expect(transformed).toHaveLength(1);
+    expect(transformed[0].op).toBe("in");
+    const values = transformed[0].value as string[];
+    expect(values).toHaveLength(1);
+    expect(values[0]).toMatch(/^v1:[0-9a-f]{64}$/);
   });
 });
 
