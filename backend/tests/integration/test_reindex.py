@@ -1,7 +1,10 @@
-"""Integration tests for the re-indexing service (US-023).
+"""Integration tests for the SDK-driven re-indexing service (US-023).
 
 Tests the full flow: create project, create table with searchable columns,
-insert data, rotate key, reindex, verify indexes updated, delete old version.
+insert data, rotate key, start reindex job, submit batch updates, verify.
+
+The key design change: the server no longer computes blind indexes.
+Instead, it coordinates the job and the SDK submits the re-computed indexes.
 
 Uses real Postgres with a mock VaultClient.
 """
@@ -218,6 +221,14 @@ class TestReindexRouteExists:
         resp = client.get(f"/v1/projects/{uuid.uuid4()}/reindex/status")
         assert resp.status_code != 404
 
+    def test_reindex_batch_route_exists(self, client: TestClient) -> None:
+        resp = client.post(f"/v1/projects/{uuid.uuid4()}/reindex/batch")
+        assert resp.status_code != 404
+
+    def test_reindex_complete_route_exists(self, client: TestClient) -> None:
+        resp = client.post(f"/v1/projects/{uuid.uuid4()}/reindex/complete")
+        assert resp.status_code != 404
+
     def test_delete_version_route_exists(self, client: TestClient) -> None:
         resp = client.delete(f"/v1/projects/{uuid.uuid4()}/hmac-key/versions/1")
         assert resp.status_code != 404
@@ -237,9 +248,16 @@ class TestReindexAuth:
         resp = client.get(f"/v1/projects/{uuid.uuid4()}/reindex/status")
         assert resp.status_code in (401, 403)
 
+    def test_reindex_batch_without_auth_returns_401_or_403(
+        self,
+        client: TestClient,
+    ) -> None:
+        resp = client.post(f"/v1/projects/{uuid.uuid4()}/reindex/batch")
+        assert resp.status_code in (401, 403)
+
 
 class TestReindexFlow:
-    """Full re-indexing flow integration tests."""
+    """Full SDK-driven re-indexing flow integration tests."""
 
     def test_reindex_empty_project_completes(self, client: TestClient) -> None:
         """Re-indexing a project with no tables should complete instantly."""
@@ -254,8 +272,10 @@ class TestReindexFlow:
         assert resp.status_code == 202
         data = resp.json()
         assert "job_id" in data
+        assert "tables" in data
+        assert data["tables"] == []
 
-        # Check status
+        # Check status — should be complete immediately
         status_resp = client.get(
             f"/v1/projects/{project_id}/reindex/status",
             headers=auth_headers(token),
@@ -265,12 +285,31 @@ class TestReindexFlow:
         assert status["status"] == "complete"
         assert status["tables_total"] == 0
 
-    def test_reindex_updates_blind_indexes(self, client: TestClient) -> None:
-        """Insert data, rotate key, reindex — indexes should be updated."""
+    def test_reindex_returns_tables_with_searchable_columns(
+        self, client: TestClient
+    ) -> None:
+        """Start reindex should return the list of tables needing re-indexing."""
         token = signup_and_get_token(client)
         project_id, service_key = _create_project_with_table(client, token)
 
-        # Get the current HMAC key (version 1)
+        resp = client.post(
+            f"/v1/projects/{project_id}/reindex",
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 202
+        data = resp.json()
+        assert "job_id" in data
+        assert "tables" in data
+        assert len(data["tables"]) == 1
+        assert data["tables"][0]["table"] == "users"
+        assert "email" in data["tables"][0]["searchable_columns"]
+
+    def test_sdk_driven_reindex_updates_blind_indexes(self, client: TestClient) -> None:
+        """Full SDK-driven flow: insert, rotate, start job, batch update, complete."""
+        token = signup_and_get_token(client)
+        project_id, service_key = _create_project_with_table(client, token)
+
+        # Get v1 HMAC key
         hmac_resp = client.get(
             f"/v1/projects/{project_id}/hmac-key",
             headers=auth_headers(token),
@@ -278,11 +317,12 @@ class TestReindexFlow:
         v1_key_hex = hmac_resp.json()["keys"]["1"]
         v1_key = bytes.fromhex(v1_key_hex)
 
-        # Insert a row with version-prefixed blind index
-        email_ciphertext = b"encrypted-email-bytes"
-        note_ciphertext = b"encrypted-note-bytes"
+        # Insert a row with v1 blind index (simulating SDK insert)
+        # The SDK computes HMAC(key, plaintext) not HMAC(key, ciphertext)
+        plaintext_email = "test@example.com"
         v1_index = (
-            "v1:" + hmac.new(v1_key, email_ciphertext, hashlib.sha3_256).hexdigest()
+            "v1:"
+            + hmac.new(v1_key, plaintext_email.encode(), hashlib.sha3_256).hexdigest()
         )
 
         insert_resp = client.post(
@@ -290,9 +330,9 @@ class TestReindexFlow:
             json={
                 "rows": [
                     {
-                        "email": email_ciphertext.decode("utf-8"),
+                        "email": "encrypted-email-bytes",
                         "email_index": v1_index,
-                        "note": note_ciphertext.decode("utf-8"),
+                        "note": "encrypted-note-bytes",
                         "age": 30,
                     }
                 ]
@@ -311,6 +351,7 @@ class TestReindexFlow:
         rows = select_resp.json()["data"]
         assert len(rows) == 1
         assert rows[0]["email_index"].startswith("v1:")
+        row_id = rows[0]["id"]
 
         # Rotate HMAC key to v2
         rotate_resp = client.post(
@@ -320,13 +361,56 @@ class TestReindexFlow:
         assert rotate_resp.status_code == 200
         assert rotate_resp.json()["current_version"] == 2
 
-        # Re-index
+        # Get v2 key
+        hmac_resp2 = client.get(
+            f"/v1/projects/{project_id}/hmac-key",
+            headers=auth_headers(token),
+        )
+        v2_key_hex = hmac_resp2.json()["keys"]["2"]
+        v2_key = bytes.fromhex(v2_key_hex)
+
+        # Step 1: Start reindex — server returns tables
         reindex_resp = client.post(
             f"/v1/projects/{project_id}/reindex",
             headers=auth_headers(token),
         )
         assert reindex_resp.status_code == 202
-        assert "job_id" in reindex_resp.json()
+        reindex_data = reindex_resp.json()
+        job_id = reindex_data["job_id"]
+        assert len(reindex_data["tables"]) == 1
+
+        # Step 2: SDK computes new blind index from plaintext
+        # (In real usage, SDK decrypts the _encrypted column first)
+        v2_index = (
+            "v2:"
+            + hmac.new(v2_key, plaintext_email.encode(), hashlib.sha3_256).hexdigest()
+        )
+
+        # Step 3: SDK sends batch update
+        batch_resp = client.post(
+            f"/v1/projects/{project_id}/reindex/batch",
+            json={
+                "job_id": job_id,
+                "table": "users",
+                "updates": [
+                    {
+                        "id": str(row_id),
+                        "indexes": {"email_index": v2_index},
+                    }
+                ],
+            },
+            headers=auth_headers(token),
+        )
+        assert batch_resp.status_code == 200, batch_resp.text
+        assert batch_resp.json()["rows_updated"] == 1
+
+        # Step 4: SDK marks job complete
+        complete_resp = client.post(
+            f"/v1/projects/{project_id}/reindex/complete",
+            json={"job_id": job_id, "tables_done": 1},
+            headers=auth_headers(token),
+        )
+        assert complete_resp.status_code == 200
 
         # Verify indexes are now v2
         select_resp2 = client.post(
@@ -337,79 +421,42 @@ class TestReindexFlow:
         assert select_resp2.status_code == 200
         rows2 = select_resp2.json()["data"]
         assert len(rows2) == 1
-        assert rows2[0]["email_index"].startswith("v2:")
+        assert rows2[0]["email_index"] == v2_index
 
-        # Get v2 key and verify the index value
-        hmac_resp2 = client.get(
-            f"/v1/projects/{project_id}/hmac-key",
+        # Verify status shows complete
+        status_resp = client.get(
+            f"/v1/projects/{project_id}/reindex/status",
             headers=auth_headers(token),
         )
-        v2_key_hex = hmac_resp2.json()["keys"]["2"]
-        v2_key = bytes.fromhex(v2_key_hex)
-        expected_v2_index = (
-            "v2:" + hmac.new(v2_key, email_ciphertext, hashlib.sha3_256).hexdigest()
-        )
-        assert rows2[0]["email_index"] == expected_v2_index
+        assert status_resp.status_code == 200
+        status = status_resp.json()
+        assert status["status"] == "complete"
+        assert status["rows_updated"] == 1
 
-    def test_reindex_is_idempotent(self, client: TestClient) -> None:
-        """Running reindex twice should produce the same result."""
+    def test_reindex_batch_rejects_nonrunning_job(self, client: TestClient) -> None:
+        """Batch endpoint should reject updates for completed jobs."""
         token = signup_and_get_token(client)
-        project_id, service_key = _create_project_with_table(client, token)
+        project = create_project(client, token)
+        project_id = project["id"]
 
-        # Insert data with v1 index
-        hmac_resp = client.get(
-            f"/v1/projects/{project_id}/hmac-key",
+        # Start and complete a reindex (empty project, auto-completes)
+        reindex_resp = client.post(
+            f"/v1/projects/{project_id}/reindex",
             headers=auth_headers(token),
         )
-        v1_key = bytes.fromhex(hmac_resp.json()["keys"]["1"])
-        ciphertext = b"test-cipher"
-        v1_index = "v1:" + hmac.new(v1_key, ciphertext, hashlib.sha3_256).hexdigest()
+        job_id = reindex_resp.json()["job_id"]
 
-        client.post(
-            "/v1/db/users/insert",
+        # Try batch on completed job
+        batch_resp = client.post(
+            f"/v1/projects/{project_id}/reindex/batch",
             json={
-                "rows": [
-                    {
-                        "email": ciphertext.decode("utf-8"),
-                        "email_index": v1_index,
-                        "note": "enc-note",
-                        "age": 25,
-                    }
-                ]
+                "job_id": job_id,
+                "table": "users",
+                "updates": [],
             },
-            headers={"apikey": service_key},
-        )
-
-        # Re-index (still on v1 — should be no-op since indexes already v1)
-        resp1 = client.post(
-            f"/v1/projects/{project_id}/reindex",
             headers=auth_headers(token),
         )
-        assert resp1.status_code == 202
-
-        # Select and get index
-        select1 = client.post(
-            "/v1/db/users/select",
-            json={"columns": ["*"]},
-            headers={"apikey": service_key},
-        )
-        idx1 = select1.json()["data"][0]["email_index"]
-
-        # Re-index again — should be idempotent
-        resp2 = client.post(
-            f"/v1/projects/{project_id}/reindex",
-            headers=auth_headers(token),
-        )
-        assert resp2.status_code == 202
-
-        select2 = client.post(
-            "/v1/db/users/select",
-            json={"columns": ["*"]},
-            headers={"apikey": service_key},
-        )
-        idx2 = select2.json()["data"][0]["email_index"]
-
-        assert idx1 == idx2
+        assert batch_resp.status_code == 400
 
     def test_reindex_status_shows_progress(self, client: TestClient) -> None:
         """Status endpoint should show job details."""
@@ -434,6 +481,7 @@ class TestReindexFlow:
         assert "tables_total" in status
         assert "job_id" in status
         assert "started_at" in status
+        assert "rows_updated" in status
 
     def test_no_reindex_status_returns_404(self, client: TestClient) -> None:
         """Status before any reindex should return 404."""

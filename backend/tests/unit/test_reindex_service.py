@@ -2,54 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import uuid
 
 from pqdb_api.services.reindex import (
     ReindexJob,
     ReindexStatus,
-    compute_blind_index,
     parse_version_prefix,
     should_skip_row,
 )
-
-
-class TestComputeBlindIndex:
-    """Tests for HMAC-SHA3-256 blind index computation."""
-
-    def test_compute_blind_index_deterministic(self) -> None:
-        key = bytes.fromhex("ab" * 32)
-        value = "test@example.com"
-        result1 = compute_blind_index(key, value)
-        result2 = compute_blind_index(key, value)
-        assert result1 == result2
-
-    def test_compute_blind_index_format(self) -> None:
-        """Result should be v{version}:{hex_digest}."""
-        key = bytes.fromhex("ab" * 32)
-        value = "hello"
-        result = compute_blind_index(key, value, version=2)
-        assert result.startswith("v2:")
-        # After prefix, should be valid hex
-        hex_part = result.split(":", 1)[1]
-        bytes.fromhex(hex_part)  # will raise if not valid hex
-
-    def test_compute_blind_index_matches_python_hmac(self) -> None:
-        """Must match Python's hmac + hashlib.sha3_256."""
-        key = bytes.fromhex("ab" * 32)
-        value = "test@example.com"
-        expected = hmac.new(key, value.encode(), hashlib.sha3_256).hexdigest()
-        result = compute_blind_index(key, value, version=1)
-        assert result == f"v1:{expected}"
-
-    def test_different_keys_produce_different_indexes(self) -> None:
-        key1 = bytes.fromhex("ab" * 32)
-        key2 = bytes.fromhex("cd" * 32)
-        value = "same_value"
-        idx1 = compute_blind_index(key1, value, version=1)
-        idx2 = compute_blind_index(key2, value, version=1)
-        assert idx1 != idx2
 
 
 class TestParseVersionPrefix:

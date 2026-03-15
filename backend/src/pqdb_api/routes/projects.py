@@ -24,7 +24,14 @@ from pqdb_api.models.project import Project
 from pqdb_api.services.api_keys import create_project_keys
 from pqdb_api.services.provisioner import DatabaseProvisioner, ProvisioningError
 from pqdb_api.services.rate_limiter import RateLimiter
-from pqdb_api.services.reindex import ReindexError, get_latest_job_status, start_reindex
+from pqdb_api.services.reindex import (
+    ReindexError,
+    apply_reindex_batch,
+    complete_reindex_job,
+    get_job_status,
+    get_latest_job_status,
+    start_reindex,
+)
 from pqdb_api.services.vault import VaultClient, VaultError, VersionedHmacKeys
 
 logger = structlog.get_logger()
@@ -348,9 +355,13 @@ async def start_reindex_endpoint(
     developer_id: uuid.UUID = Depends(get_current_developer_id),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Start a background re-indexing job for a project.
+    """Start an SDK-driven re-indexing job for a project.
 
-    Re-computes all blind indexes using the current HMAC key version.
+    Returns { job_id, tables } where tables lists the tables and their
+    searchable columns that need re-indexing. The SDK uses this info to
+    fetch rows, decrypt, re-compute blind indexes, and send them back
+    via POST /reindex/batch.
+
     Requires developer JWT (project owner only).
     Returns 409 if a job is already running.
     """
@@ -366,10 +377,9 @@ async def start_reindex_endpoint(
     if project.database_name is None:
         raise HTTPException(status_code=400, detail="Project not provisioned")
 
-    vault_client: VaultClient = request.app.state.vault_client
     project_session = await _get_project_session(request, project)
     try:
-        job_result = await start_reindex(project_session, project_id, vault_client)
+        job_result = await start_reindex(project_session, project_id)
         return job_result
     except ReindexError as exc:
         if "conflict" in str(exc).lower():
@@ -378,6 +388,110 @@ async def start_reindex_endpoint(
                 detail="A re-index job is already running",
             )
         raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        await project_session.close()
+
+
+class ReindexBatchUpdate(BaseModel):
+    """A single row's index updates."""
+
+    id: str
+    indexes: dict[str, str]
+
+
+class ReindexBatchRequest(BaseModel):
+    """Request body for reindex batch endpoint."""
+
+    job_id: str
+    table: str
+    updates: list[ReindexBatchUpdate]
+
+
+@router.post("/{project_id}/reindex/batch")
+async def reindex_batch_endpoint(
+    project_id: uuid.UUID,
+    body: ReindexBatchRequest,
+    request: Request,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Accept SDK-computed blind index updates for a table.
+
+    The SDK decrypts encrypted values, re-computes HMAC(new_key, plaintext),
+    and sends the updated indexes here. The server stores them directly.
+    """
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == developer_id,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.database_name is None:
+        raise HTTPException(status_code=400, detail="Project not provisioned")
+
+    job_id = uuid.UUID(body.job_id)
+
+    project_session = await _get_project_session(request, project)
+    try:
+        # Verify job exists and is running
+        job_status = await get_job_status(project_session, job_id)
+        if job_status is None:
+            raise HTTPException(status_code=404, detail="Re-index job not found")
+        if job_status["status"] != "running":
+            raise HTTPException(status_code=400, detail="Re-index job is not running")
+
+        updates_dicts = [{"id": u.id, "indexes": u.indexes} for u in body.updates]
+        rows_updated = await apply_reindex_batch(
+            project_session, job_id, body.table, updates_dicts
+        )
+        return {"rows_updated": rows_updated}
+    finally:
+        await project_session.close()
+
+
+class ReindexCompleteRequest(BaseModel):
+    """Request body for marking a reindex job complete."""
+
+    job_id: str
+    tables_done: int
+
+
+@router.post("/{project_id}/reindex/complete")
+async def reindex_complete_endpoint(
+    project_id: uuid.UUID,
+    body: ReindexCompleteRequest,
+    request: Request,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Mark a re-index job as complete. Called by the SDK when all batches are done."""
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == developer_id,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.database_name is None:
+        raise HTTPException(status_code=400, detail="Project not provisioned")
+
+    job_id = uuid.UUID(body.job_id)
+
+    project_session = await _get_project_session(request, project)
+    try:
+        job_status = await get_job_status(project_session, job_id)
+        if job_status is None:
+            raise HTTPException(status_code=404, detail="Re-index job not found")
+        if job_status["status"] != "running":
+            raise HTTPException(status_code=400, detail="Re-index job is not running")
+
+        await complete_reindex_job(project_session, job_id, body.tables_done)
+        return {"status": "complete"}
     finally:
         await project_session.close()
 

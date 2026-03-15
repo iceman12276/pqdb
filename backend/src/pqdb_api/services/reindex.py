@@ -1,12 +1,13 @@
-"""Background re-indexing service for blind index columns.
+"""SDK-driven re-indexing service for blind index columns.
 
 After HMAC key rotation, blind indexes reference the old key version.
-This service re-computes all blind indexes using the current HMAC key
-so old key versions can be retired.
+The server cannot recompute blind indexes because it never sees plaintext
+(zero-knowledge architecture). Instead, re-indexing is SDK-driven:
 
-For each table with searchable columns, reads the _encrypted column
-bytes and computes HMAC-SHA3-256(current_key, encrypted_bytes) to
-produce new version-prefixed blind indexes (v{N}:{hex}).
+1. Server creates a job, discovers tables with searchable columns
+2. SDK fetches rows, decrypts encrypted values, re-computes HMAC(new_key, plaintext)
+3. SDK sends updated indexes back via a batch endpoint
+4. Server stores the SDK-computed indexes and tracks progress
 
 Re-indexing is idempotent: rows already on the current version are skipped.
 Only one re-index job may run per project at a time (tracked in
@@ -16,8 +17,6 @@ _pqdb_reindex_jobs table).
 from __future__ import annotations
 
 import enum
-import hashlib
-import hmac as hmac_mod
 import re
 import uuid
 from collections.abc import Mapping
@@ -30,7 +29,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pqdb_api.services.schema_engine import ensure_metadata_table
-from pqdb_api.services.vault import VaultClient, VaultError
 
 logger = structlog.get_logger()
 
@@ -59,24 +57,6 @@ class ReindexJob:
 
 class ReindexError(Exception):
     """Raised when re-indexing fails."""
-
-
-def compute_blind_index(key: bytes, value: str, *, version: int = 1) -> str:
-    """Compute a versioned blind index using HMAC-SHA3-256.
-
-    Returns: v{version}:{hex_digest}
-    """
-    digest = hmac_mod.new(key, value.encode(), hashlib.sha3_256).hexdigest()
-    return f"v{version}:{digest}"
-
-
-def compute_blind_index_bytes(key: bytes, value: bytes, *, version: int = 1) -> str:
-    """Compute a versioned blind index from raw bytes using HMAC-SHA3-256.
-
-    Returns: v{version}:{hex_digest}
-    """
-    digest = hmac_mod.new(key, value, hashlib.sha3_256).hexdigest()
-    return f"v{version}:{digest}"
 
 
 def parse_version_prefix(index_value: str | None) -> int | None:
@@ -116,6 +96,7 @@ _SQL_CREATE_REINDEX_JOBS = text(
     "  status text NOT NULL DEFAULT 'running',"
     "  tables_done integer NOT NULL DEFAULT 0,"
     "  tables_total integer NOT NULL DEFAULT 0,"
+    "  rows_updated integer NOT NULL DEFAULT 0,"
     "  started_at timestamptz NOT NULL DEFAULT now(),"
     "  completed_at timestamptz"
     ")"
@@ -128,6 +109,10 @@ _SQL_INSERT_JOB = text(
 
 _SQL_UPDATE_JOB_PROGRESS = text(
     "UPDATE _pqdb_reindex_jobs SET tables_done = :tables_done WHERE id = :id"
+)
+
+_SQL_INCREMENT_ROWS_UPDATED = text(
+    "UPDATE _pqdb_reindex_jobs SET rows_updated = rows_updated + :count WHERE id = :id"
 )
 
 _SQL_UPDATE_JOB_STATUS = text(
@@ -143,7 +128,8 @@ _SQL_UPDATE_JOB_COMPLETE = text(
 )
 
 _SQL_GET_JOB = text(
-    "SELECT id, status, tables_done, tables_total, started_at, completed_at "
+    "SELECT id, status, tables_done, tables_total, started_at, completed_at, "
+    "COALESCE(rows_updated, 0) as rows_updated "
     "FROM _pqdb_reindex_jobs WHERE id = :id"
 )
 
@@ -152,7 +138,8 @@ _SQL_GET_RUNNING_JOB = text(
 )
 
 _SQL_GET_LATEST_JOB = text(
-    "SELECT id, status, tables_done, tables_total, started_at, completed_at "
+    "SELECT id, status, tables_done, tables_total, started_at, completed_at, "
+    "COALESCE(rows_updated, 0) as rows_updated "
     "FROM _pqdb_reindex_jobs ORDER BY started_at DESC LIMIT 1"
 )
 
@@ -200,6 +187,7 @@ async def get_latest_job_status(
         "tables_total": row[3],
         "started_at": row[4].isoformat() if row[4] else None,
         "completed_at": row[5].isoformat() if row[5] else None,
+        "rows_updated": row[6],
     }
 
 
@@ -219,6 +207,7 @@ async def get_job_status(
         "tables_total": row[3],
         "started_at": row[4].isoformat() if row[4] else None,
         "completed_at": row[5].isoformat() if row[5] else None,
+        "rows_updated": row[6],
     }
 
 
@@ -230,107 +219,23 @@ async def _get_searchable_columns(session: AsyncSession, table_name: str) -> lis
     return [row[0] for row in result.fetchall()]
 
 
-async def _reindex_table(
-    session: AsyncSession,
-    table_name: str,
-    searchable_columns: list[str],
-    hmac_key: bytes,
-    current_version: int,
-) -> int:
-    """Re-index all rows in a single table.
-
-    For each row, reads the _encrypted column, computes a new blind
-    index with the current HMAC key version, and updates the _index
-    column if the version prefix doesn't match.
-
-    Returns the number of rows updated.
-    """
-    # Build SELECT to read id + all _encrypted and _index columns
-    select_cols = ["id"]
-    for col in searchable_columns:
-        select_cols.append(f"{col}_encrypted")
-        select_cols.append(f"{col}_index")
-
-    col_str = ", ".join(select_cols)
-    # nosemgrep: avoid-sqlalchemy-text
-    select_sql = text(f'SELECT {col_str} FROM "{table_name}"')  # noqa: S608
-
-    result = await session.execute(select_sql)
-    rows = result.fetchall()
-    keys = list(result.keys())
-
-    updated_count = 0
-
-    for row in rows:
-        row_dict = dict(zip(keys, row))
-        row_id = row_dict["id"]
-
-        # Collect current index values
-        index_values: dict[str, str | None] = {}
-        for col in searchable_columns:
-            idx_col = f"{col}_index"
-            index_values[idx_col] = row_dict.get(idx_col)
-
-        # Skip if already on current version (idempotent)
-        if should_skip_row(index_values, target_version=current_version):
-            continue
-
-        # Compute new blind indexes from encrypted column bytes
-        updates: dict[str, str] = {}
-        for col in searchable_columns:
-            encrypted_val = row_dict.get(f"{col}_encrypted")
-            if encrypted_val is None:
-                continue
-            # encrypted_val is bytes from bytea column
-            if isinstance(encrypted_val, (bytes, bytearray, memoryview)):
-                new_index = compute_blind_index_bytes(
-                    hmac_key, bytes(encrypted_val), version=current_version
-                )
-            else:
-                # String fallback (e.g. if stored as text)
-                new_index = compute_blind_index(
-                    hmac_key, str(encrypted_val), version=current_version
-                )
-            updates[f"{col}_index"] = new_index
-
-        if not updates:
-            continue
-
-        # Build UPDATE statement
-        set_parts = []
-        params: dict[str, Any] = {"row_id": row_id}
-        for i, (col_name, new_val) in enumerate(updates.items()):
-            param_key = f"v_{i}"
-            set_parts.append(f"{col_name} = :{param_key}")
-            params[param_key] = new_val
-
-        set_str = ", ".join(set_parts)
-        # nosemgrep: avoid-sqlalchemy-text
-        update_sql = text(  # noqa: S608
-            f'UPDATE "{table_name}" SET {set_str} WHERE id = :row_id'
-        )
-        await session.execute(update_sql, params)
-        updated_count += 1
-
-    return updated_count
-
-
 async def start_reindex(
     session: AsyncSession,
     project_id: uuid.UUID,
-    vault_client: VaultClient,
 ) -> dict[str, Any]:
-    """Start a background re-indexing job for all tables in a project.
+    """Start an SDK-driven re-indexing job for all tables in a project.
 
-    1. Check no running job exists (return 409 data if one does)
-    2. Get current HMAC key from Vault
-    3. Discover all tables with searchable columns
-    4. Create job record
-    5. Re-index each table synchronously
-    6. Mark job complete/failed
+    1. Check no running job exists (raise ReindexError on conflict)
+    2. Discover all tables with searchable columns
+    3. Create job record
+    4. Return { job_id, tables } so the SDK can drive the re-indexing
 
-    Returns { job_id, status } on success.
-    Raises ReindexError on conflict or failure.
+    The SDK is responsible for:
+    - Fetching rows with old-version indexes
+    - Decrypting encrypted values to recover plaintext
+    - Re-computing HMAC(new_key, plaintext) blind indexes
+    - Sending updated indexes back via apply_reindex_batch()
+    - Calling complete_reindex_job() when done
     """
     await ensure_metadata_table(session)
     await ensure_reindex_jobs_table(session)
@@ -340,29 +245,17 @@ async def start_reindex(
     if running_id is not None:
         raise ReindexError("conflict")
 
-    # Get HMAC keys from Vault
-    try:
-        versioned_keys = vault_client.get_hmac_keys(project_id)
-    except VaultError as exc:
-        raise ReindexError(f"Failed to retrieve HMAC keys: {exc}") from exc
-
-    current_version = versioned_keys.current_version
-    current_key_hex = versioned_keys.keys.get(str(current_version))
-    if current_key_hex is None:
-        raise ReindexError("Current HMAC key version not found in Vault")
-    current_key = bytes.fromhex(current_key_hex)
-
     # Discover tables with searchable columns
     table_result = await session.execute(_SQL_DISTINCT_TABLES)
     all_tables = [row[0] for row in table_result.fetchall()]
 
-    tables_with_searchable: list[tuple[str, list[str]]] = []
+    tables_info: list[dict[str, Any]] = []
+    tables_total = 0
     for tbl in all_tables:
         cols = await _get_searchable_columns(session, tbl)
         if cols:
-            tables_with_searchable.append((tbl, cols))
-
-    tables_total = len(tables_with_searchable)
+            tables_info.append({"table": tbl, "searchable_columns": cols})
+            tables_total += 1
 
     # Create job record
     job_id = uuid.uuid4()
@@ -377,62 +270,127 @@ async def start_reindex(
     )
     await session.commit()
 
-    # Re-index each table
-    try:
-        tables_done = 0
-        for tbl_name, searchable_cols in tables_with_searchable:
-            await _reindex_table(
-                session, tbl_name, searchable_cols, current_key, current_version
-            )
-            tables_done += 1
-            await session.execute(
-                _SQL_UPDATE_JOB_PROGRESS,
-                {"id": job_id, "tables_done": tables_done},
-            )
-            await session.commit()
-
-        # Mark complete
+    # If no tables to reindex, complete immediately
+    if tables_total == 0:
         now = datetime.now(timezone.utc)
         await session.execute(
             _SQL_UPDATE_JOB_COMPLETE,
             {
                 "id": job_id,
                 "status": ReindexStatus.COMPLETE.value,
-                "tables_done": tables_done,
+                "tables_done": 0,
                 "completed_at": now,
             },
         )
         await session.commit()
 
-        logger.info(
-            "reindex_complete",
-            project_id=str(project_id),
-            job_id=str(job_id),
-            tables_done=tables_done,
-        )
+    logger.info(
+        "reindex_started",
+        project_id=str(project_id),
+        job_id=str(job_id),
+        tables_total=tables_total,
+    )
 
-        return {"job_id": str(job_id)}
+    return {
+        "job_id": str(job_id),
+        "tables": tables_info,
+    }
 
-    except Exception as exc:
-        # Mark failed
-        now = datetime.now(timezone.utc)
+
+async def apply_reindex_batch(
+    session: AsyncSession,
+    job_id: uuid.UUID,
+    table_name: str,
+    updates: list[dict[str, Any]],
+) -> int:
+    """Apply a batch of SDK-computed blind index updates for a table.
+
+    Each update in the list has:
+    - id: row primary key
+    - indexes: { col_index: "v2:newhash", ... }
+
+    Returns the number of rows updated.
+    """
+    await ensure_reindex_jobs_table(session)
+
+    updated_count = 0
+
+    for update in updates:
+        raw_id = update["id"]
+        # The id column is bigint, so cast string to int if needed
         try:
-            await session.execute(
-                _SQL_UPDATE_JOB_STATUS,
-                {
-                    "id": job_id,
-                    "status": ReindexStatus.FAILED.value,
-                    "completed_at": now,
-                },
-            )
-            await session.commit()
-        except Exception:
-            pass  # Best effort to mark failed
+            row_id: Any = int(raw_id)
+        except (ValueError, TypeError):
+            row_id = raw_id  # Fallback for UUID or other types
+        indexes: dict[str, str] = update["indexes"]
 
-        logger.error(
-            "reindex_failed",
-            project_id=str(project_id),
-            job_id=str(job_id),
-            error=str(exc),
+        if not indexes:
+            continue
+
+        # Build UPDATE statement
+        set_parts = []
+        params: dict[str, Any] = {"row_id": row_id}
+        for i, (col_name, new_val) in enumerate(indexes.items()):
+            param_key = f"v_{i}"
+            set_parts.append(f"{col_name} = :{param_key}")
+            params[param_key] = new_val
+
+        set_str = ", ".join(set_parts)
+        # nosemgrep: avoid-sqlalchemy-text
+        update_sql = text(  # noqa: S608
+            f'UPDATE "{table_name}" SET {set_str} WHERE id = :row_id'
         )
-        raise ReindexError(f"Re-indexing failed: {exc}") from exc
+        await session.execute(update_sql, params)
+        updated_count += 1
+
+    # Increment rows_updated counter on the job
+    if updated_count > 0:
+        await session.execute(
+            _SQL_INCREMENT_ROWS_UPDATED,
+            {"id": job_id, "count": updated_count},
+        )
+
+    await session.commit()
+    return updated_count
+
+
+async def complete_reindex_job(
+    session: AsyncSession,
+    job_id: uuid.UUID,
+    tables_done: int,
+) -> None:
+    """Mark a re-index job as complete."""
+    await ensure_reindex_jobs_table(session)
+    now = datetime.now(timezone.utc)
+    await session.execute(
+        _SQL_UPDATE_JOB_COMPLETE,
+        {
+            "id": job_id,
+            "status": ReindexStatus.COMPLETE.value,
+            "tables_done": tables_done,
+            "completed_at": now,
+        },
+    )
+    await session.commit()
+    logger.info("reindex_job_completed", job_id=str(job_id), tables_done=tables_done)
+
+
+async def fail_reindex_job(
+    session: AsyncSession,
+    job_id: uuid.UUID,
+) -> None:
+    """Mark a re-index job as failed."""
+    await ensure_reindex_jobs_table(session)
+    now = datetime.now(timezone.utc)
+    try:
+        await session.execute(
+            _SQL_UPDATE_JOB_STATUS,
+            {
+                "id": job_id,
+                "status": ReindexStatus.FAILED.value,
+                "completed_at": now,
+            },
+        )
+        await session.commit()
+    except Exception:
+        pass  # Best effort
