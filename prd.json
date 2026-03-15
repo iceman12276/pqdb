@@ -71,8 +71,8 @@
         "Production build succeeds"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #31 merged. SDK-driven re-indexing (server can't HMAC — zero-knowledge). Job tracking, batch endpoints, delete-version. Three-layer verification passed."
     },
     {
       "id": "US-024",
