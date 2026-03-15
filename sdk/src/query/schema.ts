@@ -44,13 +44,45 @@ export class ColumnDef<T = unknown> {
   }
 }
 
+/**
+ * UUID column definition with owner support.
+ *
+ * Only uuid columns can be marked as owner columns — this is enforced
+ * at the type level by only exposing .owner() on UuidColumnDef.
+ */
+export class UuidColumnDef extends ColumnDef<string> {
+  readonly isOwner: boolean;
+
+  constructor(
+    sensitivity: Sensitivity = "plain",
+    isPrimaryKey: boolean = false,
+    isOwner: boolean = false,
+  ) {
+    super("uuid", sensitivity, isPrimaryKey);
+    this.isOwner = isOwner;
+  }
+
+  /** Mark this column as the RLS owner column. */
+  owner(): UuidColumnDef {
+    return new UuidColumnDef(this.sensitivity, this.isPrimaryKey, true);
+  }
+
+  override sensitive(level: "searchable" | "private"): UuidColumnDef {
+    return new UuidColumnDef(level, this.isPrimaryKey, this.isOwner);
+  }
+
+  override primaryKey(): UuidColumnDef {
+    return new UuidColumnDef(this.sensitivity, true, this.isOwner);
+  }
+}
+
 /** TypeScript type mapping from column type to native type. */
 export type InferColumnType<C> = C extends ColumnDef<infer T> ? T : never;
 
 /** Column factory helpers. */
 export const column = {
-  uuid(): ColumnDef<string> {
-    return new ColumnDef<string>("uuid");
+  uuid(): UuidColumnDef {
+    return new UuidColumnDef();
   },
   text(): ColumnDef<string> {
     return new ColumnDef<string>("text");

@@ -161,9 +161,14 @@ export function createClient(
     return defineTableSchema(name, columns);
   }
 
+  /** User ID provider — returns current user ID or null. */
+  function getUserId(): string | null {
+    return auth.users.getUserId();
+  }
+
   function from<S extends SchemaColumns>(schema: TableSchema<S>): QueryBuilder<S> {
     if (!options?.encryptionKey) {
-      return new QueryBuilder(http, schema, null);
+      return new QueryBuilder(http, schema, null, getUserId);
     }
 
     // Lazy CryptoContext: key pair is derived on first async use
@@ -182,7 +187,7 @@ export function createClient(
       },
     };
 
-    return new QueryBuilder(http, schema, lazyCryptoCtx);
+    return new QueryBuilder(http, schema, lazyCryptoCtx, getUserId);
   }
 
   async function reindex(projectId: string): Promise<PqdbResponse<ReindexResult>> {

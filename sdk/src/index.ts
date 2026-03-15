@@ -23,7 +23,7 @@ export { AuthClient } from "./client/auth.js";
 export { UserAuthClient } from "./client/user-auth.js";
 
 // Query builder exports
-export { column, defineTableSchema, ColumnDef } from "./query/schema.js";
+export { column, defineTableSchema, ColumnDef, UuidColumnDef } from "./query/schema.js";
 export type {
   Sensitivity,
   ColumnType,
