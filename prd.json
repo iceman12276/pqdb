@@ -219,8 +219,8 @@
         "Production build succeeds"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #34 merged. UuidColumnDef.owner() chain, auto-set owner_id on insert, UserIdProvider. Three-layer verification: CI green, team review agent approved, LSP verified."
     },
     {
       "id": "US-030",
