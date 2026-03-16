@@ -96,7 +96,7 @@ class TestEnsureAuthTables:
             count = result.scalar()
             # _pqdb_users, _pqdb_sessions, _pqdb_auth_settings,
             # _pqdb_verification_tokens, _pqdb_oauth_identities
-            assert count == 7
+            assert count == 9
 
     @pytest.mark.asyncio()
     async def test_users_table_columns(
@@ -354,4 +354,4 @@ class TestVerificationTokensTable:
             count = result.scalar()
             # _pqdb_users, _pqdb_sessions, _pqdb_auth_settings,
             # _pqdb_verification_tokens, _pqdb_oauth_identities
-            assert count == 7
+            assert count == 9
