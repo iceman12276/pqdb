@@ -21,6 +21,7 @@ from pqdb_api.middleware.api_key import (
     get_project_session,
 )
 from pqdb_api.middleware.user_auth import UserContext, get_current_user
+from pqdb_api.services.auth_engine import ensure_auth_tables
 from pqdb_api.services.crud import (
     CrudError,
     FilterOp,
@@ -34,6 +35,10 @@ from pqdb_api.services.crud import (
     validate_filter_column,
     validate_owner_for_insert,
     validate_owner_for_update,
+)
+from pqdb_api.services.roles_policies import (
+    get_policies_for_table,
+    lookup_policy,
 )
 from pqdb_api.services.schema_engine import (
     ColumnDefinition,
@@ -189,6 +194,38 @@ def _rows_to_dicts(result: Any) -> list[dict[str, Any]]:
             rows.append(d)
         return rows
     return []
+
+
+async def _resolve_policies(
+    session: AsyncSession,
+    table_name: str,
+    operation: str,
+    user_role: str | None,
+) -> list[dict[str, Any]] | None:
+    """Resolve RLS policies for a table + operation + user role.
+
+    Returns:
+    - None if no policies exist for this table (fall back to basic RLS)
+    - A list with the matching policy dict if found
+    - An empty list if policies exist for the table but not for this role/op
+    """
+    try:
+        await ensure_auth_tables(session)
+    except Exception:
+        return None
+
+    all_policies = await get_policies_for_table(session, table_name)
+    if not all_policies:
+        return None  # No policies for table => fall back to basic RLS
+
+    if user_role is None:
+        user_role = "anon"
+
+    policy = await lookup_policy(session, table_name, operation, user_role)
+    if policy is None:
+        return []  # Policies exist but not for this role/op => deny
+
+    return [policy]
 
 
 def _parse_filter_op(op_str: str) -> FilterOp:
@@ -442,6 +479,23 @@ async def insert_rows(
     if not body.rows:
         raise HTTPException(status_code=400, detail="Must provide at least one row")
 
+    # Resolve policy-based RLS for insert
+    user_role = user.role if user else None
+    policies = await _resolve_policies(session, table_name, "insert", user_role)
+
+    # If policies deny access, reject early
+    if policies is not None and context.key_role != "service":
+        try:
+            inject_rls_filters(
+                filters=[],
+                columns_meta=columns_meta,
+                key_role=context.key_role,
+                user_id=user.user_id if user else None,
+                policies=policies,
+            )
+        except CrudError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
     try:
         inserted: list[dict[str, Any]] = []
         for row in body.rows:
@@ -458,7 +512,7 @@ async def insert_rows(
         await session.commit()
     except CrudError as exc:
         await session.rollback()
-        if "User context required" in str(exc):
+        if "User context required" in str(exc) or "denied by policy" in str(exc):
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -496,6 +550,10 @@ async def select_rows(
     except HTTPException:
         raise
 
+    # Resolve policy-based RLS for select
+    user_role = user.role if user else None
+    policies = await _resolve_policies(session, table_name, "select", user_role)
+
     # Inject RLS filters
     try:
         filters = inject_rls_filters(
@@ -503,6 +561,7 @@ async def select_rows(
             columns_meta=columns_meta,
             key_role=context.key_role,
             user_id=user.user_id if user else None,
+            policies=policies,
         )
     except CrudError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -580,6 +639,10 @@ async def update_rows(
     except HTTPException:
         raise
 
+    # Resolve policy-based RLS for update
+    user_role = user.role if user else None
+    policies = await _resolve_policies(session, table_name, "update", user_role)
+
     # Inject RLS filters
     try:
         filters = inject_rls_filters(
@@ -587,6 +650,7 @@ async def update_rows(
             columns_meta=columns_meta,
             key_role=context.key_role,
             user_id=user.user_id if user else None,
+            policies=policies,
         )
     except CrudError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -639,6 +703,10 @@ async def delete_rows(
     except HTTPException:
         raise
 
+    # Resolve policy-based RLS for delete
+    user_role = user.role if user else None
+    policies = await _resolve_policies(session, table_name, "delete", user_role)
+
     # Inject RLS filters
     try:
         filters = inject_rls_filters(
@@ -646,6 +714,7 @@ async def delete_rows(
             columns_meta=columns_meta,
             key_role=context.key_role,
             user_id=user.user_id if user else None,
+            policies=policies,
         )
     except CrudError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc

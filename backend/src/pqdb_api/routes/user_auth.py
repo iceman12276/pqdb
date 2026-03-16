@@ -579,3 +579,66 @@ async def update_user_profile(
 
     user["metadata"] = body.metadata
     return UserProfile(**user)
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoint: assign role to user (requires service API key)
+# ---------------------------------------------------------------------------
+class UpdateUserRoleRequest(BaseModel):
+    """Request body for updating a user's role."""
+
+    role: str
+
+
+@router.put("/{target_user_id}/role")
+async def update_user_role(
+    target_user_id: uuid.UUID,
+    body: UpdateUserRoleRequest,
+    context: ProjectContext = Depends(get_project_context),
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, str]:
+    """Update a user's role. Requires service API key (admin-only).
+
+    Validates that the role exists in _pqdb_roles before updating.
+    """
+    if context.key_role != "service":
+        raise HTTPException(
+            status_code=403,
+            detail="Only service_role API keys can update user roles",
+        )
+
+    await ensure_auth_tables(session)
+
+    # Validate role exists
+    role_result = await session.execute(
+        _SAFE("SELECT id FROM _pqdb_roles WHERE name = :name"),
+        {"name": body.role},
+    )
+    if role_result.fetchone() is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Role {body.role!r} does not exist",
+        )
+
+    # Check user exists
+    user_result = await session.execute(
+        _SAFE("SELECT id FROM _pqdb_users WHERE id = :uid"),
+        {"uid": str(target_user_id)},
+    )
+    if user_result.fetchone() is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Update role
+    await session.execute(
+        _SAFE("UPDATE _pqdb_users SET role = :role WHERE id = :uid"),
+        {"role": body.role, "uid": str(target_user_id)},
+    )
+    await session.commit()
+
+    logger.info(
+        "user_role_updated",
+        user_id=str(target_user_id),
+        new_role=body.role,
+    )
+
+    return {"message": f"User role updated to {body.role!r}"}
