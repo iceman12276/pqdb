@@ -326,6 +326,12 @@ async def ensure_auth_tables(session: AsyncSession) -> None:
             )
         else:
             await session.execute(_SQL_CREATE_USERS_PG)
+            # Migration: allow NULL password_hash for OAuth-only users
+            await session.execute(
+                _SAFE(
+                    "ALTER TABLE _pqdb_users ALTER COLUMN password_hash DROP NOT NULL"
+                )
+            )
             await session.execute(_SQL_CREATE_SESSIONS_PG)
             await session.execute(_SQL_CREATE_AUTH_SETTINGS_PG)
             await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_PG)
