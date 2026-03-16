@@ -103,7 +103,7 @@ export function createClient(
   options?: PqdbClientOptions,
 ): PqdbClient {
   const http = new HttpClient(projectUrl, apiKey);
-  const auth = new AuthClient(http);
+  const auth = new AuthClient(http, options?.projectId);
 
   // Crypto state — lazily initialized
   let resolvedCryptoCtx: CryptoContext | null = null;

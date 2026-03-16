@@ -5,6 +5,8 @@
  */
 import type { HttpClient } from "./http.js";
 import { UserAuthClient } from "./user-auth.js";
+import { RolesClient } from "./roles.js";
+import { PoliciesClient } from "./policies.js";
 import type {
   AuthCredentials,
   AuthTokens,
@@ -15,10 +17,14 @@ import type {
 export class AuthClient {
   private readonly http: HttpClient;
   readonly users: UserAuthClient;
+  readonly roles: RolesClient;
+  readonly policies: PoliciesClient;
 
-  constructor(http: HttpClient) {
+  constructor(http: HttpClient, projectId?: string) {
     this.http = http;
     this.users = new UserAuthClient(http);
+    this.roles = new RolesClient(http, projectId ?? "");
+    this.policies = new PoliciesClient(http);
 
     // Register the refresh handler so HTTP client can auto-refresh on 401
     this.http.setRefreshHandler(() => this.tryRefresh());
