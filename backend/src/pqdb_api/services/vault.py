@@ -278,6 +278,102 @@ class VaultClient:
             )
             raise VaultError(f"Failed to delete HMAC key version: {exc}") from exc
 
+    # ------------------------------------------------------------------
+    # OAuth credential management
+    # ------------------------------------------------------------------
+
+    def store_oauth_credentials(
+        self,
+        project_id: uuid.UUID,
+        provider: str,
+        credentials: dict[str, Any],
+    ) -> None:
+        """Store OAuth provider credentials in Vault.
+
+        Writes to secret/pqdb/projects/{project_id}/oauth/{provider}.
+        """
+        path = f"pqdb/projects/{project_id}/oauth/{provider}"
+        try:
+            self._client.secrets.kv.v2.create_or_update_secret(
+                path=path,
+                secret=credentials,
+            )
+            logger.info(
+                "oauth_credentials_stored",
+                project_id=str(project_id),
+                provider=provider,
+            )
+        except Exception as exc:
+            logger.error(
+                "oauth_credentials_store_failed",
+                project_id=str(project_id),
+                provider=provider,
+                error=str(exc),
+            )
+            raise VaultError(f"Failed to store OAuth credentials: {exc}") from exc
+
+    def get_oauth_credentials(
+        self, project_id: uuid.UUID, provider: str
+    ) -> dict[str, Any]:
+        """Retrieve OAuth provider credentials from Vault."""
+        path = f"pqdb/projects/{project_id}/oauth/{provider}"
+        try:
+            response = self._client.secrets.kv.v2.read_secret_version(
+                path=path,
+                raise_on_deleted_version=True,
+            )
+            data: dict[str, Any] = response["data"]["data"]
+            return data
+        except VaultError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "oauth_credentials_retrieve_failed",
+                project_id=str(project_id),
+                provider=provider,
+                error=str(exc),
+            )
+            raise VaultError(f"Failed to retrieve OAuth credentials: {exc}") from exc
+
+    def delete_oauth_credentials(self, project_id: uuid.UUID, provider: str) -> None:
+        """Delete OAuth provider credentials from Vault."""
+        path = f"pqdb/projects/{project_id}/oauth/{provider}"
+        try:
+            self._client.secrets.kv.v2.delete_metadata_and_all_versions(
+                path=path,
+            )
+            logger.info(
+                "oauth_credentials_deleted",
+                project_id=str(project_id),
+                provider=provider,
+            )
+        except Exception as exc:
+            logger.error(
+                "oauth_credentials_delete_failed",
+                project_id=str(project_id),
+                provider=provider,
+                error=str(exc),
+            )
+            raise VaultError(f"Failed to delete OAuth credentials: {exc}") from exc
+
+    def list_oauth_providers(self, project_id: uuid.UUID) -> list[str]:
+        """List configured OAuth providers for a project.
+
+        Returns provider names (e.g. ["google", "github"]).
+        Returns empty list if no providers are configured.
+        """
+        path = f"pqdb/projects/{project_id}/oauth"
+        try:
+            response = self._client.secrets.kv.v2.list_secrets(
+                path=path,
+            )
+            keys: list[str] = response["data"]["keys"]
+            # Vault returns keys with trailing slash for directories
+            return [k.rstrip("/") for k in keys]
+        except Exception:
+            # No providers configured or path doesn't exist
+            return []
+
     def delete_hmac_key(self, project_id: uuid.UUID) -> None:
         """Delete the HMAC key for the given project from Vault."""
         path = f"pqdb/projects/{project_id}/hmac"
