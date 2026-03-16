@@ -277,8 +277,8 @@
         "Production build succeeds"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #47 merged. SDK RolesClient, PoliciesClient, MfaClient, setRole, MFA-aware signIn. 24 unit tests."
     },
     {
       "id": "US-042",
