@@ -19,6 +19,15 @@ import type {
   MfaRequiredResponse,
   SetRoleResponse,
   PqdbResponse,
+  OAuthOptions,
+  OAuthUrlResult,
+  OAuthCallbackParams,
+  LinkedProvider,
+  MagicLinkResult,
+  VerifyEmailResult,
+  ResendVerificationResult,
+  ResetPasswordResult,
+  UpdatePasswordResult,
 } from "./types.js";
 
 export class UserAuthClient {
@@ -107,6 +116,144 @@ export class UserAuthClient {
       method: "PUT",
       path: "/v1/auth/users/me",
       body: data,
+    });
+  }
+
+  // ── OAuth ──────────────────────────────────────────────────────────
+
+  async signInWithOAuth(
+    provider: string,
+    options: OAuthOptions,
+  ): Promise<PqdbResponse<OAuthUrlResult>> {
+    const encodedRedirect = encodeURIComponent(options.redirectTo);
+    const url = `${this.http.getBaseUrl()}/v1/auth/users/oauth/${provider}/authorize?redirect_uri=${encodedRedirect}`;
+    return {
+      data: { url, provider },
+      error: null,
+    };
+  }
+
+  async handleOAuthCallback(
+    params: OAuthCallbackParams,
+  ): Promise<PqdbResponse<{ user: UserProfile; access_token: string; refresh_token: string }>> {
+    // Store the tokens from the callback
+    this.userAccessToken = params.access_token;
+    this.userRefreshToken = params.refresh_token;
+
+    // Fetch the user profile to populate user data
+    const userResult = await this.userRequest<UserProfile>({
+      method: "GET",
+      path: "/v1/auth/users/me",
+    });
+
+    if (userResult.error) {
+      // Clear tokens on failure
+      this.userAccessToken = null;
+      this.userRefreshToken = null;
+      this.userId = null;
+      return { data: null, error: userResult.error };
+    }
+
+    this.userId = userResult.data!.id;
+
+    return {
+      data: {
+        user: userResult.data!,
+        access_token: params.access_token,
+        refresh_token: params.refresh_token,
+      },
+      error: null,
+    };
+  }
+
+  async linkOAuth(
+    provider: string,
+    options: OAuthOptions,
+  ): Promise<PqdbResponse<OAuthUrlResult>> {
+    return this.userRequest<OAuthUrlResult>({
+      method: "POST",
+      path: `/v1/auth/users/oauth/${provider}/link`,
+      body: { redirect_to: options.redirectTo },
+    });
+  }
+
+  async unlinkOAuth(
+    provider: string,
+  ): Promise<PqdbResponse<{ message: string }>> {
+    return this.userRequest<{ message: string }>({
+      method: "DELETE",
+      path: `/v1/auth/users/oauth/${provider}`,
+    });
+  }
+
+  async getLinkedProviders(): Promise<PqdbResponse<LinkedProvider[]>> {
+    return this.userRequest<LinkedProvider[]>({
+      method: "GET",
+      path: "/v1/auth/users/oauth/providers",
+    });
+  }
+
+  // ── Magic Link ────────────────────────────────────────────────────
+
+  async signInWithMagicLink(params: { email: string }): Promise<PqdbResponse<MagicLinkResult>> {
+    return this.http.request<MagicLinkResult>({
+      method: "POST",
+      path: "/v1/auth/users/magic-link",
+      body: { email: params.email },
+    });
+  }
+
+  async verifyMagicLink(token: string): Promise<UserAuthResponse> {
+    const result = await this.http.request<UserAuthTokens>({
+      method: "POST",
+      path: "/v1/auth/users/verify-magic-link",
+      body: { token },
+    });
+
+    if (result.data) {
+      this.userAccessToken = result.data.access_token;
+      this.userRefreshToken = result.data.refresh_token;
+      this.userId = result.data.user.id;
+    }
+
+    return result;
+  }
+
+  // ── Email Verification ────────────────────────────────────────────
+
+  async verifyEmail(token: string): Promise<PqdbResponse<VerifyEmailResult>> {
+    return this.http.request<VerifyEmailResult>({
+      method: "POST",
+      path: "/v1/auth/users/verify-email",
+      body: { token },
+    });
+  }
+
+  async resendVerification(): Promise<PqdbResponse<ResendVerificationResult>> {
+    return this.userRequest<ResendVerificationResult>({
+      method: "POST",
+      path: "/v1/auth/users/resend-verification",
+    });
+  }
+
+  // ── Password Reset ────────────────────────────────────────────────
+
+  async resetPassword(params: { email: string }): Promise<PqdbResponse<ResetPasswordResult>> {
+    return this.http.request<ResetPasswordResult>({
+      method: "POST",
+      path: "/v1/auth/users/reset-password",
+      body: { email: params.email },
+    });
+  }
+
+  async updatePassword(params: {
+    token: string;
+    newPassword: string;
+  }): Promise<PqdbResponse<UpdatePasswordResult>> {
+    return this.http.request<UpdatePasswordResult>({
+      method: "POST",
+      path: "/v1/auth/users/update-password",
+      body: { token: params.token, new_password: params.newPassword },
     });
   }
 

@@ -192,8 +192,8 @@
         "Production build succeeds"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #46 merged. SDK OAuth, magic link, email verification, password reset methods on UserAuthClient. 21 unit tests."
     },
     {
       "id": "US-039",

@@ -41,6 +41,10 @@ export class HttpClient {
     return this.refreshToken;
   }
 
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
   setRefreshHandler(handler: () => Promise<boolean>): void {
     this.onRefreshNeeded = handler;
   }
