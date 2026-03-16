@@ -231,6 +231,7 @@ def _clean_tables(test_db_name: str, test_db_url: str) -> Iterator[None]:
         "_pqdb_reindex_jobs",
         "_pqdb_recovery_codes",
         "_pqdb_mfa_factors",
+        "_pqdb_oauth_identities",
         "_pqdb_sessions",
         "_pqdb_users",
         "_pqdb_auth_settings",
