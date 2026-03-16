@@ -6,9 +6,8 @@ Phase 3 transforms pqdb from an API-only platform into a fully featured develope
 
 Phase 3 is split into two sub-phases, each independently shippable:
 
-- **Phase 3-pre** (2 stories): Security hardening — rate limiting expansion, Phase 2b rate limit verification
-- **Phase 3a** (13 stories): Dashboard/Studio UI, Developer OAuth login, Passkey/WebAuthn, encryption key management UX
-- **Phase 3b** (14 stories): MCP server for AI agents, NL-to-query translation, vector similarity search, realtime subscriptions, Dashboard Realtime + MCP pages
+- **Phase 3a** (~12 stories): Dashboard/Studio UI, Developer OAuth login, Passkey/WebAuthn developer login
+- **Phase 3b** (~12 stories): MCP server for AI agents, NL-to-query translation, vector similarity search, realtime subscriptions
 
 ### Deferred to Phase 4
 
@@ -34,7 +33,6 @@ Developers interact with pqdb exclusively through the CLI and SDK. There is no v
 - **Dark theme** by default (matches Supabase aesthetic, developer preference)
 - Served as a separate app on its own port (e.g., `localhost:3000`), proxied in production
 - Communicates with the backend via the existing REST API using developer JWT auth
-- Developer JWTs stored in memory (TanStack Query cache) — never in localStorage or cookies. Optional sessionStorage for tab-persistence across page reloads; cleared on tab close
 
 ### Layout (modeled after Supabase Dashboard)
 
@@ -55,7 +53,7 @@ Developers interact with pqdb exclusively through the CLI and SDK. There is no v
 | **Schema** | Schema visualizer (ERD with React Flow), column management, sensitivity badges |
 | **Authentication** | End-user auth: OAuth providers, roles, policies, MFA settings, verification |
 | **Realtime** | Subscription config + event inspector (grayed out until Phase 3b) |
-| **Logs** | API request logs, auth events, webhook delivery history. Data source: structlog writes to `_pqdb_audit_log` table per project DB (auto-created by `ensure_audit_table()`). Phase 3a ships a read-only log viewer; log ingestion detail decided during implementation |
+| **Logs** | API request logs, auth events, webhook delivery history |
 | **MCP** | MCP server config + connection info (grayed out until Phase 3b) |
 | **Project Settings** | API keys, HMAC key rotation, general settings |
 
@@ -171,9 +169,7 @@ developer_oauth_identities (
   provider      TEXT NOT NULL,
   provider_uid  TEXT NOT NULL,
   email         TEXT,
-  metadata      JSONB DEFAULT '{}',
   created_at    TIMESTAMPTZ,
-  updated_at    TIMESTAMPTZ,
   UNIQUE(provider, provider_uid)
 )
 ```
@@ -227,8 +223,8 @@ Passwords are phishable. Passkeys (WebAuthn) provide hardware-backed, phishing-r
 ```
 1. Developer clicks "Sign in with Passkey" on login page
 2. Dashboard calls GET /v1/auth/passkeys/challenge?type=authentication
-3. Server returns challenge with empty allowCredentials list (discoverable credential flow — browser finds the right passkey)
-4. Dashboard calls navigator.credentials.get() with challenge (empty allowCredentials)
+3. Server returns challenge + list of allowed credential IDs for discoverable credentials
+4. Dashboard calls navigator.credentials.get() with challenge
 5. Browser prompts biometric/PIN
 6. Browser returns assertion → Dashboard sends to POST /v1/auth/passkeys/authenticate
 7. Server validates assertion (signature verification, counter increment check) via py_webauthn
@@ -274,16 +270,13 @@ AI agents (Claude, GPT, Cursor, etc.) cannot interact with pqdb programmatically
 
 ### Architecture
 
-Standalone TypeScript service in `/mcp` directory. Uses the official `@modelcontextprotocol/sdk` package. Imports `@pqdb/client` directly for both API calls and optional client-side decryption — no crypto reimplementation needed.
+Standalone Python service in `/mcp` directory. Uses the official `mcp` Python SDK. Connects to the pqdb backend via HTTP (same as the TypeScript SDK — it's just another client).
 
 ```
-AI Agent → MCP Server (TypeScript) → pqdb REST API → Project Database
-              ↓                ↓
-        API key auth     @pqdb/client SDK
-                         (optional decrypt)
+AI Agent → MCP Server → pqdb REST API → Project Database
+              ↓
+        Authenticates via API key (same as SDK)
 ```
-
-The MCP server is architecturally a **client**, not a backend service. TypeScript is the natural choice: it shares the SDK's language, reuses its crypto layer, and `@modelcontextprotocol/sdk` is the best-maintained MCP SDK.
 
 ### Transports
 
@@ -307,7 +300,7 @@ The MCP server is architecturally a **client**, not a backend service. TypeScrip
 }
 ```
 
-The `PQDB_ENCRYPTION_KEY` is optional. Without it, sensitive columns return `[encrypted]`. With it, the MCP server passes the key to the imported `@pqdb/client` SDK which decrypts locally — same crypto path as the Dashboard "Unlock" flow. Explicit opt-in by the developer.
+The `PQDB_ENCRYPTION_KEY` is optional. Without it, sensitive columns return `[encrypted]`. With it, the MCP server uses the `@pqdb/client` SDK internally to decrypt — explicit opt-in by the developer.
 
 ### Tools
 
@@ -358,7 +351,7 @@ The `pqdb_natural_language_query` tool uses schema introspection to understand t
 
 Implementation: rule-based translation using schema metadata. No LLM needed for V1 — the query builder syntax is simple enough that pattern matching covers common queries:
 - "find users where email is alice@example.com" → `.from(users).select().eq('email', 'alice@example.com')`
-- "show all posts" → `.from(posts).select()`
+- "count all posts" → `.from(posts).select('id')`
 - "get orders after 2026-01-01" → `.from(orders).select().gt('created_at', '2026-01-01')`
 - "show me the schema" → calls `pqdb_describe_schema`
 
@@ -388,6 +381,7 @@ The existing `POST /v1/db/{table}/select` endpoint gains a new `similar_to` fiel
 
 ```json
 {
+  "table": "documents",
   "columns": ["id", "title", "content"],
   "similar_to": {
     "column": "embedding",
@@ -400,8 +394,6 @@ The existing `POST /v1/db/{table}/select` endpoint gains a new `similar_to` fiel
   ]
 }
 ```
-
-Note: table name is in the URL path (`POST /v1/db/{table}/select`), not in the request body. The `similar_to` field is `Optional` — requests without it work identically to Phase 1/2 (backward compatible).
 
 Generated SQL:
 ```sql
@@ -445,7 +437,9 @@ POST /v1/db/tables/{name}/indexes
 | `hnsw` | Fast approximate search, higher memory, better for real-time queries |
 | `ivfflat` | Memory-efficient, requires training step, better for large datasets |
 
-`GET /v1/db/tables/{name}/indexes` lists existing indexes (returns index name, column, type, distance). `DELETE /v1/db/tables/{name}/indexes/{index_name}` drops an index by its PostgreSQL name. Index names are auto-generated: `idx_{table}_{column}_{type}` (e.g., `idx_documents_embedding_hnsw`).
+`GET /v1/db/tables/{name}/indexes` lists existing indexes. `DELETE /v1/db/tables/{name}/indexes/{id}` drops an index.
+
+Exposed in Dashboard under Schema page for visual management.
 
 ### SDK interface
 
@@ -498,51 +492,38 @@ Three components:
 
 ### Trigger installation
 
-Triggers are installed when a subscription is first created for a table.
-
-**Important: pg_notify has a hard 8KB payload limit.** Rows with large ciphertext blobs can easily exceed this. To handle this, the trigger sends only the row ID, table name, and event type — not the full row:
+Triggers are installed when a subscription is first created for a table:
 
 ```sql
 CREATE OR REPLACE FUNCTION pqdb_notify_changes() RETURNS TRIGGER AS $$
 BEGIN
-  -- All pqdb user tables use 'id' as primary key (hardcoded in schema engine)
   PERFORM pg_notify('pqdb_realtime', json_build_object(
     'table', TG_TABLE_NAME,
     'event', TG_OP,
-    'pk', CASE
-      WHEN TG_OP = 'DELETE' THEN OLD.id::text
-      ELSE NEW.id::text
+    'row', CASE
+      WHEN TG_OP = 'DELETE' THEN row_to_json(OLD)
+      ELSE row_to_json(NEW)
     END
   )::text);
   RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER pqdb_realtime_trigger
+  AFTER INSERT OR UPDATE OR DELETE ON {table_name}
+  FOR EACH ROW EXECUTE FUNCTION pqdb_notify_changes();
 ```
 
-The realtime server receives the notification, fetches the full row via SQL (`SELECT * FROM {table} WHERE {pk} = {pk_val}`), applies RLS filtering, then delivers the full row to eligible subscribers. For DELETE events, the server delivers only the primary key (the row no longer exists to fetch).
+The trigger sends the **full row as-is** from Postgres — ciphertext included. The SDK decrypts client-side, same as a normal query response.
 
-**Trigger lifecycle:** Triggers are installed permanently on first subscription and remain in place. The overhead of an unused trigger is negligible (function only fires on DML). No cleanup on unsubscribe.
-
-**Project isolation:** Each project database has its own `pqdb_realtime` NOTIFY channel. Cross-project leakage is impossible — isolation is guaranteed by database-level separation.
-
-### Notification payload (via pg_notify)
-
-```json
-{
-  "table": "messages",
-  "event": "INSERT",
-  "pk": "550e8400-e29b-41d4-a716-446655440000"
-}
-```
-
-### Delivered payload (to subscriber, after server fetches full row)
+### Trigger payload format
 
 ```json
 {
   "table": "messages",
   "event": "INSERT",
   "row": {
-    "id": "550e8400-...",
+    "id": "uuid",
     "content_encrypted": "base64...",
     "sender_index": "v2:aabb...",
     "created_at": "2026-03-16T..."
@@ -560,7 +541,7 @@ Not every subscriber should see every event. The realtime server filters per-eve
 4. **`all`** → deliver event
 5. **`owner`** → deliver only if `row[owner_column] == subscriber.user_id`
 
-When no policies exist for a table, fall back to Phase 2a basic owner-column RLS behavior (backward compatible). Tables with no policies and no owner column: service role receives all events; anon/authenticated receive all events (no filtering — same as Phase 1 open access). Service role API key always receives all events regardless of policies.
+When no policies exist for a table, fall back to Phase 2a basic owner-column RLS behavior (backward compatible). Service role API key always receives all events.
 
 ### WebSocket protocol
 
@@ -635,23 +616,14 @@ The Realtime sidebar item (grayed out in Phase 3a) lights up in Phase 3b with:
 
 ## Section 7: Story Breakdown
 
-### Phase 3-pre: Security hardening (before Phase 3a begins)
-
-| Story | Title | Depends on |
-|-------|-------|-----------|
-| US-PRE-1 | Verify Phase 2b auth rate limits are implemented (magic link, password reset, verification resend, signup, login) — GitHub #54 | — |
-| US-PRE-2 | Expand rate limiting middleware to all auth + CRUD endpoints (per-project, per-IP) — GitHub #49 | US-PRE-1 |
-
-These two stories must be completed before Phase 3a begins. They address security gaps in the existing platform that would be amplified by the new attack surface Phase 3 introduces (Dashboard, MCP, WebSocket).
-
-### Phase 3a: Dashboard + Developer Auth (13 stories)
+### Phase 3a: Dashboard + Developer Auth (~12 stories)
 
 | Story | Title | Depends on |
 |-------|-------|-----------|
 | US-043 | Dashboard scaffolding (TanStack Start + React + shadcn/ui + Tailwind, dark theme) | — |
 | US-044 | Dashboard login/signup pages (email/password via existing API) | US-043 |
 | US-045 | Project list + create project pages | US-044 |
-| US-046 | Project overview page (status cards, request stats, encryption info) + Logs page (read-only audit log viewer) | US-045 |
+| US-046 | Project overview page (status cards, request stats, encryption info) | US-045 |
 | US-047 | API key management page (masked view, rotate, copy connection snippets) | US-045 |
 | US-048 | Schema browser + schema visualizer (React Flow ERD, sensitivity badges, logical/physical toggle) | US-045 |
 | US-049 | Table editor with data viewer + client-side decryption ("Unlock" with @pqdb/client SDK in browser) | US-048 |
@@ -659,51 +631,45 @@ These two stories must be completed before Phase 3a begins. They address securit
 | US-051 | Auth settings page (providers, roles, policies, verification settings, MFA config) | US-045 |
 | US-052 | Developer OAuth backend (Google + GitHub — platform DB, Vault, Alembic migration) | — |
 | US-053 | Developer OAuth + Passkey/WebAuthn (Dashboard integration, py_webauthn, Alembic migration) | US-044, US-052 |
-| US-054 | Encryption key management UX — Dashboard key backup guidance, SDK warning on createClient(), Project Settings "Encryption" section — GitHub #51 | US-049 |
-| US-055 | Phase 3a E2E tests (Playwright for CI + Claude in Chrome for visual QA) | US-054, US-053, US-051 |
+| US-054 | Phase 3a E2E tests (Playwright for CI + Claude in Chrome for visual QA) | US-053, US-051 |
 
 Dependency chains:
 ```
 Chain A (Dashboard):  US-043 → US-044 → US-045 → US-046, US-047, US-048, US-051 (parallel)
                                                     US-048 → US-049, US-050 (parallel)
-                                                    US-049 → US-054 (key mgmt UX)
 Chain B (Dev auth):   US-052 (independent) ──────→ US-053 (needs US-044)
                                                            ↓
-All chains ──────────────────────────────────────→ US-055 (E2E)
+All chains ──────────────────────────────────────→ US-054 (E2E)
 ```
 
-### Phase 3b: MCP + Vector + Realtime (14 stories)
+### Phase 3b: MCP + Vector + Realtime (~12 stories)
 
 | Story | Title | Depends on |
 |-------|-------|-----------|
-| US-056 | MCP server scaffolding (TypeScript, @modelcontextprotocol/sdk, @pqdb/client, stdio + SSE transport, API key auth) | — |
-| US-057 | MCP schema tools + resources (list_tables, describe_table, describe_schema, pqdb:// resources) | US-056 |
-| US-058 | MCP CRUD tools (query_rows, insert_rows, update_rows, delete_rows) | US-057 |
-| US-059 | MCP auth tools + natural language query tool (rule-based NL-to-query translation) | US-058 |
-| US-060 | Vector similarity search backend (similarTo operator, distance metrics, validation) | — |
-| US-061 | Vector index management (HNSW + IVFFlat creation/deletion endpoints) + Dashboard Schema page vector index UI | US-060 |
-| US-062 | SDK vector search (`.similarTo()` method, distance metric option) | US-060 |
-| US-063 | Realtime PostgreSQL triggers + NOTIFY infrastructure (trigger function, installation on subscribe) | — |
-| US-064 | Realtime WebSocket server (Starlette WebSocket, connection management, auth, LISTEN) | US-063 |
-| US-065 | Realtime RLS enforcement (per-event per-subscriber filtering, policy lookup, owner check) | US-064 |
-| US-066 | SDK realtime client (`.on().subscribe()`, auto-reconnect, client-side decryption of event payloads) | US-065 |
-| US-067 | Dashboard MCP page (connection config, tool list, test tool UI) | US-059 |
-| US-068 | Dashboard Realtime page (active subscriptions, live event inspector, connection stats) | US-066 |
-| US-069 | Phase 3b E2E tests (MCP agent round-trip, vector search, realtime subscription + RLS) | US-059, US-062, US-066, US-067, US-068 |
+| US-055 | MCP server scaffolding (mcp Python SDK, stdio + SSE transport, API key auth) | — |
+| US-056 | MCP schema tools + resources (list_tables, describe_table, describe_schema, pqdb:// resources) | US-055 |
+| US-057 | MCP CRUD tools (query_rows, insert_rows, update_rows, delete_rows) | US-056 |
+| US-058 | MCP auth tools + natural language query tool (rule-based NL-to-query translation) | US-057 |
+| US-059 | Vector similarity search backend (similarTo operator, distance metrics, validation) | — |
+| US-060 | Vector index management (HNSW + IVFFlat creation/deletion endpoints) | US-059 |
+| US-061 | SDK vector search (`.similarTo()` method, distance metric option) | US-059 |
+| US-062 | Realtime PostgreSQL triggers + NOTIFY infrastructure (trigger function, installation on subscribe) | — |
+| US-063 | Realtime WebSocket server (Starlette WebSocket, connection management, auth, LISTEN) | US-062 |
+| US-064 | Realtime RLS enforcement (per-event per-subscriber filtering, policy lookup, owner check) | US-063 |
+| US-065 | SDK realtime client (`.on().subscribe()`, auto-reconnect, client-side decryption of event payloads) | US-064 |
+| US-066 | Phase 3b E2E tests (MCP agent round-trip, vector search, realtime subscription + RLS) | US-058, US-061, US-065 |
 
 Dependency chains:
 ```
-Chain C (MCP):      US-056 → US-057 → US-058 → US-059 → US-067 (Dashboard MCP page) ──┐
-Chain D (Vector):   US-060 → US-061, US-062 (parallel) ──────────────────────────────┤
-Chain E (Realtime): US-063 → US-064 → US-065 → US-066 → US-068 (Dashboard RT page) ─┤
-                                                                                       └→ US-069 (E2E)
+Chain C (MCP):      US-055 → US-056 → US-057 → US-058 ────────────────┐
+Chain D (Vector):   US-059 → US-060, US-061 (parallel) ───────────────┤
+Chain E (Realtime): US-062 → US-063 → US-064 → US-065 ───────────────┤
+                                                                       └→ US-066 (E2E)
 ```
 
 **Three independent starting chains** — MCP, Vector, and Realtime can all begin in parallel.
 
-**Note:** Phase 3b Dashboard stories (US-061 vector index UI, US-067 MCP page, US-068 Realtime page) assume Phase 3a Dashboard is complete (US-043 through US-048). Phase 3b ships after Phase 3a.
-
-**Critical path:** US-063 → US-064 → US-065 → US-066 → US-068 → US-069 (Realtime is the longest chain)
+**Critical path:** US-062 → US-063 → US-064 → US-065 → US-066 (Realtime is the longest chain)
 
 ### E2E test coverage
 
@@ -713,11 +679,10 @@ Chain E (Realtime): US-063 → US-064 → US-065 → US-066 → US-068 (Dashboar
 3. Table editor: unlock with encryption key → see decrypted data → re-lock
 4. Developer OAuth: sign in with Google → developer account linked → Dashboard access
 5. Passkey: register passkey → sign out → sign in with passkey → Dashboard access
-6. Key management UX: encryption key warning in SDK, Dashboard "Encryption" section shows backup guidance
 
 **Phase 3b (pytest + SDK):**
 6. MCP: connect agent → list_tables → query_rows → results returned (ciphertext without key, plaintext with key)
-7. NL-to-query: "find users where email is alice@example.com" → correct blind index query → correct result
+7. NL-to-SQL: "find users where email is alice@example.com" → correct blind index query → correct result
 8. Vector search: insert rows with embeddings → `.similarTo()` → top-K results ordered by distance
 9. Vector + encryption: `.similarTo()` returns rows with encrypted columns → SDK decrypts transparently
 10. Realtime: subscribe to table → insert row from another client → subscriber receives decrypted event
@@ -735,9 +700,8 @@ Chain E (Realtime): US-063 → US-064 → US-065 → US-066 → US-068 (Dashboar
 | Schema visualizer | React Flow | Industry standard, interactive, supports auto-layout |
 | Developer OAuth | Reuse Phase 2b adapter interface | Same OAuthProvider ABC, different credential source (platform vs project) |
 | Passkey library | py_webauthn | Well-maintained, handles CBOR/COSE complexity |
-| MCP server | Standalone TypeScript process in /mcp | Imports @pqdb/client directly for API calls + decryption; no crypto reimplementation. AI agents connect via MCP protocol, server calls pqdb REST API |
+| MCP server | Standalone process in /mcp | Clean separation; AI agents connect directly without going through main API |
 | MCP transport | stdio + SSE | stdio for local (Claude Code, Cursor); SSE for remote/cloud |
-| MCP language | TypeScript (not Python) | MCP server is a client, not a backend service. TypeScript lets it import @pqdb/client SDK directly for decryption |
 | NL-to-query | Rule-based V1 | Query builder syntax is simple enough; avoid LLM dependency for now |
 | Vector search | pgvector (existing) | Already deployed, zero additional infrastructure, preserves isolation model |
 | Realtime transport | LISTEN/NOTIFY + WebSocket | Simplest path; swap to logical replication in Phase 4 if needed |
