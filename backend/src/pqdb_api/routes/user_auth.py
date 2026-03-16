@@ -358,7 +358,7 @@ async def user_login(
         row[5],
     )
 
-    if not verify_password(pw_hash, body.password):
+    if pw_hash is None or not verify_password(pw_hash, body.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     user_id = uuid.UUID(str(user_id_str))

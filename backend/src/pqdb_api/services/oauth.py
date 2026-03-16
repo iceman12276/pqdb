@@ -10,6 +10,11 @@ import abc
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
+import httpx
+import structlog
+
+logger = structlog.get_logger()
+
 
 @dataclass(frozen=True)
 class OAuthTokens:
@@ -73,10 +78,58 @@ class GoogleOAuthProvider(OAuthProvider):
         return f"{self.AUTHORIZE_URL}?{params}"
 
     async def exchange_code(self, code: str, redirect_uri: str) -> OAuthTokens:
-        raise NotImplementedError("Token exchange requires HTTP client")
+        """Exchange authorization code for tokens via Google's token endpoint."""
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                self.TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+            )
+
+        if resp.status_code != 200:
+            logger.error(
+                "google_token_exchange_failed",
+                status=resp.status_code,
+                body=resp.text,
+            )
+            raise ValueError("Google token exchange failed")
+
+        data = resp.json()
+        return OAuthTokens(
+            access_token=data["access_token"],
+            refresh_token=data.get("refresh_token"),
+            expires_in=data.get("expires_in", 3600),
+            token_type=data.get("token_type", "Bearer"),
+        )
 
     async def get_user_info(self, tokens: OAuthTokens) -> OAuthUserInfo:
-        raise NotImplementedError("User info retrieval requires HTTP client")
+        """Fetch user info from Google's userinfo endpoint."""
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                self.USERINFO_URL,
+                headers={"Authorization": f"Bearer {tokens.access_token}"},
+            )
+
+        if resp.status_code != 200:
+            logger.error(
+                "google_userinfo_failed",
+                status=resp.status_code,
+                body=resp.text,
+            )
+            raise ValueError("Google user info retrieval failed")
+
+        data = resp.json()
+        return OAuthUserInfo(
+            email=data["email"],
+            name=data.get("name"),
+            avatar_url=data.get("picture"),
+            provider_uid=str(data["id"]),
+        )
 
 
 class GitHubOAuthProvider(OAuthProvider):
