@@ -14,7 +14,6 @@ import secrets
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from argon2 import PasswordHasher
 
 from pqdb_api.services.webhook import (
     WebhookDispatcher,
@@ -55,7 +54,7 @@ class TestValidateWebhookUrl:
 
     def test_none_rejected(self) -> None:
         with pytest.raises(ValueError):
-            validate_webhook_url("")  # type: ignore[arg-type]
+            validate_webhook_url("")
 
 
 class TestTokenGeneration:

@@ -94,7 +94,8 @@ class TestEnsureAuthTables:
                 )
             )
             count = result.scalar()
-            # _pqdb_users, _pqdb_sessions, _pqdb_auth_settings, _pqdb_verification_tokens
+            # _pqdb_users, _pqdb_sessions, _pqdb_auth_settings,
+            # _pqdb_verification_tokens
             assert count == 4
 
     @pytest.mark.asyncio()
@@ -292,9 +293,7 @@ class TestUpdateAuthSettings:
                 session, {"magic_link_webhook": "https://example.com/hook"}
             )
             # Then clear it - passing None value directly
-            updated = await update_auth_settings(
-                session, {"magic_link_webhook": None}
-            )
+            updated = await update_auth_settings(session, {"magic_link_webhook": None})
             assert updated["magic_link_webhook"] is None
 
 
@@ -353,5 +352,6 @@ class TestVerificationTokensTable:
                 )
             )
             count = result.scalar()
-            # _pqdb_users, _pqdb_sessions, _pqdb_auth_settings, _pqdb_verification_tokens
+            # _pqdb_users, _pqdb_sessions, _pqdb_auth_settings,
+            # _pqdb_verification_tokens
             assert count == 4

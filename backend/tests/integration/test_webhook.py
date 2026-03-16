@@ -312,9 +312,7 @@ class TestVerificationTokenStorage:
 
             # Mark as used
             await session.execute(
-                text(
-                    "UPDATE _pqdb_verification_tokens SET used = TRUE WHERE id = :id"
-                ),
+                text("UPDATE _pqdb_verification_tokens SET used = TRUE WHERE id = :id"),
                 {"id": token_id},
             )
             await session.commit()
@@ -356,9 +354,7 @@ class TestVerificationTokenStorage:
             await session.commit()
 
             result = await session.execute(
-                text(
-                    "SELECT user_id FROM _pqdb_verification_tokens WHERE id = :id"
-                ),
+                text("SELECT user_id FROM _pqdb_verification_tokens WHERE id = :id"),
                 {"id": token_id},
             )
             row = result.fetchone()
@@ -372,10 +368,8 @@ class TestWebhookDispatchIntegration:
     @pytest.mark.asyncio()
     async def test_dispatch_to_mock_server(self) -> None:
         """Test webhook dispatch against a real HTTP server."""
-        import asyncio
-        from http.server import BaseHTTPRequestHandler, HTTPServer
         import json
-        import ssl
+        from http.server import BaseHTTPRequestHandler, HTTPServer
 
         received_payloads: list[dict[str, Any]] = []
 
