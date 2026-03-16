@@ -27,7 +27,7 @@ import { createClient, column } from "../../src/index.js";
 
 const API_PORT = 8767;
 const API_URL = `http://localhost:${API_PORT}`;
-const WEBHOOK_PORT = 9443;
+const WEBHOOK_PORT = 19443;
 const BACKEND_DIR = path.resolve(__dirname, "../../../backend");
 const ENCRYPTION_KEY = "e2e-phase2b-master-key-for-pqc";
 
