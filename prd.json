@@ -299,8 +299,8 @@
         "Production build succeeds"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #48 merged. 6 E2E tests: OAuth flow, magic link, MFA enrollment+challenge+recovery, custom roles+RLS policies, password reset, email verification. All full-stack against real Postgres + Vault."
     }
   ]
 }
