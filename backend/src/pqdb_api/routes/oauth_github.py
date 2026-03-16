@@ -100,6 +100,7 @@ def _get_github_provider(
     return GitHubOAuthProvider(
         client_id=creds["client_id"],
         client_secret=creds["client_secret"],
+        http_client=getattr(request.app.state, "oauth_http_client", None),
     )
 
 

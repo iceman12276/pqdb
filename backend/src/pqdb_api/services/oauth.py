@@ -7,6 +7,7 @@ for Google and GitHub OAuth providers.
 from __future__ import annotations
 
 import abc
+import os
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
@@ -57,12 +58,23 @@ class GoogleOAuthProvider(OAuthProvider):
     """Google OAuth 2.0 provider."""
 
     AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-    TOKEN_URL = "https://oauth2.googleapis.com/token"
-    USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+    TOKEN_URL = os.getenv(
+        "PQDB_GOOGLE_TOKEN_URL", "https://oauth2.googleapis.com/token"
+    )
+    USERINFO_URL = os.getenv(
+        "PQDB_GOOGLE_USERINFO_URL",
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+    )
 
-    def __init__(self, client_id: str, client_secret: str) -> None:
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
         self._client_id = client_id
         self._client_secret = client_secret
+        self._http_client = http_client
 
     def get_authorization_url(self, state: str, redirect_uri: str) -> str:
         params = urlencode(
@@ -80,7 +92,8 @@ class GoogleOAuthProvider(OAuthProvider):
 
     async def exchange_code(self, code: str, redirect_uri: str) -> OAuthTokens:
         """Exchange authorization code for tokens via Google's token endpoint."""
-        async with httpx.AsyncClient() as client:
+        client = self._http_client or httpx.AsyncClient()
+        try:
             resp = await client.post(
                 self.TOKEN_URL,
                 data={
@@ -91,6 +104,9 @@ class GoogleOAuthProvider(OAuthProvider):
                     "grant_type": "authorization_code",
                 },
             )
+        finally:
+            if self._http_client is None:
+                await client.aclose()
 
         if resp.status_code != 200:
             logger.error(
@@ -110,11 +126,15 @@ class GoogleOAuthProvider(OAuthProvider):
 
     async def get_user_info(self, tokens: OAuthTokens) -> OAuthUserInfo:
         """Fetch user info from Google's userinfo endpoint."""
-        async with httpx.AsyncClient() as client:
+        client = self._http_client or httpx.AsyncClient()
+        try:
             resp = await client.get(
                 self.USERINFO_URL,
                 headers={"Authorization": f"Bearer {tokens.access_token}"},
             )
+        finally:
+            if self._http_client is None:
+                await client.aclose()
 
         if resp.status_code != 200:
             logger.error(
@@ -137,12 +157,24 @@ class GitHubOAuthProvider(OAuthProvider):
     """GitHub OAuth 2.0 provider."""
 
     AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
-    TOKEN_URL = "https://github.com/login/oauth/access_token"
-    USERINFO_URL = "https://api.github.com/user"
+    TOKEN_URL = os.getenv(
+        "PQDB_GITHUB_TOKEN_URL",
+        "https://github.com/login/oauth/access_token",
+    )
+    USERINFO_URL = os.getenv("PQDB_GITHUB_USERINFO_URL", "https://api.github.com/user")
+    EMAILS_URL = os.getenv(
+        "PQDB_GITHUB_EMAILS_URL", "https://api.github.com/user/emails"
+    )
 
-    def __init__(self, client_id: str, client_secret: str) -> None:
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
         self._client_id = client_id
         self._client_secret = client_secret
+        self._http_client = http_client
 
     def get_authorization_url(self, state: str, redirect_uri: str) -> str:
         params = urlencode(
@@ -156,7 +188,8 @@ class GitHubOAuthProvider(OAuthProvider):
         return f"{self.AUTHORIZE_URL}?{params}"
 
     async def exchange_code(self, code: str, redirect_uri: str) -> OAuthTokens:
-        async with httpx.AsyncClient() as client:
+        client = self._http_client or httpx.AsyncClient()
+        try:
             resp = await client.post(
                 self.TOKEN_URL,
                 json={
@@ -169,6 +202,9 @@ class GitHubOAuthProvider(OAuthProvider):
             )
             resp.raise_for_status()
             data: dict[str, Any] = resp.json()
+        finally:
+            if self._http_client is None:
+                await client.aclose()
 
         if "error" in data:
             raise ValueError(f"GitHub token exchange failed: {data['error']}")
@@ -185,18 +221,20 @@ class GitHubOAuthProvider(OAuthProvider):
             "Authorization": f"Bearer {tokens.access_token}",
             "Accept": "application/json",
         }
-        async with httpx.AsyncClient() as client:
+        client = self._http_client or httpx.AsyncClient()
+        try:
             # Fetch user profile
             user_resp = await client.get(self.USERINFO_URL, headers=headers)
             user_resp.raise_for_status()
             user_data: dict[str, Any] = user_resp.json()
 
             # Fetch emails to find verified primary email
-            emails_resp = await client.get(
-                "https://api.github.com/user/emails", headers=headers
-            )
+            emails_resp = await client.get(self.EMAILS_URL, headers=headers)
             emails_resp.raise_for_status()
             emails: list[dict[str, Any]] = emails_resp.json()
+        finally:
+            if self._http_client is None:
+                await client.aclose()
 
         # Find verified primary email
         email: str | None = None

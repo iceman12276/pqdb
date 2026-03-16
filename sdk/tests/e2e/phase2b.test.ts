@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, execFileSync, type ChildProcess } from "child_process";
+import * as http from "http";
 import * as https from "https";
 import * as crypto from "crypto";
 import * as fs from "fs";
@@ -28,6 +29,8 @@ import { createClient, column } from "../../src/index.js";
 const API_PORT = 8767;
 const API_URL = `http://localhost:${API_PORT}`;
 const WEBHOOK_PORT = 19443;
+const MOCK_OAUTH_PORT = 19444;
+const MOCK_OAUTH_URL = `http://127.0.0.1:${MOCK_OAUTH_PORT}`;
 const BACKEND_DIR = path.resolve(__dirname, "../../../backend");
 const ENCRYPTION_KEY = "e2e-phase2b-master-key-for-pqc";
 
@@ -44,6 +47,9 @@ let developerAccessToken: string;
 let projectId: string;
 let serviceApiKey: string;
 let anonApiKey: string;
+
+// Mock OAuth server — mimics Google's token + userinfo endpoints
+let mockOAuthServer: http.Server;
 
 // Mock webhook server state
 let webhookServer: https.Server;
@@ -228,6 +234,56 @@ function startWebhookServer(
   });
 }
 
+/** Start a mock OAuth server that mimics Google token + userinfo endpoints. */
+function startMockOAuthServer(): Promise<http.Server> {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk: Buffer) => {
+        body += chunk.toString();
+      });
+      req.on("end", () => {
+        res.setHeader("Content-Type", "application/json");
+
+        // Google token exchange endpoint
+        if (req.url === "/google/token") {
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              access_token: "mock-google-access-token",
+              refresh_token: "mock-google-refresh-token",
+              expires_in: 3600,
+              token_type: "Bearer",
+            }),
+          );
+          return;
+        }
+
+        // Google userinfo endpoint
+        if (req.url === "/google/userinfo") {
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              id: "google-uid-12345",
+              email: `oauth-google-${RUN_ID}@test.pqdb.dev`,
+              name: "Google Test User",
+              picture: "https://example.com/avatar.png",
+            }),
+          );
+          return;
+        }
+
+        // Fallback
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: "not found" }));
+      });
+    });
+    server.listen(MOCK_OAUTH_PORT, "127.0.0.1", () => {
+      resolve(server);
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Server lifecycle
 // ---------------------------------------------------------------------------
@@ -236,6 +292,9 @@ beforeAll(async () => {
   // Generate self-signed cert and start webhook server
   const { certPem, keyPem, certPath } = generateSelfSignedCert();
   webhookServer = await startWebhookServer(certPem, keyPem);
+
+  // Start mock OAuth server (mimics Google token + userinfo endpoints)
+  mockOAuthServer = await startMockOAuthServer();
 
   // Start backend with SSL_CERT_FILE pointing to our self-signed cert
   // so httpx trusts our mock webhook HTTPS server
@@ -259,6 +318,8 @@ beforeAll(async () => {
         PQDB_VAULT_TOKEN: "dev-root-token",
         PQDB_SUPERUSER_DSN:
           "postgresql://postgres:postgres@localhost:5432/postgres",
+        PQDB_GOOGLE_TOKEN_URL: `${MOCK_OAUTH_URL}/google/token`,
+        PQDB_GOOGLE_USERINFO_URL: `${MOCK_OAUTH_URL}/google/userinfo`,
         SSL_CERT_FILE: certPath,
         REQUESTS_CA_BUNDLE: certPath,
       },
@@ -321,6 +382,9 @@ afterAll(async () => {
   if (webhookServer) {
     webhookServer.close();
   }
+  if (mockOAuthServer) {
+    mockOAuthServer.close();
+  }
   if (certDir) {
     try {
       fs.rmSync(certDir, { recursive: true });
@@ -377,27 +441,43 @@ describe("Test 1 — OAuth flow (mock Google)", () => {
     expect(stateMatch).toBeTruthy();
     const stateJwt = decodeURIComponent(stateMatch![1]);
 
-    // Step 4: Simulate Google callback
-    // Since we can't actually exchange a code with Google, we test that
-    // the callback endpoint exists and validates correctly
-    // Test with an invalid code — should return 400 (not 404, proving route exists)
-    const callbackResp = await apiCall(
-      "GET",
-      `/v1/auth/users/oauth/google/callback?code=mock-auth-code&state=${encodeURIComponent(stateJwt)}`,
-      undefined,
-      { apikey: anonApiKey },
-    );
-    // Expect 500 because the mock authorization code cannot be exchanged
-    // with Google's real token endpoint — Google returns an error, which the
-    // callback handler surfaces as an internal server error.
-    // This still proves the full flow works: state JWT validates, route exists,
-    // and the code exchange is attempted against the real provider.
-    expect(callbackResp.status).toBe(500);
+    // Step 4: Simulate Google callback with mock OAuth server
+    // The backend will exchange the code with our mock server (not real Google)
+    // and get a valid token + user info back, creating a real user
+    const callbackUrl = `${API_URL}/v1/auth/users/oauth/google/callback?code=mock-auth-code&state=${encodeURIComponent(stateJwt)}`;
+    const callbackResp = await fetch(callbackUrl, {
+      headers: { apikey: anonApiKey },
+      redirect: "manual", // Don't follow the redirect — capture the 302
+    });
 
-    // Step 5: Verify the OAuth flow works with the SDK's signInWithOAuth
+    // Should be a 302 redirect with tokens in the URL fragment
+    expect(callbackResp.status).toBe(302);
+    const redirectLocation = callbackResp.headers.get("location")!;
+    expect(redirectLocation).toContain("http://localhost:3000/callback#");
+    expect(redirectLocation).toContain("access_token=");
+    expect(redirectLocation).toContain("refresh_token=");
+
+    // Extract access token from the URL fragment
+    const fragment = redirectLocation.split("#")[1];
+    const params = new URLSearchParams(fragment);
+    const oauthAccessToken = params.get("access_token")!;
+    expect(oauthAccessToken).toBeTruthy();
+
+    // Step 5: Verify the OAuth-created user can access data
     const client = createClient(API_URL, anonApiKey, {
       encryptionKey: ENCRYPTION_KEY,
     });
+    // Verify the token works by calling /v1/auth/users/me
+    const meResp = await apiCall("GET", "/v1/auth/users/me", undefined, {
+      apikey: anonApiKey,
+      Authorization: `Bearer ${oauthAccessToken}`,
+    });
+    expect(meResp.status).toBe(200);
+    const meData = meResp.json as { email: string; email_verified: boolean };
+    expect(meData.email).toContain("oauth-google");
+    expect(meData.email_verified).toBe(true);
+
+    // Step 6: Verify SDK's signInWithOAuth returns the authorize URL
     const oauthResult = await client.auth.users.signInWithOAuth("google", {
       redirectTo: "http://localhost:3000/callback",
     });

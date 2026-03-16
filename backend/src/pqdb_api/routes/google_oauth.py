@@ -132,6 +132,7 @@ async def google_authorize(
     provider = GoogleOAuthProvider(
         client_id=credentials["client_id"],
         client_secret=credentials["client_secret"],
+        http_client=getattr(request.app.state, "oauth_http_client", None),
     )
 
     # Build the callback URL for this request
@@ -190,6 +191,7 @@ async def google_callback(
     provider = GoogleOAuthProvider(
         client_id=credentials["client_id"],
         client_secret=credentials["client_secret"],
+        http_client=getattr(request.app.state, "oauth_http_client", None),
     )
 
     # Exchange code for tokens
