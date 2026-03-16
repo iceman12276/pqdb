@@ -87,6 +87,27 @@ _SQL_CREATE_VERIFICATION_TOKENS_PG = _SAFE(
     ")"
 )
 
+# MFA tables (US-039)
+_SQL_CREATE_MFA_FACTORS_PG = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_mfa_factors ("
+    "  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"
+    "  user_id uuid NOT NULL REFERENCES _pqdb_users(id) ON DELETE CASCADE,"
+    "  type text NOT NULL DEFAULT 'totp',"
+    "  secret text NOT NULL,"
+    "  verified boolean NOT NULL DEFAULT FALSE,"
+    "  created_at timestamptz NOT NULL DEFAULT now()"
+    ")"
+)
+
+_SQL_CREATE_RECOVERY_CODES_PG = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_recovery_codes ("
+    "  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"
+    "  user_id uuid NOT NULL REFERENCES _pqdb_users(id) ON DELETE CASCADE,"
+    "  code_hash text NOT NULL,"
+    "  used boolean NOT NULL DEFAULT FALSE"
+    ")"
+)
+
 _SQL_CREATE_OAUTH_IDENTITIES_PG = _SAFE(
     "CREATE TABLE IF NOT EXISTS _pqdb_oauth_identities ("
     "  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"
@@ -155,6 +176,27 @@ _SQL_CREATE_VERIFICATION_TOKENS_SQLITE = _SAFE(
     ")"
 )
 
+# MFA tables — SQLite (for unit tests)
+_SQL_CREATE_MFA_FACTORS_SQLITE = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_mfa_factors ("
+    "  id TEXT PRIMARY KEY,"
+    "  user_id TEXT NOT NULL REFERENCES _pqdb_users(id) ON DELETE CASCADE,"
+    "  type TEXT NOT NULL DEFAULT 'totp',"
+    "  secret TEXT NOT NULL,"
+    "  verified INTEGER NOT NULL DEFAULT 0,"
+    "  created_at TEXT NOT NULL DEFAULT (datetime('now'))"
+    ")"
+)
+
+_SQL_CREATE_RECOVERY_CODES_SQLITE = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_recovery_codes ("
+    "  id TEXT PRIMARY KEY,"
+    "  user_id TEXT NOT NULL REFERENCES _pqdb_users(id) ON DELETE CASCADE,"
+    "  code_hash TEXT NOT NULL,"
+    "  used INTEGER NOT NULL DEFAULT 0"
+    ")"
+)
+
 _SQL_CREATE_OAUTH_IDENTITIES_SQLITE = _SAFE(
     "CREATE TABLE IF NOT EXISTS _pqdb_oauth_identities ("
     "  id TEXT PRIMARY KEY,"
@@ -202,6 +244,8 @@ async def ensure_auth_tables(session: AsyncSession) -> None:
             await session.execute(_SQL_CREATE_AUTH_SETTINGS_SQLITE)
             await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_SQLITE)
             await session.execute(_SQL_CREATE_VERIFICATION_TOKENS_SQLITE)
+            await session.execute(_SQL_CREATE_MFA_FACTORS_SQLITE)
+            await session.execute(_SQL_CREATE_RECOVERY_CODES_SQLITE)
             await session.execute(_SQL_CREATE_OAUTH_IDENTITIES_SQLITE)
         else:
             await session.execute(_SQL_CREATE_USERS_PG)
@@ -209,6 +253,8 @@ async def ensure_auth_tables(session: AsyncSession) -> None:
             await session.execute(_SQL_CREATE_AUTH_SETTINGS_PG)
             await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_PG)
             await session.execute(_SQL_CREATE_VERIFICATION_TOKENS_PG)
+            await session.execute(_SQL_CREATE_MFA_FACTORS_PG)
+            await session.execute(_SQL_CREATE_RECOVERY_CODES_PG)
             await session.execute(_SQL_CREATE_OAUTH_IDENTITIES_PG)
 
         await session.commit()
