@@ -94,8 +94,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #41 merged. Magic link auth: POST /magic-link + POST /verify-magic-link, passwordless user creation, single-use tokens, webhook integration."
     },
     {
       "id": "US-035",
