@@ -22,7 +22,6 @@ from pqdb_api.middleware.api_key import (
 )
 from pqdb_api.middleware.user_auth import UserContext, get_current_user
 from pqdb_api.services.auth_engine import ensure_auth_tables, get_auth_settings
-from pqdb_api.services.email_verification import should_enforce_email_verification
 from pqdb_api.services.crud import (
     CrudError,
     FilterOp,
@@ -37,6 +36,7 @@ from pqdb_api.services.crud import (
     validate_owner_for_insert,
     validate_owner_for_update,
 )
+from pqdb_api.services.email_verification import should_enforce_email_verification
 from pqdb_api.services.roles_policies import (
     get_policies_for_table,
     lookup_policy,
