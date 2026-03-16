@@ -72,6 +72,19 @@ _SQL_INSERT_DEFAULT_SETTINGS_PG = _SAFE(
     "INSERT INTO _pqdb_auth_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
 )
 
+_SQL_CREATE_OAUTH_IDENTITIES_PG = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_oauth_identities ("
+    "  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"
+    "  user_id uuid NOT NULL REFERENCES _pqdb_users(id) ON DELETE CASCADE,"
+    "  provider text NOT NULL,"
+    "  provider_uid text NOT NULL,"
+    "  email text,"
+    "  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,"
+    "  created_at timestamptz NOT NULL DEFAULT now(),"
+    "  UNIQUE(provider, provider_uid)"
+    ")"
+)
+
 # ---------------------------------------------------------------------------
 # SQLite DDL (for unit tests)
 # ---------------------------------------------------------------------------
@@ -114,6 +127,19 @@ _SQL_INSERT_DEFAULT_SETTINGS_SQLITE = _SAFE(
     "INSERT OR IGNORE INTO _pqdb_auth_settings (id) VALUES (1)"
 )
 
+_SQL_CREATE_OAUTH_IDENTITIES_SQLITE = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_oauth_identities ("
+    "  id TEXT PRIMARY KEY,"
+    "  user_id TEXT NOT NULL REFERENCES _pqdb_users(id) ON DELETE CASCADE,"
+    "  provider TEXT NOT NULL,"
+    "  provider_uid TEXT NOT NULL,"
+    "  email TEXT,"
+    "  metadata TEXT NOT NULL DEFAULT '{}',"
+    "  created_at TEXT NOT NULL DEFAULT (datetime('now')),"
+    "  UNIQUE(provider, provider_uid)"
+    ")"
+)
+
 
 def _is_sqlite(session: AsyncSession) -> bool:
     """Check if the session is connected to a SQLite database."""
@@ -146,11 +172,13 @@ async def ensure_auth_tables(session: AsyncSession) -> None:
             await session.execute(_SQL_CREATE_SESSIONS_SQLITE)
             await session.execute(_SQL_CREATE_AUTH_SETTINGS_SQLITE)
             await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_SQLITE)
+            await session.execute(_SQL_CREATE_OAUTH_IDENTITIES_SQLITE)
         else:
             await session.execute(_SQL_CREATE_USERS_PG)
             await session.execute(_SQL_CREATE_SESSIONS_PG)
             await session.execute(_SQL_CREATE_AUTH_SETTINGS_PG)
             await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_PG)
+            await session.execute(_SQL_CREATE_OAUTH_IDENTITIES_PG)
 
         await session.commit()
     except Exception as exc:
