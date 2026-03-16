@@ -503,23 +503,15 @@ Triggers are installed when a subscription is first created for a table.
 
 ```sql
 CREATE OR REPLACE FUNCTION pqdb_notify_changes() RETURNS TRIGGER AS $$
-DECLARE
-  pk_col TEXT;
-  pk_val TEXT;
 BEGIN
-  -- Get primary key column name from _pqdb_columns
-  SELECT column_name INTO pk_col FROM _pqdb_columns
-    WHERE table_name = TG_TABLE_NAME AND is_primary_key = true LIMIT 1;
-  -- Get primary key value
-  IF TG_OP = 'DELETE' THEN
-    EXECUTE format('SELECT ($1).%I::text', pk_col) INTO pk_val USING OLD;
-  ELSE
-    EXECUTE format('SELECT ($1).%I::text', pk_col) INTO pk_val USING NEW;
-  END IF;
+  -- All pqdb user tables use 'id' as primary key (hardcoded in schema engine)
   PERFORM pg_notify('pqdb_realtime', json_build_object(
     'table', TG_TABLE_NAME,
     'event', TG_OP,
-    'pk', pk_val
+    'pk', CASE
+      WHEN TG_OP = 'DELETE' THEN OLD.id::text
+      ELSE NEW.id::text
+    END
   )::text);
   RETURN COALESCE(NEW, OLD);
 END;
@@ -668,7 +660,7 @@ Chain B (Dev auth):   US-052 (independent) ──────→ US-053 (needs U
 All chains ──────────────────────────────────────→ US-054 (E2E)
 ```
 
-### Phase 3b: MCP + Vector + Realtime (~12 stories)
+### Phase 3b: MCP + Vector + Realtime (14 stories)
 
 | Story | Title | Depends on |
 |-------|-------|-----------|
@@ -697,6 +689,8 @@ Chain E (Realtime): US-062 → US-063 → US-064 → US-065 → US-067 (Dashboar
 
 **Three independent starting chains** — MCP, Vector, and Realtime can all begin in parallel.
 
+**Note:** Phase 3b Dashboard stories (US-060 vector index UI, US-066 MCP page, US-067 Realtime page) assume Phase 3a Dashboard is complete (US-043 through US-048). Phase 3b ships after Phase 3a.
+
 **Critical path:** US-062 → US-063 → US-064 → US-065 → US-067 → US-068 (Realtime is the longest chain)
 
 ### E2E test coverage
@@ -710,7 +704,7 @@ Chain E (Realtime): US-062 → US-063 → US-064 → US-065 → US-067 (Dashboar
 
 **Phase 3b (pytest + SDK):**
 6. MCP: connect agent → list_tables → query_rows → results returned (ciphertext without key, plaintext with key)
-7. NL-to-SQL: "find users where email is alice@example.com" → correct blind index query → correct result
+7. NL-to-query: "find users where email is alice@example.com" → correct blind index query → correct result
 8. Vector search: insert rows with embeddings → `.similarTo()` → top-K results ordered by distance
 9. Vector + encryption: `.similarTo()` returns rows with encrypted columns → SDK decrypts transparently
 10. Realtime: subscribe to table → insert row from another client → subscriber receives decrypted event
