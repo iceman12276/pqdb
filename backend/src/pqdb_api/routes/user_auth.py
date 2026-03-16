@@ -8,6 +8,8 @@ POST /v1/auth/users/magic-link          — request a magic link (US-034)
 POST /v1/auth/users/verify-magic-link   — verify a magic link token (US-034)
 GET  /v1/auth/users/me                  — get current user profile
 PUT  /v1/auth/users/me                  — update user metadata
+POST /v1/auth/users/reset-password      — request a password reset (US-033)
+POST /v1/auth/users/update-password     — update password with reset token (US-033)
 POST /v1/auth/users/verify-email        — verify email with token (US-032)
 POST /v1/auth/users/resend-verification — resend verification email (US-032)
 
@@ -60,6 +62,7 @@ _SIGNUP_LIMITER_PREFIX = "user_signup"
 _LOGIN_LIMITER_PREFIX = "user_login"
 _RESEND_VERIFICATION_PREFIX = "resend_verification"
 _MAGIC_LINK_LIMITER_PREFIX = "magic_link"
+_RESET_PASSWORD_LIMITER_PREFIX = "password_reset"
 
 # Magic link token expiry
 _MAGIC_LINK_EXPIRY_SECONDS = 900  # 15 minutes
@@ -151,6 +154,19 @@ class VerifyMagicLinkRequest(BaseModel):
     """Request body for verifying a magic link token."""
 
     token: str
+
+
+class ResetPasswordRequest(BaseModel):
+    """Request body for password reset request."""
+
+    email: EmailStr
+
+
+class UpdatePasswordRequest(BaseModel):
+    """Request body for updating password with reset token."""
+
+    token: str
+    new_password: str = pydantic.Field(max_length=1024)
 
 
 # ---------------------------------------------------------------------------
@@ -949,6 +965,201 @@ async def verify_magic_link(
         access_token=tokens.access_token,
         refresh_token=tokens.refresh_token,
     )
+
+
+# ---------------------------------------------------------------------------
+# Password reset endpoints (US-033)
+# ---------------------------------------------------------------------------
+_RESET_TOKEN_EXPIRY_SECONDS = 3600  # 1 hour
+
+
+@router.post("/reset-password", status_code=200)
+async def reset_password(
+    body: ResetPasswordRequest,
+    request: Request,
+    context: ProjectContext = Depends(get_project_context),
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, str]:
+    """Request a password reset token.
+
+    Always returns 200 regardless of whether the email exists
+    to prevent email enumeration attacks.
+    Fires a webhook with type=password_reset if user exists
+    and webhook URL is configured.
+    """
+    # Rate limiting: 5 reset requests/min per email
+    _check_rate_limit(
+        request,
+        key_prefix=_RESET_PASSWORD_LIMITER_PREFIX,
+        ip=body.email,
+        max_requests=5,
+        window_seconds=60,
+    )
+
+    await ensure_auth_tables(session)
+
+    # Get webhook URL from auth settings
+    settings = await get_auth_settings(session)
+    webhook_url = settings.get("magic_link_webhook")
+
+    if not webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Webhook URL not configured",
+        )
+
+    # Look up user — if not found, return 200 (prevent enumeration)
+    result = await session.execute(
+        _SAFE("SELECT id FROM _pqdb_users WHERE email = :email"),
+        {"email": body.email},
+    )
+    user_row = result.fetchone()
+
+    if user_row is None:
+        # User not found — return 200 silently
+        return {"message": "If that email is registered, a reset link has been sent"}
+
+    user_id = str(user_row[0])
+
+    # Generate token and store hash
+    token = generate_verification_token()
+    token_hash = hash_verification_token(token)
+
+    expires_at = datetime.now(UTC) + timedelta(seconds=_RESET_TOKEN_EXPIRY_SECONDS)
+    token_id = uuid.uuid4()
+
+    await session.execute(
+        _SAFE(
+            "INSERT INTO _pqdb_verification_tokens "
+            "(id, user_id, email, token_hash, type, expires_at) "
+            "VALUES (:id, :user_id, :email, :token_hash, 'password_reset', :expires_at)"
+        ),
+        {
+            "id": str(token_id),
+            "user_id": user_id,
+            "email": body.email,
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+        },
+    )
+    await session.commit()
+
+    # Fire webhook (fire-and-forget)
+    dispatcher = WebhookDispatcher()
+    await dispatcher.dispatch(
+        url=webhook_url,
+        event_type="password_reset",
+        email=body.email,
+        token=token,
+        expires_in=_RESET_TOKEN_EXPIRY_SECONDS,
+    )
+
+    logger.info(
+        "password_reset_requested",
+        email=body.email,
+        project_id=str(context.project_id),
+    )
+
+    return {"message": "If that email is registered, a reset link has been sent"}
+
+
+@router.post("/update-password", status_code=200)
+async def update_password(
+    body: UpdatePasswordRequest,
+    request: Request,
+    context: ProjectContext = Depends(get_project_context),
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, str]:
+    """Update password using a password reset token.
+
+    Validates the token, updates the password hash, marks the
+    token as used, and revokes ALL sessions for the user.
+    """
+    await ensure_auth_tables(session)
+
+    # Find all unused, non-expired password_reset tokens
+    result = await session.execute(
+        _SAFE(
+            "SELECT id, user_id, token_hash, expires_at "
+            "FROM _pqdb_verification_tokens "
+            "WHERE type = 'password_reset' AND used = false"
+        ),
+    )
+    rows = result.fetchall()
+
+    matched_token_id: str | None = None
+    matched_user_id: str | None = None
+
+    for row in rows:
+        token_id, user_id, stored_hash, expires_at = (
+            str(row[0]),
+            str(row[1]),
+            row[2],
+            row[3],
+        )
+
+        # Check expiry
+        if isinstance(expires_at, datetime):
+            now = datetime.now(UTC)
+            if expires_at.tzinfo is None:
+                if expires_at < now.replace(tzinfo=None):
+                    continue
+            elif expires_at < now:
+                continue
+
+        # Verify token
+        if verify_verification_token(stored_hash, body.token):
+            matched_token_id = token_id
+            matched_user_id = user_id
+            break
+
+    if matched_token_id is None or matched_user_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired reset token",
+        )
+
+    # Validate new password length
+    settings = await get_auth_settings(session)
+    min_length: int = settings.get("password_min_length", 8)
+    service = _get_user_auth_service(request)
+
+    try:
+        service.validate_password(body.new_password, min_length=min_length)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # Update password hash
+    new_hash = hash_password(body.new_password)
+    await session.execute(
+        _SAFE(
+            "UPDATE _pqdb_users SET password_hash = :pw_hash, "
+            "updated_at = now() WHERE id = :uid"
+        ),
+        {"pw_hash": new_hash, "uid": matched_user_id},
+    )
+
+    # Mark token as used
+    await session.execute(
+        _SAFE("UPDATE _pqdb_verification_tokens SET used = true WHERE id = :id"),
+        {"id": matched_token_id},
+    )
+
+    # Revoke ALL sessions for this user
+    await session.execute(
+        _SAFE("UPDATE _pqdb_sessions SET revoked = true WHERE user_id = :uid"),
+        {"uid": matched_user_id},
+    )
+
+    await session.commit()
+
+    logger.info(
+        "password_updated",
+        user_id=matched_user_id,
+        project_id=str(context.project_id),
+    )
+
+    return {"message": "Password updated successfully"}
 
 
 # ---------------------------------------------------------------------------
