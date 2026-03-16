@@ -142,8 +142,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #42 merged. GoogleOAuthProvider with httpx, authorize/callback routes, state JWT CSRF protection, account linking by verified email."
     },
     {
       "id": "US-037",
