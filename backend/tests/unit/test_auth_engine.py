@@ -95,8 +95,8 @@ class TestEnsureAuthTables:
             )
             count = result.scalar()
             # _pqdb_users, _pqdb_sessions, _pqdb_auth_settings,
-            # _pqdb_mfa_factors, _pqdb_recovery_codes, _pqdb_oauth_identities
-            assert count == 6
+            # _pqdb_verification_tokens, _pqdb_oauth_identities
+            assert count == 7
 
     @pytest.mark.asyncio()
     async def test_users_table_columns(
@@ -256,3 +256,102 @@ class TestUpdateAuthSettings:
             await update_auth_settings(session, {"password_min_length": 16})
             settings = await get_auth_settings(session)
             assert settings["password_min_length"] == 16
+
+    @pytest.mark.asyncio()
+    async def test_update_rejects_http_webhook_url(
+        self, session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """magic_link_webhook must be HTTPS — reject http:// URLs."""
+        async with session_factory() as session:
+            await ensure_auth_tables(session)
+            with pytest.raises(ValueError, match="HTTPS"):
+                await update_auth_settings(
+                    session, {"magic_link_webhook": "http://example.com/hook"}
+                )
+
+    @pytest.mark.asyncio()
+    async def test_update_accepts_https_webhook_url(
+        self, session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """magic_link_webhook should accept HTTPS URLs."""
+        async with session_factory() as session:
+            await ensure_auth_tables(session)
+            updated = await update_auth_settings(
+                session, {"magic_link_webhook": "https://example.com/hook"}
+            )
+            assert updated["magic_link_webhook"] == "https://example.com/hook"
+
+    @pytest.mark.asyncio()
+    async def test_update_allows_null_webhook_url(
+        self, session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """Setting magic_link_webhook to None should clear it."""
+        async with session_factory() as session:
+            await ensure_auth_tables(session)
+            # First set it
+            await update_auth_settings(
+                session, {"magic_link_webhook": "https://example.com/hook"}
+            )
+            # Then clear it - passing None value directly
+            updated = await update_auth_settings(session, {"magic_link_webhook": None})
+            assert updated["magic_link_webhook"] is None
+
+
+class TestVerificationTokensTable:
+    """Tests for _pqdb_verification_tokens table creation."""
+
+    @pytest.mark.asyncio()
+    async def test_creates_verification_tokens_table(
+        self, session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        async with session_factory() as session:
+            await ensure_auth_tables(session)
+            result = await session.execute(
+                text(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='table' AND name='_pqdb_verification_tokens'"
+                )
+            )
+            assert result.scalar() == "_pqdb_verification_tokens"
+
+    @pytest.mark.asyncio()
+    async def test_verification_tokens_columns(
+        self, session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """Verify _pqdb_verification_tokens has the expected columns."""
+        async with session_factory() as session:
+            await ensure_auth_tables(session)
+            result = await session.execute(
+                text("PRAGMA table_info(_pqdb_verification_tokens)")
+            )
+            columns = {row[1] for row in result.fetchall()}
+            expected = {
+                "id",
+                "user_id",
+                "email",
+                "token_hash",
+                "type",
+                "expires_at",
+                "used",
+                "created_at",
+            }
+            assert expected.issubset(columns)
+
+    @pytest.mark.asyncio()
+    async def test_idempotent_with_verification_tokens(
+        self, session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """ensure_auth_tables called twice should create 4 tables total."""
+        async with session_factory() as session:
+            await ensure_auth_tables(session)
+            await ensure_auth_tables(session)
+            result = await session.execute(
+                text(
+                    "SELECT count(*) FROM sqlite_master "
+                    "WHERE type='table' AND name LIKE '_pqdb_%'"
+                )
+            )
+            count = result.scalar()
+            # _pqdb_users, _pqdb_sessions, _pqdb_auth_settings,
+            # _pqdb_verification_tokens, _pqdb_oauth_identities
+            assert count == 7

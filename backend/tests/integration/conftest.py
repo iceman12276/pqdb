@@ -228,6 +228,7 @@ def _clean_tables(test_db_name: str, test_db_url: str) -> Iterator[None]:
 
     # Drop the _pqdb_ internal tables
     for internal_table in [
+        "_pqdb_verification_tokens",
         "_pqdb_reindex_jobs",
         "_pqdb_recovery_codes",
         "_pqdb_mfa_factors",
