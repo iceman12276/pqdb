@@ -94,8 +94,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #41 merged. Magic link auth: POST /magic-link + POST /verify-magic-link, passwordless user creation, single-use tokens, webhook integration."
     },
     {
       "id": "US-035",
@@ -165,8 +165,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #45 merged. GitHubOAuthProvider with httpx, authorize/callback routes, account linking by verified email."
     },
     {
       "id": "US-038",

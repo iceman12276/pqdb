@@ -1,15 +1,17 @@
 """End-user authentication endpoints.
 
-POST /v1/auth/users/signup             — register a new end-user
-POST /v1/auth/users/login              — authenticate end-user
-POST /v1/auth/users/logout             — revoke refresh token session
-POST /v1/auth/users/refresh            — exchange refresh token for new access token
-POST /v1/auth/users/magic-link         — request a magic link (US-034)
-POST /v1/auth/users/verify-magic-link  — verify a magic link token (US-034)
-GET  /v1/auth/users/me                 — get current user profile
-PUT  /v1/auth/users/me                 — update user metadata
-POST /v1/auth/users/reset-password     — request a password reset (US-033)
-POST /v1/auth/users/update-password    — update password with reset token (US-033)
+POST /v1/auth/users/signup              — register a new end-user
+POST /v1/auth/users/login               — authenticate end-user
+POST /v1/auth/users/logout              — revoke refresh token session
+POST /v1/auth/users/refresh             — exchange refresh token for new access token
+POST /v1/auth/users/magic-link          — request a magic link (US-034)
+POST /v1/auth/users/verify-magic-link   — verify a magic link token (US-034)
+GET  /v1/auth/users/me                  — get current user profile
+PUT  /v1/auth/users/me                  — update user metadata
+POST /v1/auth/users/reset-password      — request a password reset (US-033)
+POST /v1/auth/users/update-password     — update password with reset token (US-033)
+POST /v1/auth/users/verify-email        — verify email with token (US-032)
+POST /v1/auth/users/resend-verification — resend verification email (US-032)
 
 All endpoints use the apikey header for project resolution (same as /v1/db/*).
 End-user JWTs have type=user_access to distinguish from developer tokens.
@@ -41,6 +43,7 @@ from pqdb_api.middleware.api_key import (
 )
 from pqdb_api.services.auth import hash_password, verify_password
 from pqdb_api.services.auth_engine import ensure_auth_tables, get_auth_settings
+from pqdb_api.services.email_verification import VERIFICATION_TOKEN_EXPIRY_SECONDS
 from pqdb_api.services.mfa import MFAService
 from pqdb_api.services.user_auth import UserAuthService
 from pqdb_api.services.webhook import (
@@ -57,6 +60,7 @@ router = APIRouter(prefix="/v1/auth/users", tags=["user-auth"])
 # Rate limiter keys
 _SIGNUP_LIMITER_PREFIX = "user_signup"
 _LOGIN_LIMITER_PREFIX = "user_login"
+_RESEND_VERIFICATION_PREFIX = "resend_verification"
 _MAGIC_LINK_LIMITER_PREFIX = "magic_link"
 _RESET_PASSWORD_LIMITER_PREFIX = "password_reset"
 
@@ -126,6 +130,18 @@ class UserMetadataUpdate(BaseModel):
     """Request body for updating user metadata."""
 
     metadata: dict[str, Any]
+
+
+class VerifyEmailRequest(BaseModel):
+    """Request body for POST /v1/auth/users/verify-email."""
+
+    token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    """Request body for POST /v1/auth/users/resend-verification."""
+
+    email: EmailStr
 
 
 class MagicLinkRequest(BaseModel):
@@ -376,6 +392,41 @@ async def user_signup(
         user_id=str(user_id),
         project_id=str(context.project_id),
     )
+
+    # Fire email verification webhook if magic_link_webhook is configured
+    if settings.get("magic_link_webhook"):
+        verification_token = generate_verification_token()
+        token_hash = hash_verification_token(verification_token)
+        token_id = uuid.uuid4()
+        expires_at = datetime.now(UTC) + timedelta(
+            seconds=VERIFICATION_TOKEN_EXPIRY_SECONDS
+        )
+
+        await session.execute(
+            _SAFE(
+                "INSERT INTO _pqdb_verification_tokens "
+                "(id, user_id, email, token_hash, type, expires_at) "
+                "VALUES (:id, :uid, :email, :hash, :type, :expires_at)"
+            ),
+            {
+                "id": str(token_id),
+                "uid": str(user_id),
+                "email": body.email,
+                "hash": token_hash,
+                "type": "email_verification",
+                "expires_at": expires_at,
+            },
+        )
+        await session.commit()
+
+        dispatcher = WebhookDispatcher()
+        await dispatcher.dispatch(
+            url=settings["magic_link_webhook"],
+            event_type="email_verification",
+            email=body.email,
+            token=verification_token,
+            expires_in=VERIFICATION_TOKEN_EXPIRY_SECONDS,
+        )
 
     return UserAuthResponse(
         user=UserProfile(
@@ -1172,3 +1223,208 @@ async def update_user_role(
     )
 
     return {"message": f"User role updated to {body.role!r}"}
+
+
+# ---------------------------------------------------------------------------
+# Email verification endpoints (US-032)
+# ---------------------------------------------------------------------------
+@router.post("/verify-email")
+async def verify_email(
+    body: VerifyEmailRequest,
+    request: Request,
+    context: ProjectContext = Depends(get_project_context),
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, str]:
+    """Verify a user's email with a verification token.
+
+    Validates the token against _pqdb_verification_tokens:
+    - type must be 'email_verification'
+    - token must not be expired
+    - token must not be already used (single-use)
+
+    On success, sets email_verified=true on the user.
+    """
+    await ensure_auth_tables(session)
+
+    # Find all unused, non-expired email_verification tokens
+    result = await session.execute(
+        _SAFE(
+            "SELECT id, user_id, token_hash, expires_at "
+            "FROM _pqdb_verification_tokens "
+            "WHERE type = 'email_verification' AND used = false"
+        ),
+    )
+    rows = result.fetchall()
+
+    matched_row = None
+    for row in rows:
+        token_id, user_id_val, token_hash, expires_at = row[0], row[1], row[2], row[3]
+        if verify_verification_token(token_hash, body.token):
+            matched_row = row
+            break
+
+    if matched_row is None:
+        # Check if token was already used
+        used_result = await session.execute(
+            _SAFE(
+                "SELECT id, token_hash "
+                "FROM _pqdb_verification_tokens "
+                "WHERE type = 'email_verification' AND used = true"
+            ),
+        )
+        for used_row in used_result.fetchall():
+            if verify_verification_token(used_row[1], body.token):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": {
+                            "code": "token_already_used",
+                            "message": "This verification token has already been used",
+                        }
+                    },
+                )
+
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "code": "invalid_token",
+                    "message": "Invalid verification token",
+                }
+            },
+        )
+
+    token_id = str(matched_row[0])
+    user_id_val = str(matched_row[1])
+    expires_at = matched_row[3]
+
+    # Check expiry
+    if expires_at is not None:
+        if isinstance(expires_at, datetime):
+            now = datetime.now(UTC)
+            exp = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=UTC)
+            if exp < now:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": {
+                            "code": "token_expired",
+                            "message": "Verification token has expired",
+                        }
+                    },
+                )
+
+    # Mark token as used
+    await session.execute(
+        _SAFE("UPDATE _pqdb_verification_tokens SET used = true WHERE id = :id"),
+        {"id": token_id},
+    )
+
+    # Set email_verified = true on the user
+    await session.execute(
+        _SAFE(
+            "UPDATE _pqdb_users SET email_verified = true, "
+            "updated_at = now() WHERE id = :uid"
+        ),
+        {"uid": user_id_val},
+    )
+    await session.commit()
+
+    logger.info(
+        "email_verified",
+        user_id=user_id_val,
+        project_id=str(context.project_id),
+    )
+
+    return {"message": "Email verified successfully"}
+
+
+@router.post("/resend-verification")
+async def resend_verification(
+    body: ResendVerificationRequest,
+    request: Request,
+    context: ProjectContext = Depends(get_project_context),
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, str]:
+    """Resend a verification email to the user.
+
+    Requires apikey header. Rate limited: 3 per minute per email.
+    Generates a new verification token and fires the webhook.
+    """
+    # Rate limiting: 3/min per email
+    _check_rate_limit(
+        request,
+        key_prefix=_RESEND_VERIFICATION_PREFIX,
+        ip=body.email,  # Rate limit per email, not IP
+        max_requests=3,
+    )
+
+    await ensure_auth_tables(session)
+
+    # Check webhook is configured
+    settings = await get_auth_settings(session)
+    webhook_url = settings.get("magic_link_webhook")
+    if not webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Webhook URL not configured — cannot send verification email",
+        )
+
+    # Look up user
+    result = await session.execute(
+        _SAFE("SELECT id, email_verified FROM _pqdb_users WHERE email = :email"),
+        {"email": body.email},
+    )
+    row = result.fetchone()
+    if row is None:
+        # Return success even if user not found to avoid email enumeration
+        return {"message": "If the email is registered, a verification email was sent"}
+
+    user_id = str(row[0])
+    email_verified = bool(row[1])
+
+    if email_verified:
+        return {"message": "Email is already verified"}
+
+    # Generate new token
+    verification_token = generate_verification_token()
+    token_hash = hash_verification_token(verification_token)
+    token_id = uuid.uuid4()
+    expires_at = datetime.now(UTC) + timedelta(
+        seconds=VERIFICATION_TOKEN_EXPIRY_SECONDS
+    )
+
+    await session.execute(
+        _SAFE(
+            "INSERT INTO _pqdb_verification_tokens "
+            "(id, user_id, email, token_hash, type, expires_at) "
+            "VALUES (:id, :uid, :email, :hash, :type, :expires_at)"
+        ),
+        {
+            "id": str(token_id),
+            "uid": user_id,
+            "email": body.email,
+            "hash": token_hash,
+            "type": "email_verification",
+            "expires_at": expires_at,
+        },
+    )
+    await session.commit()
+
+    # Fire webhook
+    dispatcher = WebhookDispatcher()
+    await dispatcher.dispatch(
+        url=webhook_url,
+        event_type="email_verification",
+        email=body.email,
+        token=verification_token,
+        expires_in=VERIFICATION_TOKEN_EXPIRY_SECONDS,
+    )
+
+    logger.info(
+        "verification_resent",
+        user_id=user_id,
+        project_id=str(context.project_id),
+    )
+
+    return {"message": "If the email is registered, a verification email was sent"}
