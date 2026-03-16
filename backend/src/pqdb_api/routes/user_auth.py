@@ -37,6 +37,7 @@ from pqdb_api.middleware.api_key import (
 )
 from pqdb_api.services.auth import hash_password, verify_password
 from pqdb_api.services.auth_engine import ensure_auth_tables, get_auth_settings
+from pqdb_api.services.mfa import MFAService
 from pqdb_api.services.user_auth import UserAuthService
 
 logger = structlog.get_logger()
@@ -318,14 +319,18 @@ async def user_signup(
     )
 
 
-@router.post("/login", response_model=UserAuthResponse)
+@router.post("/login")
 async def user_login(
     body: UserLoginRequest,
     request: Request,
     context: ProjectContext = Depends(get_project_context),
     session: AsyncSession = Depends(get_project_session),
-) -> UserAuthResponse:
-    """Authenticate an end-user and return tokens."""
+) -> UserAuthResponse | dict[str, Any]:
+    """Authenticate an end-user and return tokens.
+
+    If the user has a verified MFA factor, returns
+    { mfa_required: true, mfa_ticket: <jwt> } instead of tokens.
+    """
     # Rate limiting: 20 logins/min per IP
     ip = _get_client_ip(request)
     _check_rate_limit(request, key_prefix=_LOGIN_LIMITER_PREFIX, ip=ip, max_requests=20)
@@ -356,8 +361,35 @@ async def user_login(
     if not verify_password(pw_hash, body.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    service = _get_user_auth_service(request)
     user_id = uuid.UUID(str(user_id_str))
+
+    # Check for verified MFA factor
+    mfa_result = await session.execute(
+        _SAFE(
+            "SELECT id FROM _pqdb_mfa_factors "
+            "WHERE user_id = :uid AND type = 'totp' AND verified = true"
+        ),
+        {"uid": str(user_id)},
+    )
+    has_mfa = mfa_result.fetchone() is not None
+
+    if has_mfa:
+        # Return MFA challenge instead of tokens
+        mfa_service = MFAService(
+            private_key=request.app.state.jwt_private_key,
+            public_key=request.app.state.jwt_public_key,
+        )
+        mfa_ticket = mfa_service.create_mfa_ticket(
+            user_id=user_id, project_id=context.project_id
+        )
+        logger.info(
+            "user_login_mfa_required",
+            user_id=str(user_id),
+            project_id=str(context.project_id),
+        )
+        return {"mfa_required": True, "mfa_ticket": mfa_ticket}
+
+    service = _get_user_auth_service(request)
 
     tokens = service.create_token_pair(
         user_id=user_id,

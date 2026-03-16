@@ -18,6 +18,7 @@ from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.auth_settings import router as auth_settings_router
 from pqdb_api.routes.db import router as db_router
 from pqdb_api.routes.health import router as health_router
+from pqdb_api.routes.mfa import router as mfa_router
 from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.routes.user_auth import router as user_auth_router
 from pqdb_api.services.auth import generate_ed25519_keypair
@@ -78,6 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(user_auth_router)
+    app.include_router(mfa_router)
     app.include_router(auth_router)
     app.include_router(projects_router)
     app.include_router(api_keys_router)
