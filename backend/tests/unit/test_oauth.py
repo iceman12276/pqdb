@@ -1,6 +1,5 @@
 """Unit tests for OAuth provider adapter interface and dataclasses."""
 
-
 import pytest
 
 from pqdb_api.services.oauth import (
