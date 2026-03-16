@@ -71,8 +71,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #44 merged. Password reset with webhook, session invalidation, rate limiting. All CI green."
     },
     {
       "id": "US-034",
