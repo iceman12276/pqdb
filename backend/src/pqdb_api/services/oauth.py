@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlencode
+
+import httpx
 
 
 @dataclass(frozen=True)
@@ -73,10 +76,43 @@ class GoogleOAuthProvider(OAuthProvider):
         return f"{self.AUTHORIZE_URL}?{params}"
 
     async def exchange_code(self, code: str, redirect_uri: str) -> OAuthTokens:
-        raise NotImplementedError("Token exchange requires HTTP client")
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                self.TOKEN_URL,
+                json={
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                },
+                headers={"Accept": "application/json"},
+            )
+            resp.raise_for_status()
+            data: dict[str, Any] = resp.json()
+
+        if "error" in data:
+            raise ValueError(f"Google token exchange failed: {data['error']}")
+
+        return OAuthTokens(
+            access_token=data["access_token"],
+            refresh_token=data.get("refresh_token"),
+            expires_in=data.get("expires_in", 0),
+            token_type=data.get("token_type", "Bearer"),
+        )
 
     async def get_user_info(self, tokens: OAuthTokens) -> OAuthUserInfo:
-        raise NotImplementedError("User info retrieval requires HTTP client")
+        headers = {"Authorization": f"Bearer {tokens.access_token}"}
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.USERINFO_URL, headers=headers)
+            resp.raise_for_status()
+            data: dict[str, Any] = resp.json()
+
+        return OAuthUserInfo(
+            email=data["email"],
+            name=data.get("name"),
+            avatar_url=data.get("picture"),
+            provider_uid=str(data["id"]),
+        )
 
 
 class GitHubOAuthProvider(OAuthProvider):
@@ -102,7 +138,61 @@ class GitHubOAuthProvider(OAuthProvider):
         return f"{self.AUTHORIZE_URL}?{params}"
 
     async def exchange_code(self, code: str, redirect_uri: str) -> OAuthTokens:
-        raise NotImplementedError("Token exchange requires HTTP client")
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                self.TOKEN_URL,
+                json={
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                },
+                headers={"Accept": "application/json"},
+            )
+            resp.raise_for_status()
+            data: dict[str, Any] = resp.json()
+
+        if "error" in data:
+            raise ValueError(f"GitHub token exchange failed: {data['error']}")
+
+        return OAuthTokens(
+            access_token=data["access_token"],
+            refresh_token=data.get("refresh_token"),
+            expires_in=data.get("expires_in", 0),
+            token_type=data.get("token_type", "bearer"),
+        )
 
     async def get_user_info(self, tokens: OAuthTokens) -> OAuthUserInfo:
-        raise NotImplementedError("User info retrieval requires HTTP client")
+        headers = {
+            "Authorization": f"Bearer {tokens.access_token}",
+            "Accept": "application/json",
+        }
+        async with httpx.AsyncClient() as client:
+            # Fetch user profile
+            user_resp = await client.get(self.USERINFO_URL, headers=headers)
+            user_resp.raise_for_status()
+            user_data: dict[str, Any] = user_resp.json()
+
+            # Fetch emails to find verified primary email
+            emails_resp = await client.get(
+                "https://api.github.com/user/emails", headers=headers
+            )
+            emails_resp.raise_for_status()
+            emails: list[dict[str, Any]] = emails_resp.json()
+
+        # Find verified primary email
+        email: str | None = None
+        for entry in emails:
+            if entry.get("primary") and entry.get("verified"):
+                email = entry["email"]
+                break
+
+        if email is None:
+            raise ValueError("No verified primary email found on GitHub account")
+
+        return OAuthUserInfo(
+            email=email,
+            name=user_data.get("name"),
+            avatar_url=user_data.get("avatar_url"),
+            provider_uid=str(user_data["id"]),
+        )
