@@ -76,6 +76,58 @@ export interface UserMetadataUpdate {
   metadata: Record<string, unknown>;
 }
 
+/** Options for OAuth sign-in / linking. */
+export interface OAuthOptions {
+  redirectTo: string;
+}
+
+/** Result of signInWithOAuth — returns the authorization URL. */
+export interface OAuthUrlResult {
+  url: string;
+  provider: string;
+}
+
+/** Parameters from OAuth callback URL fragment. */
+export interface OAuthCallbackParams {
+  access_token: string;
+  refresh_token: string;
+  token_type?: string;
+  [key: string]: string | undefined;
+}
+
+/** A linked OAuth provider identity. */
+export interface LinkedProvider {
+  provider: string;
+  provider_user_id: string;
+  email: string;
+  linked_at: string;
+}
+
+/** Result of magic link request. */
+export interface MagicLinkResult {
+  message: string;
+}
+
+/** Result of email verification. */
+export interface VerifyEmailResult {
+  message: string;
+}
+
+/** Result of resend verification. */
+export interface ResendVerificationResult {
+  message: string;
+}
+
+/** Result of password reset request. */
+export interface ResetPasswordResult {
+  message: string;
+}
+
+/** Result of password update. */
+export interface UpdatePasswordResult {
+  message: string;
+}
+
 /** Options for HTTP requests. */
 export interface HttpRequestOptions {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
