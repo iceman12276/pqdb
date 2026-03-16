@@ -25,6 +25,11 @@ from sqlalchemy.ext.asyncio import (
 from pqdb_api.services.auth_engine import (
     ensure_auth_tables,
 )
+from pqdb_api.services.crud import (
+    CrudError,
+    FilterOp,
+    inject_rls_filters,
+)
 from pqdb_api.services.roles_policies import (
     PolicyCondition,
     PolicyOperation,
@@ -35,11 +40,6 @@ from pqdb_api.services.roles_policies import (
     get_policies_for_table,
     list_roles,
     lookup_policy,
-)
-from pqdb_api.services.crud import (
-    CrudError,
-    FilterOp,
-    inject_rls_filters,
 )
 
 

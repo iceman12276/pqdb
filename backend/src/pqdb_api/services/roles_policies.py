@@ -183,7 +183,9 @@ async def create_policy(
     )
     await session.commit()
 
-    logger.info("policy_created", table=table_name, operation=operation.value, role=role)
+    logger.info(
+        "policy_created", table=table_name, operation=operation.value, role=role
+    )
     return {
         "id": policy_id,
         "table_name": table_name,

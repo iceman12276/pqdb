@@ -371,13 +371,9 @@ def inject_rls_filters(
 
         if condition == "owner":
             if user_id is None:
-                raise CrudError(
-                    "User context required for owner-based policy"
-                )
+                raise CrudError("User context required for owner-based policy")
             if owner_col is None:
-                raise CrudError(
-                    "Owner policy requires an owner column on the table"
-                )
+                raise CrudError("Owner policy requires an owner column on the table")
             result = list(filters)
             result.append((owner_col, FilterOp.EQ, str(user_id)))
             return result

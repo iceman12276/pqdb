@@ -74,9 +74,7 @@ async def _get_project_session(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     if project.database_name is None:
-        raise HTTPException(
-            status_code=400, detail="Project database not provisioned"
-        )
+        raise HTTPException(status_code=400, detail="Project database not provisioned")
 
     platform_url: str = request.app.state.settings.database_url
     last_slash = platform_url.rfind("/")
