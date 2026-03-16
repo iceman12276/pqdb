@@ -72,6 +72,35 @@ _SQL_INSERT_DEFAULT_SETTINGS_PG = _SAFE(
     "INSERT INTO _pqdb_auth_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
 )
 
+_SQL_CREATE_ROLES_PG = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_roles ("
+    "  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"
+    "  name text UNIQUE NOT NULL,"
+    "  description text,"
+    "  created_at timestamptz NOT NULL DEFAULT now()"
+    ")"
+)
+
+_SQL_CREATE_POLICIES_PG = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_policies ("
+    "  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"
+    "  table_name text NOT NULL,"
+    "  name text NOT NULL,"
+    "  operation text NOT NULL CHECK (operation IN ('select', 'insert', 'update', 'delete')),"
+    "  role text NOT NULL,"
+    "  condition text NOT NULL CHECK (condition IN ('owner', 'all', 'none')),"
+    "  created_at timestamptz NOT NULL DEFAULT now(),"
+    "  UNIQUE(table_name, operation, role)"
+    ")"
+)
+
+_SQL_SEED_ROLES_PG = _SAFE(
+    "INSERT INTO _pqdb_roles (id, name, description) VALUES "
+    "(gen_random_uuid(), 'authenticated', 'Logged-in users'), "
+    "(gen_random_uuid(), 'anon', 'Anonymous users') "
+    "ON CONFLICT (name) DO NOTHING"
+)
+
 # ---------------------------------------------------------------------------
 # SQLite DDL (for unit tests)
 # ---------------------------------------------------------------------------
@@ -114,6 +143,38 @@ _SQL_INSERT_DEFAULT_SETTINGS_SQLITE = _SAFE(
     "INSERT OR IGNORE INTO _pqdb_auth_settings (id) VALUES (1)"
 )
 
+_SQL_CREATE_ROLES_SQLITE = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_roles ("
+    "  id TEXT PRIMARY KEY,"
+    "  name TEXT UNIQUE NOT NULL,"
+    "  description TEXT,"
+    "  created_at TEXT NOT NULL DEFAULT (datetime('now'))"
+    ")"
+)
+
+_SQL_CREATE_POLICIES_SQLITE = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_policies ("
+    "  id TEXT PRIMARY KEY,"
+    "  name TEXT NOT NULL,"
+    "  table_name TEXT NOT NULL,"
+    "  operation TEXT NOT NULL CHECK (operation IN ('select', 'insert', 'update', 'delete')),"
+    "  role TEXT NOT NULL,"
+    "  condition TEXT NOT NULL CHECK (condition IN ('owner', 'all', 'none')),"
+    "  created_at TEXT NOT NULL DEFAULT (datetime('now')),"
+    "  UNIQUE(table_name, operation, role)"
+    ")"
+)
+
+_SQL_SEED_ROLES_SQLITE_AUTH = _SAFE(
+    "INSERT OR IGNORE INTO _pqdb_roles (id, name, description) "
+    "VALUES (:id_auth, 'authenticated', 'Logged-in users')"
+)
+
+_SQL_SEED_ROLES_SQLITE_ANON = _SAFE(
+    "INSERT OR IGNORE INTO _pqdb_roles (id, name, description) "
+    "VALUES (:id_anon, 'anon', 'Anonymous users')"
+)
+
 
 def _is_sqlite(session: AsyncSession) -> bool:
     """Check if the session is connected to a SQLite database."""
@@ -146,11 +207,24 @@ async def ensure_auth_tables(session: AsyncSession) -> None:
             await session.execute(_SQL_CREATE_SESSIONS_SQLITE)
             await session.execute(_SQL_CREATE_AUTH_SETTINGS_SQLITE)
             await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_SQLITE)
+            await session.execute(_SQL_CREATE_ROLES_SQLITE)
+            await session.execute(_SQL_CREATE_POLICIES_SQLITE)
+            import uuid as _uuid
+
+            await session.execute(
+                _SQL_SEED_ROLES_SQLITE_AUTH, {"id_auth": str(_uuid.uuid4())}
+            )
+            await session.execute(
+                _SQL_SEED_ROLES_SQLITE_ANON, {"id_anon": str(_uuid.uuid4())}
+            )
         else:
             await session.execute(_SQL_CREATE_USERS_PG)
             await session.execute(_SQL_CREATE_SESSIONS_PG)
             await session.execute(_SQL_CREATE_AUTH_SETTINGS_PG)
             await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_PG)
+            await session.execute(_SQL_CREATE_ROLES_PG)
+            await session.execute(_SQL_CREATE_POLICIES_PG)
+            await session.execute(_SQL_SEED_ROLES_PG)
 
         await session.commit()
     except Exception as exc:
