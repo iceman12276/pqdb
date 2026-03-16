@@ -335,24 +335,55 @@ def inject_rls_filters(
     columns_meta: list[dict[str, Any]],
     key_role: str,
     user_id: uuid.UUID | None,
+    policies: list[dict[str, Any]] | None = None,
 ) -> list[tuple[str, FilterOp, Any]]:
-    """Inject RLS WHERE filters based on owner column and user context.
+    """Inject RLS WHERE filters based on policies or owner column.
 
+    When policies is not None (policies exist for this table):
     - service role: no RLS filtering (admin access)
-    - anon role + table has owner column + user context present:
-      appends WHERE {owner_col} = user_id
-    - anon role + table has owner column + NO user context:
-      raises CrudError (403)
-    - table has no owner column: no RLS applied
-    """
-    owner_col = _find_owner_column(columns_meta)
-    if owner_col is None:
-        return list(filters)
+    - Empty list (no policy for this role/op): deny (403)
+    - condition=all: no filter added
+    - condition=none: deny (403)
+    - condition=owner: inject WHERE {owner_col} = user_id
 
+    When policies is None (no policies for this table):
+    - Falls back to basic owner-column RLS (Phase 2a behavior)
+    """
+    # Service role always bypasses
     if key_role == "service":
         return list(filters)
 
-    # anon role with owner column
+    owner_col = _find_owner_column(columns_meta)
+
+    # Policy-based RLS
+    if policies is not None:
+        if len(policies) == 0:
+            # No policy found for this role/operation => deny
+            raise CrudError("Access denied by policy")
+
+        condition = policies[0].get("condition")
+
+        if condition == "none":
+            raise CrudError("Access denied by policy")
+
+        if condition == "all":
+            return list(filters)
+
+        if condition == "owner":
+            if user_id is None:
+                raise CrudError("User context required for owner-based policy")
+            if owner_col is None:
+                raise CrudError("Owner policy requires an owner column on the table")
+            result = list(filters)
+            result.append((owner_col, FilterOp.EQ, str(user_id)))
+            return result
+
+        raise CrudError(f"Unknown policy condition: {condition}")
+
+    # Fallback: basic owner-column RLS (Phase 2a behavior)
+    if owner_col is None:
+        return list(filters)
+
     if user_id is None:
         raise CrudError("User context required for tables with owner column")
 
