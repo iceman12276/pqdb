@@ -18,9 +18,22 @@ export type {
   UserMetadataUpdate,
   PqdbError,
   PqdbResponse,
+  CreateRoleRequest,
+  Role,
+  CreatePolicyRequest,
+  Policy,
+  MfaEnrollResponse,
+  MfaVerifyRequest,
+  MfaChallengeRequest,
+  MfaUnenrollRequest,
+  MfaRequiredResponse,
+  SetRoleResponse,
 } from "./client/types.js";
 export { AuthClient } from "./client/auth.js";
 export { UserAuthClient } from "./client/user-auth.js";
+export { RolesClient } from "./client/roles.js";
+export { PoliciesClient } from "./client/policies.js";
+export { MfaClient } from "./client/mfa.js";
 
 // Query builder exports
 export { column, defineTableSchema, ColumnDef, UuidColumnDef } from "./query/schema.js";

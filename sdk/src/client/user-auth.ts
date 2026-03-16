@@ -8,6 +8,7 @@
  * internal HTTP helper that manages its own Authorization header.
  */
 import type { HttpClient } from "./http.js";
+import { MfaClient } from "./mfa.js";
 import type {
   AuthCredentials,
   UserAuthTokens,
@@ -15,6 +16,8 @@ import type {
   UserProfile,
   UserMetadataUpdate,
   RefreshTokens,
+  MfaRequiredResponse,
+  SetRoleResponse,
   PqdbResponse,
   OAuthOptions,
   OAuthUrlResult,
@@ -32,9 +35,18 @@ export class UserAuthClient {
   private userAccessToken: string | null = null;
   private userRefreshToken: string | null = null;
   private userId: string | null = null;
+  readonly mfa: MfaClient;
 
   constructor(http: HttpClient) {
     this.http = http;
+    this.mfa = new MfaClient(
+      (opts) => this.userRequest(opts),
+      (accessToken, refreshToken, userId) => {
+        this.userAccessToken = accessToken;
+        this.userRefreshToken = refreshToken;
+        this.userId = userId;
+      },
+    );
   }
 
   async signUp(credentials: AuthCredentials): Promise<UserAuthResponse> {
@@ -53,17 +65,25 @@ export class UserAuthClient {
     return result;
   }
 
-  async signIn(credentials: AuthCredentials): Promise<UserAuthResponse> {
-    const result = await this.http.request<UserAuthTokens>({
+  async signIn(
+    credentials: AuthCredentials,
+  ): Promise<PqdbResponse<UserAuthTokens | MfaRequiredResponse>> {
+    const result = await this.http.request<UserAuthTokens | MfaRequiredResponse>({
       method: "POST",
       path: "/v1/auth/users/login",
       body: credentials,
     });
 
-    if (result.data) {
-      this.userAccessToken = result.data.access_token;
-      this.userRefreshToken = result.data.refresh_token;
-      this.userId = result.data.user.id;
+    if (result.data && "mfa_required" in result.data && result.data.mfa_required) {
+      // MFA required — don't store tokens, return the MFA challenge data
+      return result;
+    }
+
+    if (result.data && "access_token" in result.data) {
+      const tokens = result.data as UserAuthTokens;
+      this.userAccessToken = tokens.access_token;
+      this.userRefreshToken = tokens.refresh_token;
+      this.userId = tokens.user.id;
     }
 
     return result;
@@ -240,6 +260,18 @@ export class UserAuthClient {
   /** Get the current user's ID, or null if not signed in. */
   getUserId(): string | null {
     return this.userId;
+  }
+
+  /** Set a user's role. Requires service API key. */
+  async setRole(
+    userId: string,
+    role: string,
+  ): Promise<PqdbResponse<SetRoleResponse>> {
+    return this.http.request<SetRoleResponse>({
+      method: "PUT",
+      path: `/v1/auth/users/${userId}/role`,
+      body: { role },
+    });
   }
 
   /**

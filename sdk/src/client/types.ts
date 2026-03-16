@@ -6,6 +6,8 @@
 export interface PqdbClientOptions {
   /** Master key for ML-KEM encryption. Never transmitted to the server. */
   encryptionKey?: string;
+  /** Project UUID — required for roles and policies management. */
+  projectId?: string;
 }
 
 /** Credentials for auth operations. */
@@ -74,6 +76,71 @@ export type UserAuthResponse = PqdbResponse<UserAuthTokens>;
 /** Data for updating user metadata. */
 export interface UserMetadataUpdate {
   metadata: Record<string, unknown>;
+}
+
+/** Request body for creating a role. */
+export interface CreateRoleRequest {
+  name: string;
+  description?: string;
+}
+
+/** Role as returned by the API. */
+export interface Role {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at?: string | null;
+}
+
+/** Request body for creating an RLS policy. */
+export interface CreatePolicyRequest {
+  name: string;
+  operation: string;
+  role: string;
+  condition: string;
+}
+
+/** RLS policy as returned by the API. */
+export interface Policy {
+  id: string;
+  name: string;
+  operation: string;
+  role: string;
+  condition: string;
+}
+
+/** MFA enrollment response. */
+export interface MfaEnrollResponse {
+  secret: string;
+  qr_uri: string;
+  recovery_codes: string[];
+}
+
+/** MFA verify request. */
+export interface MfaVerifyRequest {
+  code: string;
+}
+
+/** MFA challenge request. */
+export interface MfaChallengeRequest {
+  ticket: string;
+  code: string;
+}
+
+/** MFA unenroll request. */
+export interface MfaUnenrollRequest {
+  code: string;
+}
+
+/** Response when signIn requires MFA. */
+export interface MfaRequiredResponse {
+  mfa_required: true;
+  mfa_ticket: string;
+}
+
+/** Set role response. */
+export interface SetRoleResponse {
+  role: string;
 }
 
 /** Options for OAuth sign-in / linking. */
