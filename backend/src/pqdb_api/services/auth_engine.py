@@ -16,6 +16,8 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pqdb_api.services.webhook import validate_webhook_url
+
 logger = structlog.get_logger()
 
 # nosemgrep: avoid-sqlalchemy-text
@@ -72,6 +74,19 @@ _SQL_INSERT_DEFAULT_SETTINGS_PG = _SAFE(
     "INSERT INTO _pqdb_auth_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
 )
 
+_SQL_CREATE_VERIFICATION_TOKENS_PG = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_verification_tokens ("
+    "  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"
+    "  user_id uuid REFERENCES _pqdb_users(id) ON DELETE CASCADE,"
+    "  email text NOT NULL,"
+    "  token_hash text NOT NULL,"
+    "  type text NOT NULL,"
+    "  expires_at timestamptz,"
+    "  used boolean NOT NULL DEFAULT FALSE,"
+    "  created_at timestamptz NOT NULL DEFAULT now()"
+    ")"
+)
+
 # ---------------------------------------------------------------------------
 # SQLite DDL (for unit tests)
 # ---------------------------------------------------------------------------
@@ -114,6 +129,19 @@ _SQL_INSERT_DEFAULT_SETTINGS_SQLITE = _SAFE(
     "INSERT OR IGNORE INTO _pqdb_auth_settings (id) VALUES (1)"
 )
 
+_SQL_CREATE_VERIFICATION_TOKENS_SQLITE = _SAFE(
+    "CREATE TABLE IF NOT EXISTS _pqdb_verification_tokens ("
+    "  id TEXT PRIMARY KEY,"
+    "  user_id TEXT REFERENCES _pqdb_users(id) ON DELETE CASCADE,"
+    "  email TEXT NOT NULL,"
+    "  token_hash TEXT NOT NULL,"
+    "  type TEXT NOT NULL,"
+    "  expires_at TEXT,"
+    "  used INTEGER NOT NULL DEFAULT 0,"
+    "  created_at TEXT NOT NULL DEFAULT (datetime('now'))"
+    ")"
+)
+
 
 def _is_sqlite(session: AsyncSession) -> bool:
     """Check if the session is connected to a SQLite database."""
@@ -134,6 +162,7 @@ async def ensure_auth_tables(session: AsyncSession) -> None:
     - _pqdb_users: end-user accounts
     - _pqdb_sessions: refresh token sessions
     - _pqdb_auth_settings: single-row project auth config
+    - _pqdb_verification_tokens: auth event verification tokens
 
     Called lazily on first auth-related request.
     Raises AuthEngineError if table creation fails.
@@ -146,11 +175,13 @@ async def ensure_auth_tables(session: AsyncSession) -> None:
             await session.execute(_SQL_CREATE_SESSIONS_SQLITE)
             await session.execute(_SQL_CREATE_AUTH_SETTINGS_SQLITE)
             await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_SQLITE)
+            await session.execute(_SQL_CREATE_VERIFICATION_TOKENS_SQLITE)
         else:
             await session.execute(_SQL_CREATE_USERS_PG)
             await session.execute(_SQL_CREATE_SESSIONS_PG)
             await session.execute(_SQL_CREATE_AUTH_SETTINGS_PG)
             await session.execute(_SQL_INSERT_DEFAULT_SETTINGS_PG)
+            await session.execute(_SQL_CREATE_VERIFICATION_TOKENS_PG)
 
         await session.commit()
     except Exception as exc:
@@ -206,6 +237,11 @@ async def update_auth_settings(
     unknown = set(updates.keys()) - _ALLOWED_SETTINGS
     if unknown:
         raise ValueError(f"Unknown auth setting(s): {', '.join(sorted(unknown))}")
+
+    # Validate webhook URL is HTTPS (if being set to a non-None value)
+    webhook_url = updates.get("magic_link_webhook")
+    if webhook_url is not None:
+        validate_webhook_url(webhook_url)
 
     await ensure_auth_tables(session)
 
