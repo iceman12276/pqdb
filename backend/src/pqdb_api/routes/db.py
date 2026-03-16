@@ -21,7 +21,8 @@ from pqdb_api.middleware.api_key import (
     get_project_session,
 )
 from pqdb_api.middleware.user_auth import UserContext, get_current_user
-from pqdb_api.services.auth_engine import ensure_auth_tables
+from pqdb_api.services.auth_engine import ensure_auth_tables, get_auth_settings
+from pqdb_api.services.email_verification import should_enforce_email_verification
 from pqdb_api.services.crud import (
     CrudError,
     FilterOp,
@@ -226,6 +227,47 @@ async def _resolve_policies(
         return []  # Policies exist but not for this role/op => deny
 
     return [policy]
+
+
+async def _check_email_verification(
+    session: AsyncSession,
+    columns_meta: list[dict[str, Any]],
+    context: ProjectContext,
+    user: UserContext | None,
+) -> None:
+    """Check email verification enforcement for CRUD operations.
+
+    Raises HTTPException 403 if email verification is required but
+    the user's email is not verified.
+    """
+    has_owner = any(col.get("is_owner") for col in columns_meta)
+    if not has_owner or user is None:
+        return
+
+    try:
+        settings = await get_auth_settings(session)
+    except Exception:
+        return
+
+    if should_enforce_email_verification(
+        require_email_verification=settings.get("require_email_verification", False),
+        email_verified=user.email_verified,
+        key_role=context.key_role,
+        has_owner_column=has_owner,
+        has_user_context=user is not None,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": {
+                    "code": "email_not_verified",
+                    "message": (
+                        "Email verification is required before accessing data. "
+                        "Please verify your email address."
+                    ),
+                }
+            },
+        )
 
 
 def _parse_filter_op(op_str: str) -> FilterOp:
@@ -476,6 +518,9 @@ async def insert_rows(
     """
     columns_meta = await _get_column_meta(session, table_name)
 
+    # Email verification enforcement (US-032)
+    await _check_email_verification(session, columns_meta, context, user)
+
     if not body.rows:
         raise HTTPException(status_code=400, detail="Must provide at least one row")
 
@@ -544,6 +589,9 @@ async def select_rows(
     """
     columns_meta = await _get_column_meta(session, table_name)
 
+    # Email verification enforcement (US-032)
+    await _check_email_verification(session, columns_meta, context, user)
+
     # Parse and validate filters
     try:
         filters = _parse_filters(body.filters, columns_meta)
@@ -605,6 +653,9 @@ async def update_rows(
     RLS: anon role can only update own rows (WHERE owner_col = user_id).
     """
     columns_meta = await _get_column_meta(session, table_name)
+
+    # Email verification enforcement (US-032)
+    await _check_email_verification(session, columns_meta, context, user)
 
     if not body.values:
         raise HTTPException(status_code=400, detail="Must provide values to update")
@@ -696,6 +747,9 @@ async def delete_rows(
     RLS: anon role can only delete own rows (WHERE owner_col = user_id).
     """
     columns_meta = await _get_column_meta(session, table_name)
+
+    # Email verification enforcement (US-032)
+    await _check_email_verification(session, columns_meta, context, user)
 
     # Parse filters
     try:
