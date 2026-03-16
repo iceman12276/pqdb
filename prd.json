@@ -248,8 +248,8 @@
         "Production build succeeds"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #40 merged. Custom roles CRUD, RLS policies CRUD, policy-based enforcement in CRUD service, backward-compatible fallback. Three-layer verification passed."
     },
     {
       "id": "US-041",
