@@ -1,13 +1,15 @@
 """End-user authentication endpoints.
 
-POST /v1/auth/users/signup          — register a new end-user
-POST /v1/auth/users/login           — authenticate end-user
-POST /v1/auth/users/logout          — revoke refresh token session
-POST /v1/auth/users/refresh         — exchange refresh token for new access token
-GET  /v1/auth/users/me              — get current user profile
-PUT  /v1/auth/users/me              — update user metadata
-POST /v1/auth/users/reset-password  — request a password reset (US-033)
-POST /v1/auth/users/update-password — update password with reset token (US-033)
+POST /v1/auth/users/signup             — register a new end-user
+POST /v1/auth/users/login              — authenticate end-user
+POST /v1/auth/users/logout             — revoke refresh token session
+POST /v1/auth/users/refresh            — exchange refresh token for new access token
+POST /v1/auth/users/magic-link         — request a magic link (US-034)
+POST /v1/auth/users/verify-magic-link  — verify a magic link token (US-034)
+GET  /v1/auth/users/me                 — get current user profile
+PUT  /v1/auth/users/me                 — update user metadata
+POST /v1/auth/users/reset-password     — request a password reset (US-033)
+POST /v1/auth/users/update-password    — update password with reset token (US-033)
 
 All endpoints use the apikey header for project resolution (same as /v1/db/*).
 End-user JWTs have type=user_access to distinguish from developer tokens.
@@ -55,7 +57,11 @@ router = APIRouter(prefix="/v1/auth/users", tags=["user-auth"])
 # Rate limiter keys
 _SIGNUP_LIMITER_PREFIX = "user_signup"
 _LOGIN_LIMITER_PREFIX = "user_login"
+_MAGIC_LINK_LIMITER_PREFIX = "magic_link"
 _RESET_PASSWORD_LIMITER_PREFIX = "password_reset"
+
+# Magic link token expiry
+_MAGIC_LINK_EXPIRY_SECONDS = 900  # 15 minutes
 
 # nosemgrep: avoid-sqlalchemy-text
 _SAFE = text
@@ -122,6 +128,18 @@ class UserMetadataUpdate(BaseModel):
     metadata: dict[str, Any]
 
 
+class MagicLinkRequest(BaseModel):
+    """Request body for magic link."""
+
+    email: EmailStr
+
+
+class VerifyMagicLinkRequest(BaseModel):
+    """Request body for verifying a magic link token."""
+
+    token: str
+
+
 class ResetPasswordRequest(BaseModel):
     """Request body for password reset request."""
 
@@ -186,6 +204,37 @@ def _check_rate_limit(
 
     timestamps.append(now)
     limits[ip] = timestamps
+
+
+def _check_email_rate_limit(
+    request: Request,
+    *,
+    key_prefix: str,
+    email: str,
+    max_requests: int,
+    window_seconds: int = 60,
+) -> None:
+    """Check email-based rate limit. Raises 429 if exceeded."""
+    import time
+
+    state = request.app.state
+    attr_name = f"_rate_limits_{key_prefix}_email"
+    if not hasattr(state, attr_name):
+        setattr(state, attr_name, {})
+
+    limits: dict[str, list[float]] = getattr(state, attr_name)
+    now = time.monotonic()
+    cutoff = now - window_seconds
+
+    timestamps = limits.get(email, [])
+    timestamps = [t for t in timestamps if t > cutoff]
+
+    if len(timestamps) >= max_requests:
+        limits[email] = timestamps
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+    timestamps.append(now)
+    limits[email] = timestamps
 
 
 async def _get_current_user(
@@ -380,7 +429,8 @@ async def user_login(
         row[5],
     )
 
-    if not verify_password(pw_hash, body.password):
+    # Users created via magic link have no password — reject login
+    if pw_hash is None or not verify_password(pw_hash, body.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     user_id = uuid.UUID(str(user_id_str))
@@ -633,6 +683,237 @@ async def update_user_profile(
 
     user["metadata"] = body.metadata
     return UserProfile(**user)
+
+
+# ---------------------------------------------------------------------------
+# Magic link endpoints (US-034)
+# ---------------------------------------------------------------------------
+@router.post("/magic-link")
+async def request_magic_link(
+    body: MagicLinkRequest,
+    request: Request,
+    context: ProjectContext = Depends(get_project_context),
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, str]:
+    """Request a magic link for passwordless authentication.
+
+    If the user exists, generates a token and fires a webhook.
+    If the user does not exist, creates a new user with
+    password_hash = NULL, then generates a token and fires a webhook.
+
+    Returns 400 if magic_link_webhook is not configured.
+    Rate limited to 5 requests/min per email.
+    """
+    await ensure_auth_tables(session)
+
+    # Check magic_link_webhook is configured
+    settings = await get_auth_settings(session)
+    webhook_url = settings.get("magic_link_webhook")
+    if not webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Magic link webhook is not configured for this project",
+        )
+
+    # Rate limiting: 5 per minute per email
+    _check_email_rate_limit(
+        request,
+        key_prefix=_MAGIC_LINK_LIMITER_PREFIX,
+        email=body.email,
+        max_requests=5,
+    )
+
+    # Look up or create user
+    result = await session.execute(
+        _SAFE("SELECT id, email FROM _pqdb_users WHERE email = :email"),
+        {"email": body.email},
+    )
+    row = result.fetchone()
+
+    if row is None:
+        # Create new user with password_hash = NULL
+        user_id = uuid.uuid4()
+        await session.execute(
+            _SAFE(
+                "INSERT INTO _pqdb_users (id, email, role) "
+                "VALUES (:id, :email, 'authenticated')"
+            ),
+            {"id": str(user_id), "email": body.email},
+        )
+    else:
+        user_id = uuid.UUID(str(row[0]))
+
+    # Generate token
+    token = generate_verification_token()
+    token_hash = hash_verification_token(token)
+    token_id = uuid.uuid4()
+    expires_at = datetime.now(UTC) + timedelta(seconds=_MAGIC_LINK_EXPIRY_SECONDS)
+
+    await session.execute(
+        _SAFE(
+            "INSERT INTO _pqdb_verification_tokens "
+            "(id, user_id, email, token_hash, type, expires_at) "
+            "VALUES (:id, :user_id, :email, :token_hash, 'magic_link', :expires_at)"
+        ),
+        {
+            "id": str(token_id),
+            "user_id": str(user_id),
+            "email": body.email,
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+        },
+    )
+    await session.commit()
+
+    # Fire webhook (fire-and-forget)
+    dispatcher = WebhookDispatcher()
+    await dispatcher.dispatch(
+        url=webhook_url,
+        event_type="magic_link",
+        email=body.email,
+        token=token,
+        expires_in=_MAGIC_LINK_EXPIRY_SECONDS,
+    )
+
+    logger.info(
+        "magic_link_requested",
+        email=body.email,
+        project_id=str(context.project_id),
+    )
+
+    return {"message": "Magic link sent"}
+
+
+@router.post("/verify-magic-link")
+async def verify_magic_link(
+    body: VerifyMagicLinkRequest,
+    request: Request,
+    context: ProjectContext = Depends(get_project_context),
+    session: AsyncSession = Depends(get_project_session),
+) -> UserAuthResponse:
+    """Verify a magic link token and return user + JWT tokens.
+
+    Validates the token against _pqdb_verification_tokens,
+    marks it as used (single-use), sets email_verified = true,
+    creates a session, and returns { user, access_token, refresh_token }.
+    """
+    await ensure_auth_tables(session)
+
+    # Find all unused, non-expired magic_link tokens
+    result = await session.execute(
+        _SAFE(
+            "SELECT id, user_id, email, token_hash, expires_at "
+            "FROM _pqdb_verification_tokens "
+            "WHERE type = 'magic_link' AND used = false"
+        ),
+    )
+    rows = result.fetchall()
+
+    matched_row = None
+    for row in rows:
+        token_hash = row[3]
+        if verify_verification_token(token_hash, body.token):
+            matched_row = row
+            break
+
+    if matched_row is None:
+        raise HTTPException(
+            status_code=400, detail="Invalid or expired magic link token"
+        )
+
+    token_id, user_id_raw, email, _token_hash, expires_at = (
+        matched_row[0],
+        matched_row[1],
+        matched_row[2],
+        matched_row[3],
+        matched_row[4],
+    )
+
+    # Check expiry
+    if expires_at is not None:
+        if isinstance(expires_at, datetime):
+            exp = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=UTC)
+            if exp < datetime.now(UTC):
+                raise HTTPException(
+                    status_code=400, detail="Magic link token has expired"
+                )
+
+    # Mark token as used (single-use)
+    await session.execute(
+        _SAFE("UPDATE _pqdb_verification_tokens SET used = true WHERE id = :id"),
+        {"id": str(token_id)},
+    )
+
+    # Set email_verified = true on the user
+    user_id = uuid.UUID(str(user_id_raw))
+    await session.execute(
+        _SAFE(
+            "UPDATE _pqdb_users SET email_verified = true, updated_at = now() "
+            "WHERE id = :uid"
+        ),
+        {"uid": str(user_id)},
+    )
+
+    # Look up user details
+    user_result = await session.execute(
+        _SAFE(
+            "SELECT id, email, role, email_verified, metadata "
+            "FROM _pqdb_users WHERE id = :uid"
+        ),
+        {"uid": str(user_id)},
+    )
+    user_row = user_result.fetchone()
+    if user_row is None:
+        raise HTTPException(status_code=400, detail="User not found")
+
+    role = user_row[2]
+    metadata = user_row[4] if isinstance(user_row[4], dict) else {}
+
+    # Create tokens
+    service = _get_user_auth_service(request)
+    tokens = service.create_token_pair(
+        user_id=user_id,
+        project_id=context.project_id,
+        role=role,
+        email_verified=True,
+    )
+
+    # Store refresh token session
+    refresh_hash = service.hash_refresh_token(tokens.refresh_token)
+    session_id = uuid.uuid4()
+    session_expires_at = datetime.now(UTC) + timedelta(days=7)
+    await session.execute(
+        _SAFE(
+            "INSERT INTO _pqdb_sessions (id, user_id, refresh_token_hash, expires_at) "
+            "VALUES (:id, :user_id, :hash, :expires_at)"
+        ),
+        {
+            "id": str(session_id),
+            "user_id": str(user_id),
+            "hash": refresh_hash,
+            "expires_at": session_expires_at,
+        },
+    )
+    await session.commit()
+
+    logger.info(
+        "magic_link_verified",
+        user_id=str(user_id),
+        email=email,
+        project_id=str(context.project_id),
+    )
+
+    return UserAuthResponse(
+        user=UserProfile(
+            id=str(user_id),
+            email=str(email),
+            role=role,
+            email_verified=True,
+            metadata=metadata,
+        ),
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+    )
 
 
 # ---------------------------------------------------------------------------
