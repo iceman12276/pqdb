@@ -12,6 +12,7 @@ Challenge requires mfa_ticket JWT.
 
 from __future__ import annotations
 
+import time as _time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -40,8 +41,49 @@ logger = structlog.get_logger()
 
 router = APIRouter(prefix="/v1/auth/users/mfa", tags=["mfa"])
 
+# Rate limit: 5 MFA challenge attempts per minute per ticket
+_MFA_CHALLENGE_MAX_REQUESTS = 5
+_MFA_CHALLENGE_WINDOW_SECONDS = 60
+
 # nosemgrep: avoid-sqlalchemy-text
 _SAFE = text
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+def _check_mfa_rate_limit(
+    request: Request,
+    *,
+    ticket: str,
+) -> None:
+    """Check MFA challenge rate limit (per ticket). Raises 429 if exceeded."""
+    state = request.app.state
+    attr_name = "_rate_limits_mfa_challenge"
+    if not hasattr(state, attr_name):
+        setattr(state, attr_name, {})
+
+    limits: dict[str, list[float]] = getattr(state, attr_name)
+    now = _time.monotonic()
+    cutoff = now - _MFA_CHALLENGE_WINDOW_SECONDS
+
+    timestamps = limits.get(ticket, [])
+    timestamps = [t for t in timestamps if t > cutoff]
+
+    if len(timestamps) >= _MFA_CHALLENGE_MAX_REQUESTS:
+        limits[ticket] = timestamps
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": {
+                    "code": "rate_limited",
+                    "message": "Too many requests. Try again later.",
+                }
+            },
+        )
+
+    timestamps.append(now)
+    limits[ticket] = timestamps
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +314,11 @@ async def mfa_challenge(
 
     Validates the mfa_ticket JWT, then verifies the TOTP code or
     recovery code. On success, issues full user JWT (access + refresh).
+    Rate limited: 5 attempts/min per ticket.
     """
+    # Rate limit before any work
+    _check_mfa_rate_limit(request, ticket=body.ticket)
+
     await ensure_auth_tables(session)
 
     if not body.code and not body.recovery_code:

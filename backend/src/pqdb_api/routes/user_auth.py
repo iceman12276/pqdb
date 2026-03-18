@@ -216,7 +216,15 @@ def _check_rate_limit(
 
     if len(timestamps) >= max_requests:
         limits[ip] = timestamps
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": {
+                    "code": "rate_limited",
+                    "message": "Too many requests. Try again later.",
+                }
+            },
+        )
 
     timestamps.append(now)
     limits[ip] = timestamps
@@ -247,7 +255,15 @@ def _check_email_rate_limit(
 
     if len(timestamps) >= max_requests:
         limits[email] = timestamps
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": {
+                    "code": "rate_limited",
+                    "message": "Too many requests. Try again later.",
+                }
+            },
+        )
 
     timestamps.append(now)
     limits[email] = timestamps
@@ -755,6 +771,14 @@ async def request_magic_link(
     Returns 400 if magic_link_webhook is not configured.
     Rate limited to 5 requests/min per email.
     """
+    # Rate limiting: 5 per minute per email (check first to prevent abuse)
+    _check_email_rate_limit(
+        request,
+        key_prefix=_MAGIC_LINK_LIMITER_PREFIX,
+        email=body.email,
+        max_requests=5,
+    )
+
     await ensure_auth_tables(session)
 
     # Check magic_link_webhook is configured
@@ -765,14 +789,6 @@ async def request_magic_link(
             status_code=400,
             detail="Magic link webhook is not configured for this project",
         )
-
-    # Rate limiting: 5 per minute per email
-    _check_email_rate_limit(
-        request,
-        key_prefix=_MAGIC_LINK_LIMITER_PREFIX,
-        email=body.email,
-        max_requests=5,
-    )
 
     # Look up or create user
     result = await session.execute(
@@ -988,12 +1004,11 @@ async def reset_password(
     and webhook URL is configured.
     """
     # Rate limiting: 5 reset requests/min per email
-    _check_rate_limit(
+    _check_email_rate_limit(
         request,
         key_prefix=_RESET_PASSWORD_LIMITER_PREFIX,
-        ip=body.email,
+        email=body.email,
         max_requests=5,
-        window_seconds=60,
     )
 
     await ensure_auth_tables(session)
@@ -1352,10 +1367,10 @@ async def resend_verification(
     Generates a new verification token and fires the webhook.
     """
     # Rate limiting: 3/min per email
-    _check_rate_limit(
+    _check_email_rate_limit(
         request,
         key_prefix=_RESEND_VERIFICATION_PREFIX,
-        ip=body.email,  # Rate limit per email, not IP
+        email=body.email,
         max_requests=3,
     )
 
