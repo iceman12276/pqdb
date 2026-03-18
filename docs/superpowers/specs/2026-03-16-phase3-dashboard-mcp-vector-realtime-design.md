@@ -6,7 +6,8 @@ Phase 3 transforms pqdb from an API-only platform into a fully featured develope
 
 Phase 3 is split into two sub-phases, each independently shippable:
 
-- **Phase 3a** (12 stories): Dashboard/Studio UI, Developer OAuth login, Passkey/WebAuthn developer login
+- **Phase 3-pre** (2 stories): Security hardening — rate limiting expansion, Phase 2b rate limit verification
+- **Phase 3a** (13 stories): Dashboard/Studio UI, Developer OAuth login, Passkey/WebAuthn, encryption key management UX
 - **Phase 3b** (14 stories): MCP server for AI agents, NL-to-query translation, vector similarity search, realtime subscriptions, Dashboard Realtime + MCP pages
 
 ### Deferred to Phase 4
@@ -634,7 +635,16 @@ The Realtime sidebar item (grayed out in Phase 3a) lights up in Phase 3b with:
 
 ## Section 7: Story Breakdown
 
-### Phase 3a: Dashboard + Developer Auth (~12 stories)
+### Phase 3-pre: Security hardening (before Phase 3a begins)
+
+| Story | Title | Depends on |
+|-------|-------|-----------|
+| US-PRE-1 | Verify Phase 2b auth rate limits are implemented (magic link, password reset, verification resend, signup, login) — GitHub #54 | — |
+| US-PRE-2 | Expand rate limiting middleware to all auth + CRUD endpoints (per-project, per-IP) — GitHub #49 | US-PRE-1 |
+
+These two stories must be completed before Phase 3a begins. They address security gaps in the existing platform that would be amplified by the new attack surface Phase 3 introduces (Dashboard, MCP, WebSocket).
+
+### Phase 3a: Dashboard + Developer Auth (13 stories)
 
 | Story | Title | Depends on |
 |-------|-------|-----------|
@@ -649,49 +659,51 @@ The Realtime sidebar item (grayed out in Phase 3a) lights up in Phase 3b with:
 | US-051 | Auth settings page (providers, roles, policies, verification settings, MFA config) | US-045 |
 | US-052 | Developer OAuth backend (Google + GitHub — platform DB, Vault, Alembic migration) | — |
 | US-053 | Developer OAuth + Passkey/WebAuthn (Dashboard integration, py_webauthn, Alembic migration) | US-044, US-052 |
-| US-054 | Phase 3a E2E tests (Playwright for CI + Claude in Chrome for visual QA) | US-053, US-051 |
+| US-054 | Encryption key management UX — Dashboard key backup guidance, SDK warning on createClient(), Project Settings "Encryption" section — GitHub #51 | US-049 |
+| US-055 | Phase 3a E2E tests (Playwright for CI + Claude in Chrome for visual QA) | US-054, US-053, US-051 |
 
 Dependency chains:
 ```
 Chain A (Dashboard):  US-043 → US-044 → US-045 → US-046, US-047, US-048, US-051 (parallel)
                                                     US-048 → US-049, US-050 (parallel)
+                                                    US-049 → US-054 (key mgmt UX)
 Chain B (Dev auth):   US-052 (independent) ──────→ US-053 (needs US-044)
                                                            ↓
-All chains ──────────────────────────────────────→ US-054 (E2E)
+All chains ──────────────────────────────────────→ US-055 (E2E)
 ```
 
 ### Phase 3b: MCP + Vector + Realtime (14 stories)
 
 | Story | Title | Depends on |
 |-------|-------|-----------|
-| US-055 | MCP server scaffolding (TypeScript, @modelcontextprotocol/sdk, @pqdb/client, stdio + SSE transport, API key auth) | — |
-| US-056 | MCP schema tools + resources (list_tables, describe_table, describe_schema, pqdb:// resources) | US-055 |
-| US-057 | MCP CRUD tools (query_rows, insert_rows, update_rows, delete_rows) | US-056 |
-| US-058 | MCP auth tools + natural language query tool (rule-based NL-to-query translation) | US-057 |
-| US-059 | Vector similarity search backend (similarTo operator, distance metrics, validation) | — |
-| US-060 | Vector index management (HNSW + IVFFlat creation/deletion endpoints) + Dashboard Schema page vector index UI | US-059 |
-| US-061 | SDK vector search (`.similarTo()` method, distance metric option) | US-059 |
-| US-062 | Realtime PostgreSQL triggers + NOTIFY infrastructure (trigger function, installation on subscribe) | — |
-| US-063 | Realtime WebSocket server (Starlette WebSocket, connection management, auth, LISTEN) | US-062 |
-| US-064 | Realtime RLS enforcement (per-event per-subscriber filtering, policy lookup, owner check) | US-063 |
-| US-065 | SDK realtime client (`.on().subscribe()`, auto-reconnect, client-side decryption of event payloads) | US-064 |
-| US-066 | Dashboard MCP page (connection config, tool list, test tool UI) | US-058 |
-| US-067 | Dashboard Realtime page (active subscriptions, live event inspector, connection stats) | US-065 |
-| US-068 | Phase 3b E2E tests (MCP agent round-trip, vector search, realtime subscription + RLS) | US-058, US-061, US-065, US-066, US-067 |
+| US-056 | MCP server scaffolding (TypeScript, @modelcontextprotocol/sdk, @pqdb/client, stdio + SSE transport, API key auth) | — |
+| US-057 | MCP schema tools + resources (list_tables, describe_table, describe_schema, pqdb:// resources) | US-056 |
+| US-058 | MCP CRUD tools (query_rows, insert_rows, update_rows, delete_rows) | US-057 |
+| US-059 | MCP auth tools + natural language query tool (rule-based NL-to-query translation) | US-058 |
+| US-060 | Vector similarity search backend (similarTo operator, distance metrics, validation) | — |
+| US-061 | Vector index management (HNSW + IVFFlat creation/deletion endpoints) + Dashboard Schema page vector index UI | US-060 |
+| US-062 | SDK vector search (`.similarTo()` method, distance metric option) | US-060 |
+| US-063 | Realtime PostgreSQL triggers + NOTIFY infrastructure (trigger function, installation on subscribe) | — |
+| US-064 | Realtime WebSocket server (Starlette WebSocket, connection management, auth, LISTEN) | US-063 |
+| US-065 | Realtime RLS enforcement (per-event per-subscriber filtering, policy lookup, owner check) | US-064 |
+| US-066 | SDK realtime client (`.on().subscribe()`, auto-reconnect, client-side decryption of event payloads) | US-065 |
+| US-067 | Dashboard MCP page (connection config, tool list, test tool UI) | US-059 |
+| US-068 | Dashboard Realtime page (active subscriptions, live event inspector, connection stats) | US-066 |
+| US-069 | Phase 3b E2E tests (MCP agent round-trip, vector search, realtime subscription + RLS) | US-059, US-062, US-066, US-067, US-068 |
 
 Dependency chains:
 ```
-Chain C (MCP):      US-055 → US-056 → US-057 → US-058 → US-066 (Dashboard MCP page) ──┐
-Chain D (Vector):   US-059 → US-060, US-061 (parallel) ──────────────────────────────┤
-Chain E (Realtime): US-062 → US-063 → US-064 → US-065 → US-067 (Dashboard RT page) ─┤
-                                                                                       └→ US-068 (E2E)
+Chain C (MCP):      US-056 → US-057 → US-058 → US-059 → US-067 (Dashboard MCP page) ──┐
+Chain D (Vector):   US-060 → US-061, US-062 (parallel) ──────────────────────────────┤
+Chain E (Realtime): US-063 → US-064 → US-065 → US-066 → US-068 (Dashboard RT page) ─┤
+                                                                                       └→ US-069 (E2E)
 ```
 
 **Three independent starting chains** — MCP, Vector, and Realtime can all begin in parallel.
 
-**Note:** Phase 3b Dashboard stories (US-060 vector index UI, US-066 MCP page, US-067 Realtime page) assume Phase 3a Dashboard is complete (US-043 through US-048). Phase 3b ships after Phase 3a.
+**Note:** Phase 3b Dashboard stories (US-061 vector index UI, US-067 MCP page, US-068 Realtime page) assume Phase 3a Dashboard is complete (US-043 through US-048). Phase 3b ships after Phase 3a.
 
-**Critical path:** US-062 → US-063 → US-064 → US-065 → US-067 → US-068 (Realtime is the longest chain)
+**Critical path:** US-063 → US-064 → US-065 → US-066 → US-068 → US-069 (Realtime is the longest chain)
 
 ### E2E test coverage
 
@@ -701,6 +713,7 @@ Chain E (Realtime): US-062 → US-063 → US-064 → US-065 → US-067 (Dashboar
 3. Table editor: unlock with encryption key → see decrypted data → re-lock
 4. Developer OAuth: sign in with Google → developer account linked → Dashboard access
 5. Passkey: register passkey → sign out → sign in with passkey → Dashboard access
+6. Key management UX: encryption key warning in SDK, Dashboard "Encryption" section shows backup guidance
 
 **Phase 3b (pytest + SDK):**
 6. MCP: connect agent → list_tables → query_rows → results returned (ciphertext without key, plaintext with key)
