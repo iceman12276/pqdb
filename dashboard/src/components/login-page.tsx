@@ -2,6 +2,7 @@ import * as React from "react";
 import { api } from "~/lib/api-client";
 import { setTokens } from "~/lib/auth-store";
 import { useNavigate } from "~/lib/navigation";
+import { isValidEmail } from "~/lib/validation";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -13,10 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-
-function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -55,7 +52,7 @@ export function LoginPage() {
           },
           { persist: true },
         );
-        navigate("/projects");
+        navigate({ to: "/projects" });
       }
     } finally {
       setLoading(false);

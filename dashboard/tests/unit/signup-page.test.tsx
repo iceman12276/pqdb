@@ -91,7 +91,7 @@ describe("SignupPage", () => {
       );
     });
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith("/projects");
+      expect(mockNavigate).toHaveBeenCalledWith({ to: "/projects" });
     });
   });
 

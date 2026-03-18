@@ -128,7 +128,7 @@ describe("LoginPage", () => {
       expect(mockLogin).toHaveBeenCalledWith("test@example.com", "password123");
     });
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith("/projects");
+      expect(mockNavigate).toHaveBeenCalledWith({ to: "/projects" });
     });
   });
 

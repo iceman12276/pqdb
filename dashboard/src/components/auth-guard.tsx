@@ -8,7 +8,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (!tokens) {
-      navigate("/login");
+      navigate({ to: "/login" });
     }
   }, [tokens, navigate]);
 

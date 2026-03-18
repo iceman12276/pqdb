@@ -63,7 +63,7 @@ export function createApiClient(config: { baseUrl: string }): ApiClient {
         data: null,
         error: {
           code: response.status,
-          message: data.detail ?? "Unknown error",
+          message: data.error?.message ?? data.detail ?? "Unknown error",
         },
       };
     }

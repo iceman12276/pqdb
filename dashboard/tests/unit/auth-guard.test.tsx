@@ -26,7 +26,7 @@ describe("AuthGuard", () => {
       </AuthGuard>,
     );
 
-    expect(mockNavigate).toHaveBeenCalledWith("/login");
+    expect(mockNavigate).toHaveBeenCalledWith({ to: "/login" });
     expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
   });
 

@@ -107,6 +107,41 @@ describe("api-client", () => {
         error: { code: 401, message: "Invalid credentials" },
       });
     });
+
+    it("extracts error.message from app error format", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          error: { code: "VALIDATION_ERROR", message: "Invalid email format" },
+        }),
+      });
+
+      const result = await api.login("bad", "password123");
+
+      expect(result).toEqual({
+        data: null,
+        error: { code: 400, message: "Invalid email format" },
+      });
+    });
+
+    it("prefers error.message over detail when both present", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 422,
+        json: async () => ({
+          error: { code: "VALIDATION_ERROR", message: "App-level error" },
+          detail: "FastAPI detail",
+        }),
+      });
+
+      const result = await api.login("test@example.com", "password123");
+
+      expect(result).toEqual({
+        data: null,
+        error: { code: 422, message: "App-level error" },
+      });
+    });
   });
 
   describe("refresh", () => {

@@ -1,12 +1,6 @@
 /**
- * Navigation wrapper. Thin abstraction over window.location for testability.
- * Components import useNavigate from here so tests can mock it.
+ * Navigation wrapper. Re-exports TanStack Router's useNavigate for
+ * client-side navigation. Components import from here so tests can mock it.
  */
 
-import { useCallback } from "react";
-
-export function useNavigate(): (path: string) => void {
-  return useCallback((path: string) => {
-    window.location.href = path;
-  }, []);
-}
+export { useNavigate } from "@tanstack/react-router";
