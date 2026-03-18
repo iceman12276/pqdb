@@ -158,5 +158,6 @@ export function createApiClient(config: { baseUrl: string }): ApiClient {
   };
 }
 
-// Singleton instance for use throughout the app
-export const api = createApiClient({ baseUrl: "http://localhost:8000" });
+// Singleton instance for use throughout the app.
+// Empty baseUrl means requests go to the same origin (proxied by vite in dev).
+export const api = createApiClient({ baseUrl: "" });
