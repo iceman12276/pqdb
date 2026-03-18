@@ -771,6 +771,14 @@ async def request_magic_link(
     Returns 400 if magic_link_webhook is not configured.
     Rate limited to 5 requests/min per email.
     """
+    # Rate limiting: 5 per minute per email (check first to prevent abuse)
+    _check_email_rate_limit(
+        request,
+        key_prefix=_MAGIC_LINK_LIMITER_PREFIX,
+        email=body.email,
+        max_requests=5,
+    )
+
     await ensure_auth_tables(session)
 
     # Check magic_link_webhook is configured
@@ -781,14 +789,6 @@ async def request_magic_link(
             status_code=400,
             detail="Magic link webhook is not configured for this project",
         )
-
-    # Rate limiting: 5 per minute per email
-    _check_email_rate_limit(
-        request,
-        key_prefix=_MAGIC_LINK_LIMITER_PREFIX,
-        email=body.email,
-        max_requests=5,
-    )
 
     # Look up or create user
     result = await session.execute(
