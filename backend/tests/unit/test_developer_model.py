@@ -13,7 +13,8 @@ class TestDeveloperModel:
 
     def test_columns_exist(self) -> None:
         columns = {c.name for c in Developer.__table__.columns}
-        assert columns == {"id", "email", "password_hash", "created_at"}
+        expected = {"id", "email", "password_hash", "email_verified", "created_at"}
+        assert columns == expected
 
     def test_id_is_primary_key(self) -> None:
         pk_cols = [c.name for c in Developer.__table__.primary_key]

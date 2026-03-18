@@ -105,7 +105,11 @@ async def login(
         select(Developer).where(Developer.email == body.email)
     )
     developer = result.scalar_one_or_none()
-    if developer is None or not verify_password(developer.password_hash, body.password):
+    if (
+        developer is None
+        or developer.password_hash is None
+        or not verify_password(developer.password_hash, body.password)
+    ):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     private_key = _get_private_key(request)
