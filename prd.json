@@ -46,8 +46,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #56 merged. New RateLimitMiddleware (ASGI), CRUD 1000/min per project, auth 20/min per IP, X-RateLimit headers, env var config, HMAC migrated. 40 new tests."
     }
   ]
 }
