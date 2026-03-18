@@ -45,6 +45,7 @@ from pqdb_api.services.auth import hash_password, verify_password
 from pqdb_api.services.auth_engine import ensure_auth_tables, get_auth_settings
 from pqdb_api.services.email_verification import VERIFICATION_TOKEN_EXPIRY_SECONDS
 from pqdb_api.services.mfa import MFAService
+from pqdb_api.services.rate_limiter import RateLimiter
 from pqdb_api.services.user_auth import UserAuthService
 from pqdb_api.services.webhook import (
     WebhookDispatcher,
@@ -191,6 +192,24 @@ def _get_client_ip(request: Request) -> str:
     return "unknown"
 
 
+def _get_or_create_limiter(
+    request: Request,
+    attr_name: str,
+    max_requests: int,
+    window_seconds: int = 60,
+) -> RateLimiter:
+    """Get or lazily create a RateLimiter on app.state."""
+    state = request.app.state
+    if not hasattr(state, attr_name):
+        setattr(
+            state,
+            attr_name,
+            RateLimiter(max_requests=max_requests, window_seconds=window_seconds),
+        )
+    limiter: RateLimiter = getattr(state, attr_name)
+    return limiter
+
+
 def _check_rate_limit(
     request: Request,
     *,
@@ -199,23 +218,10 @@ def _check_rate_limit(
     max_requests: int,
     window_seconds: int = 60,
 ) -> None:
-    """Check IP-based rate limit. Raises 429 if exceeded."""
-    import time
-
-    state = request.app.state
+    """Check IP-based rate limit using RateLimiter. Raises 429 if exceeded."""
     attr_name = f"_rate_limits_{key_prefix}"
-    if not hasattr(state, attr_name):
-        setattr(state, attr_name, {})
-
-    limits: dict[str, list[float]] = getattr(state, attr_name)
-    now = time.monotonic()
-    cutoff = now - window_seconds
-
-    timestamps = limits.get(ip, [])
-    timestamps = [t for t in timestamps if t > cutoff]
-
-    if len(timestamps) >= max_requests:
-        limits[ip] = timestamps
+    limiter = _get_or_create_limiter(request, attr_name, max_requests, window_seconds)
+    if not limiter.is_allowed(ip):
         raise HTTPException(
             status_code=429,
             detail={
@@ -225,9 +231,6 @@ def _check_rate_limit(
                 }
             },
         )
-
-    timestamps.append(now)
-    limits[ip] = timestamps
 
 
 def _check_email_rate_limit(
@@ -238,23 +241,10 @@ def _check_email_rate_limit(
     max_requests: int,
     window_seconds: int = 60,
 ) -> None:
-    """Check email-based rate limit. Raises 429 if exceeded."""
-    import time
-
-    state = request.app.state
+    """Check email-based rate limit using RateLimiter. Raises 429 if exceeded."""
     attr_name = f"_rate_limits_{key_prefix}_email"
-    if not hasattr(state, attr_name):
-        setattr(state, attr_name, {})
-
-    limits: dict[str, list[float]] = getattr(state, attr_name)
-    now = time.monotonic()
-    cutoff = now - window_seconds
-
-    timestamps = limits.get(email, [])
-    timestamps = [t for t in timestamps if t > cutoff]
-
-    if len(timestamps) >= max_requests:
-        limits[email] = timestamps
+    limiter = _get_or_create_limiter(request, attr_name, max_requests, window_seconds)
+    if not limiter.is_allowed(email):
         raise HTTPException(
             status_code=429,
             detail={
@@ -264,9 +254,6 @@ def _check_email_rate_limit(
                 }
             },
         )
-
-    timestamps.append(now)
-    limits[email] = timestamps
 
 
 async def _get_current_user(

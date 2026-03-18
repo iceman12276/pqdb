@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pqdb_api.config import Settings
 from pqdb_api.database import dispose_engine, init_engine
 from pqdb_api.logging import setup_logging
+from pqdb_api.middleware.rate_limit import RateLimitMiddleware
 from pqdb_api.routes.api_keys import router as api_keys_router
 from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.auth_settings import router as auth_settings_router
@@ -62,6 +63,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         vault_token=settings.vault_token,
     )
     app.state.hmac_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
+    app.state.crud_rate_limiter = RateLimiter(
+        max_requests=settings.rate_limit_crud, window_seconds=60
+    )
+    app.state.auth_rate_limiter = RateLimiter(
+        max_requests=settings.rate_limit_auth, window_seconds=60
+    )
     yield
     await dispose_engine()
 
@@ -81,6 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RateLimitMiddleware)
 
     app.include_router(health_router)
     app.include_router(user_auth_router)

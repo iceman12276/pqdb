@@ -12,7 +12,6 @@ Challenge requires mfa_ticket JWT.
 
 from __future__ import annotations
 
-import time as _time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -35,6 +34,7 @@ from pqdb_api.middleware.api_key import (
 )
 from pqdb_api.services.auth_engine import ensure_auth_tables
 from pqdb_api.services.mfa import MFAService
+from pqdb_api.services.rate_limiter import RateLimiter
 from pqdb_api.services.user_auth import UserAuthService
 
 logger = structlog.get_logger()
@@ -50,7 +50,7 @@ _SAFE = text
 
 
 # ---------------------------------------------------------------------------
-# Rate limiting
+# Rate limiting (consolidated via RateLimiter)
 # ---------------------------------------------------------------------------
 def _check_mfa_rate_limit(
     request: Request,
@@ -61,17 +61,17 @@ def _check_mfa_rate_limit(
     state = request.app.state
     attr_name = "_rate_limits_mfa_challenge"
     if not hasattr(state, attr_name):
-        setattr(state, attr_name, {})
+        setattr(
+            state,
+            attr_name,
+            RateLimiter(
+                max_requests=_MFA_CHALLENGE_MAX_REQUESTS,
+                window_seconds=_MFA_CHALLENGE_WINDOW_SECONDS,
+            ),
+        )
 
-    limits: dict[str, list[float]] = getattr(state, attr_name)
-    now = _time.monotonic()
-    cutoff = now - _MFA_CHALLENGE_WINDOW_SECONDS
-
-    timestamps = limits.get(ticket, [])
-    timestamps = [t for t in timestamps if t > cutoff]
-
-    if len(timestamps) >= _MFA_CHALLENGE_MAX_REQUESTS:
-        limits[ticket] = timestamps
+    limiter: RateLimiter = getattr(state, attr_name)
+    if not limiter.is_allowed(ticket):
         raise HTTPException(
             status_code=429,
             detail={
@@ -81,9 +81,6 @@ def _check_mfa_rate_limit(
                 }
             },
         )
-
-    timestamps.append(now)
-    limits[ticket] = timestamps
 
 
 # ---------------------------------------------------------------------------

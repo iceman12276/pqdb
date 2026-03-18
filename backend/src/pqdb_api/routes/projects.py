@@ -23,7 +23,7 @@ from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.project import Project
 from pqdb_api.services.api_keys import create_project_keys
 from pqdb_api.services.provisioner import DatabaseProvisioner, ProvisioningError
-from pqdb_api.services.rate_limiter import RateLimiter
+from pqdb_api.services.rate_limiter import RateLimiter, RateLimitResult
 from pqdb_api.services.reindex import (
     ReindexError,
     apply_reindex_batch,
@@ -262,12 +262,18 @@ async def get_hmac_key(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Rate limiting
+    # Rate limiting using consolidated RateLimiter
     rate_limiter: RateLimiter = request.app.state.hmac_rate_limiter
-    if not rate_limiter.is_allowed(project_id):
+    rl_result: RateLimitResult = rate_limiter.check(project_id)
+    if not rl_result.allowed:
         raise HTTPException(
             status_code=429,
-            detail="Rate limit exceeded. Max 10 requests per minute.",
+            detail={
+                "error": {
+                    "code": "rate_limited",
+                    "message": "Too many requests. Try again later.",
+                }
+            },
         )
 
     # Retrieve all keys from Vault

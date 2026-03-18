@@ -21,3 +21,7 @@ class Settings(BaseSettings):
 
     vault_addr: str = "http://localhost:8200"
     vault_token: str = "dev-root-token"
+
+    # Rate limiting (requests per minute)
+    rate_limit_crud: int = 1000  # per project, /v1/db/* endpoints
+    rate_limit_auth: int = 20  # per IP, /v1/auth/signup, login, refresh
