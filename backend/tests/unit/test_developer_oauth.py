@@ -193,3 +193,76 @@ class TestDeveloperOAuthModel:
         )
         assert identity.provider == "google"
         assert identity.provider_uid == "123456"
+
+
+class TestRedirectUriValidation:
+    """Test redirect_uri allowlist validation — open redirect prevention."""
+
+    def test_validate_redirect_uri_accepts_allowed_uri(self) -> None:
+        from pqdb_api.routes.developer_oauth import _validate_redirect_uri
+
+        allowed = ["http://localhost:3000", "https://dashboard.pqdb.io"]
+        # Should not raise
+        _validate_redirect_uri("http://localhost:3000/auth/callback", allowed)
+
+    def test_validate_redirect_uri_rejects_disallowed_uri(self) -> None:
+        from pqdb_api.routes.developer_oauth import _validate_redirect_uri
+
+        allowed = ["http://localhost:3000"]
+        with pytest.raises(ValueError, match="not in allowed"):
+            _validate_redirect_uri("https://evil.com/steal-tokens", allowed)
+
+    def test_validate_redirect_uri_checks_origin_not_full_url(self) -> None:
+        from pqdb_api.routes.developer_oauth import _validate_redirect_uri
+
+        allowed = ["http://localhost:3000"]
+        # Path variations on allowed origin should be accepted
+        _validate_redirect_uri("http://localhost:3000/any/path", allowed)
+        _validate_redirect_uri("http://localhost:3000", allowed)
+
+    def test_validate_redirect_uri_rejects_different_port(self) -> None:
+        from pqdb_api.routes.developer_oauth import _validate_redirect_uri
+
+        allowed = ["http://localhost:3000"]
+        with pytest.raises(ValueError, match="not in allowed"):
+            _validate_redirect_uri("http://localhost:4000/callback", allowed)
+
+    def test_validate_redirect_uri_rejects_different_scheme(self) -> None:
+        from pqdb_api.routes.developer_oauth import _validate_redirect_uri
+
+        allowed = ["http://localhost:3000"]
+        with pytest.raises(ValueError, match="not in allowed"):
+            _validate_redirect_uri("https://localhost:3000/callback", allowed)
+
+    def test_validate_redirect_uri_rejects_empty_allowlist(self) -> None:
+        from pqdb_api.routes.developer_oauth import _validate_redirect_uri
+
+        with pytest.raises(ValueError, match="not in allowed"):
+            _validate_redirect_uri("http://localhost:3000", [])
+
+
+class TestSettingsAllowedRedirectUris:
+    """Test that Settings parses PQDB_ALLOWED_REDIRECT_URIS."""
+
+    def test_default_value(self) -> None:
+        from pqdb_api.config import Settings
+
+        settings = Settings(
+            database_url="postgresql+asyncpg://x:x@localhost/test",
+        )
+        assert settings.allowed_redirect_uris == ["http://localhost:3000"]
+
+    def test_custom_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from pqdb_api.config import Settings
+
+        monkeypatch.setenv(
+            "PQDB_ALLOWED_REDIRECT_URIS_RAW",
+            "http://localhost:3000,https://dashboard.pqdb.io",
+        )
+        settings = Settings(
+            database_url="postgresql+asyncpg://x:x@localhost/test",
+        )
+        assert settings.allowed_redirect_uris == [
+            "http://localhost:3000",
+            "https://dashboard.pqdb.io",
+        ]

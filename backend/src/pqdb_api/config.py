@@ -25,3 +25,11 @@ class Settings(BaseSettings):
     # Rate limiting (requests per minute)
     rate_limit_crud: int = 1000  # per project, /v1/db/* endpoints
     rate_limit_auth: int = 20  # per IP, /v1/auth/signup, login, refresh
+
+    # OAuth redirect URI allowlist (comma-separated origins)
+    allowed_redirect_uris_raw: str = "http://localhost:3000"
+
+    @property
+    def allowed_redirect_uris(self) -> list[str]:
+        parts = self.allowed_redirect_uris_raw.split(",")
+        return [u.strip() for u in parts if u.strip()]

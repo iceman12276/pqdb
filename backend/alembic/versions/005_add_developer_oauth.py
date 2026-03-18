@@ -64,17 +64,20 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False,
-        ),
         sa.UniqueConstraint("provider", "provider_uid"),
+    )
+    op.create_index(
+        "ix_developer_oauth_identities_developer_id",
+        "developer_oauth_identities",
+        ["developer_id"],
     )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "ix_developer_oauth_identities_developer_id",
+        table_name="developer_oauth_identities",
+    )
     op.drop_table("developer_oauth_identities")
     op.alter_column(
         "developers",

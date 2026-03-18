@@ -14,7 +14,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import jwt
 import structlog
@@ -100,6 +100,27 @@ def _validate_dev_state_jwt(
 
 
 # ---------------------------------------------------------------------------
+# Redirect URI validation
+# ---------------------------------------------------------------------------
+def _validate_redirect_uri(redirect_uri: str, allowed_origins: list[str]) -> None:
+    """Validate redirect_uri against an allowlist of origins.
+
+    Compares scheme + netloc (origin) of the redirect_uri against each
+    allowed origin. Raises ValueError if no match is found.
+    """
+    parsed = urlparse(redirect_uri)
+    request_origin = f"{parsed.scheme}://{parsed.netloc}"
+
+    for allowed in allowed_origins:
+        allowed_parsed = urlparse(allowed)
+        allowed_origin = f"{allowed_parsed.scheme}://{allowed_parsed.netloc}"
+        if request_origin == allowed_origin:
+            return
+
+    raise ValueError(f"Redirect URI origin {request_origin!r} not in allowed origins")
+
+
+# ---------------------------------------------------------------------------
 # Provider factory
 # ---------------------------------------------------------------------------
 def _make_provider(
@@ -140,6 +161,19 @@ async def developer_oauth_authorize(
     """
     if provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
+
+    # Validate redirect_uri against allowlist to prevent open redirects
+    settings = getattr(request.app.state, "settings", None)
+    allowed_origins: list[str] = (
+        settings.allowed_redirect_uris if settings else ["http://localhost:3000"]
+    )
+    try:
+        _validate_redirect_uri(redirect_uri, allowed_origins)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="redirect_uri is not in the allowed origins",
+        )
 
     vault_client: VaultClient = request.app.state.vault_client
     try:

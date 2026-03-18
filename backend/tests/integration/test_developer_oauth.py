@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from pqdb_api.config import Settings
 from pqdb_api.database import get_session
 from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.developer_oauth import router as developer_oauth_router
@@ -48,6 +49,7 @@ def _make_dev_oauth_app(
     google_client_secret: str = "test-google-client-secret",
     github_client_id: str = "test-github-client-id",
     github_client_secret: str = "test-github-client-secret",
+    allowed_redirect_uris: list[str] | None = None,
 ) -> FastAPI:
     """Build a test app with developer OAuth routes backed by real Postgres."""
     private_key, public_key = generate_ed25519_keypair()
@@ -76,6 +78,16 @@ def _make_dev_oauth_app(
         side_effect=_mock_get_platform_oauth
     )
 
+    uris = allowed_redirect_uris or [
+        "https://dashboard.pqdb.io",
+        "https://example.com",
+        "http://localhost:3000",
+    ]
+    settings = Settings(
+        database_url=test_db_url,
+        allowed_redirect_uris_raw=",".join(uris),
+    )
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine = create_async_engine(test_db_url)
@@ -95,6 +107,7 @@ def _make_dev_oauth_app(
         await engine.dispose()
 
     app = FastAPI(lifespan=lifespan)
+    app.state.settings = settings
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(developer_oauth_router)
@@ -351,6 +364,40 @@ class TestAuthorize:
                 algorithms=[JWT_ALGORITHM],
             )
             assert payload["type"] == "dev_oauth_state"
+
+
+# ---------------------------------------------------------------------------
+# Open redirect protection tests
+# ---------------------------------------------------------------------------
+class TestOpenRedirectProtection:
+    def test_rejects_redirect_uri_not_in_allowlist(self, test_db_url: str) -> None:
+        app = _make_dev_oauth_app(
+            test_db_url,
+            google_configured=True,
+            allowed_redirect_uris=["http://localhost:3000"],
+        )
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.get(
+                "/v1/auth/oauth/google/authorize",
+                params={"redirect_uri": "https://evil.com/steal-tokens"},
+                follow_redirects=False,
+            )
+            assert resp.status_code == 400
+            assert "not in the allowed" in resp.json()["detail"]
+
+    def test_allows_redirect_uri_in_allowlist(self, test_db_url: str) -> None:
+        app = _make_dev_oauth_app(
+            test_db_url,
+            google_configured=True,
+            allowed_redirect_uris=["http://localhost:3000"],
+        )
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.get(
+                "/v1/auth/oauth/google/authorize",
+                params={"redirect_uri": "http://localhost:3000/auth/callback"},
+                follow_redirects=False,
+            )
+            assert resp.status_code == 302
 
 
 # ---------------------------------------------------------------------------

@@ -50,6 +50,7 @@ class DeveloperOAuthIdentity(Base):
         UUID(as_uuid=True),
         ForeignKey("developers.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     provider: Mapped[str] = mapped_column(Text, nullable=False)
     provider_uid: Mapped[str] = mapped_column(Text, nullable=False)
@@ -58,8 +59,5 @@ class DeveloperOAuthIdentity(Base):
         "metadata", JSONB, server_default=text("'{}'::jsonb"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
