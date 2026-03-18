@@ -374,6 +374,83 @@ class VaultClient:
             # No providers configured or path doesn't exist
             return []
 
+    # ------------------------------------------------------------------
+    # Platform OAuth credential management (developer login)
+    # ------------------------------------------------------------------
+
+    def store_platform_oauth_credentials(
+        self,
+        provider: str,
+        credentials: dict[str, Any],
+    ) -> None:
+        """Store platform-level OAuth provider credentials in Vault.
+
+        Writes to secret/pqdb/platform/oauth/{provider}.
+        Used for developer login (not project-scoped end-user OAuth).
+        """
+        path = f"pqdb/platform/oauth/{provider}"
+        try:
+            self._client.secrets.kv.v2.create_or_update_secret(
+                path=path,
+                secret=credentials,
+            )
+            logger.info(
+                "platform_oauth_credentials_stored",
+                provider=provider,
+            )
+        except Exception as exc:
+            logger.error(
+                "platform_oauth_credentials_store_failed",
+                provider=provider,
+                error=str(exc),
+            )
+            raise VaultError(
+                f"Failed to store platform OAuth credentials: {exc}"
+            ) from exc
+
+    def get_platform_oauth_credentials(self, provider: str) -> dict[str, Any]:
+        """Retrieve platform-level OAuth provider credentials from Vault."""
+        path = f"pqdb/platform/oauth/{provider}"
+        try:
+            response = self._client.secrets.kv.v2.read_secret_version(
+                path=path,
+                raise_on_deleted_version=True,
+            )
+            data: dict[str, Any] = response["data"]["data"]
+            return data
+        except VaultError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "platform_oauth_credentials_retrieve_failed",
+                provider=provider,
+                error=str(exc),
+            )
+            raise VaultError(
+                f"Failed to retrieve platform OAuth credentials: {exc}"
+            ) from exc
+
+    def delete_platform_oauth_credentials(self, provider: str) -> None:
+        """Delete platform-level OAuth provider credentials from Vault."""
+        path = f"pqdb/platform/oauth/{provider}"
+        try:
+            self._client.secrets.kv.v2.delete_metadata_and_all_versions(
+                path=path,
+            )
+            logger.info(
+                "platform_oauth_credentials_deleted",
+                provider=provider,
+            )
+        except Exception as exc:
+            logger.error(
+                "platform_oauth_credentials_delete_failed",
+                provider=provider,
+                error=str(exc),
+            )
+            raise VaultError(
+                f"Failed to delete platform OAuth credentials: {exc}"
+            ) from exc
+
     def delete_hmac_key(self, project_id: uuid.UUID) -> None:
         """Delete the HMAC key for the given project from Vault."""
         path = f"pqdb/projects/{project_id}/hmac"
