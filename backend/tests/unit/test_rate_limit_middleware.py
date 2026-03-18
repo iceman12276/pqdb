@@ -141,6 +141,67 @@ class TestPerIPKeying:
             assert r4.status_code == 429
 
 
+class TestCrudRateLimiting:
+    """CRUD endpoints use per-project (apikey) keying."""
+
+    def test_crud_headers_present_with_apikey(self) -> None:
+        limiter = RateLimiter(max_requests=100, window_seconds=60)
+        app = _make_test_app(crud_limiter=limiter)
+        with TestClient(app) as client:
+            resp = client.get(
+                "/v1/db/test/select",
+                headers={"apikey": "pqdb_anon_test123"},
+            )
+            assert resp.status_code == 200
+            assert "x-ratelimit-limit" in resp.headers
+            assert resp.headers["x-ratelimit-limit"] == "100"
+            assert resp.headers["x-ratelimit-remaining"] == "99"
+
+    def test_crud_429_when_exceeded(self) -> None:
+        limiter = RateLimiter(max_requests=2, window_seconds=60)
+        app = _make_test_app(crud_limiter=limiter)
+        with TestClient(app) as client:
+            apikey = "pqdb_anon_test456"
+            client.get("/v1/db/test/select", headers={"apikey": apikey})
+            client.get("/v1/db/test/select", headers={"apikey": apikey})
+
+            resp = client.get("/v1/db/test/select", headers={"apikey": apikey})
+            assert resp.status_code == 429
+            body = resp.json()
+            assert body["error"]["code"] == "rate_limited"
+
+    def test_different_apikeys_have_separate_limits(self) -> None:
+        limiter = RateLimiter(max_requests=1, window_seconds=60)
+        app = _make_test_app(crud_limiter=limiter)
+        with TestClient(app) as client:
+            r1 = client.get(
+                "/v1/db/test/select",
+                headers={"apikey": "pqdb_anon_key_a"},
+            )
+            assert r1.status_code == 200
+
+            r2 = client.get(
+                "/v1/db/test/select",
+                headers={"apikey": "pqdb_anon_key_b"},
+            )
+            assert r2.status_code == 200
+
+            # key_a should now be blocked
+            r3 = client.get(
+                "/v1/db/test/select",
+                headers={"apikey": "pqdb_anon_key_a"},
+            )
+            assert r3.status_code == 429
+
+    def test_no_apikey_skips_rate_limiting(self) -> None:
+        limiter = RateLimiter(max_requests=1, window_seconds=60)
+        app = _make_test_app(crud_limiter=limiter)
+        with TestClient(app) as client:
+            # No apikey header — middleware skips rate limiting
+            resp = client.get("/v1/db/test/select")
+            assert "x-ratelimit-limit" not in resp.headers
+
+
 class TestNoRateLimitOnOtherRoutes:
     """Routes outside /v1/db/ and /v1/auth/{signup,login,refresh} are not rate limited."""
 

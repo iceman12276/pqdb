@@ -88,19 +88,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 _add_rate_limit_headers(response, result)
                 return response
 
-        # Check CRUD rate limit (per-project)
+        # Check CRUD rate limit (per-project, keyed by apikey header)
         if path.startswith(_CRUD_PREFIX):
             limiter = getattr(
                 request.app.state, "crud_rate_limiter", None
             )
             if limiter is not None:
-                # Try to get project_id from the apikey middleware context
-                # The apikey middleware stores it in request.state
-                project_id = getattr(
-                    getattr(request, "state", None), "project_id", None
-                )
-                if project_id is not None:
-                    result = limiter.check(project_id)
+                # Use apikey header as the rate limit key.
+                # Each apikey maps 1:1 to a project, so keying by apikey
+                # is functionally equivalent to per-project limiting.
+                apikey = request.headers.get("apikey", "")
+                if apikey:
+                    result = limiter.check(apikey)
                     if not result.allowed:
                         return _rate_limited_response(result)
                     response = await call_next(request)
