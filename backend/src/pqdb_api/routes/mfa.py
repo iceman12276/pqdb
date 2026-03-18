@@ -12,6 +12,7 @@ Challenge requires mfa_ticket JWT.
 
 from __future__ import annotations
 
+import time as _time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -22,8 +23,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-import time as _time
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import text

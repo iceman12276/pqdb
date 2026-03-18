@@ -12,7 +12,6 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
-import pyotp
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -125,7 +124,7 @@ class TestSignupRateLimit:
                 json={"email": f"user{i}@test.com", "password": "StrongP@ss123"},
             )
             # May be 201 (success) or 409 (duplicate) — not 429 yet
-            assert resp.status_code != 429, f"Rate limited too early on request {i+1}"
+            assert resp.status_code != 429, f"Rate limited too early on request {i + 1}"
 
         # 11th request should be rate-limited
         resp = client.post(
@@ -146,7 +145,7 @@ class TestLoginRateLimit:
                 "/v1/auth/users/login",
                 json={"email": f"user{i}@test.com", "password": "wrong"},
             )
-            assert resp.status_code != 429, f"Rate limited too early on request {i+1}"
+            assert resp.status_code != 429, f"Rate limited too early on request {i + 1}"
 
         # 21st request should be rate-limited
         resp = client.post(
@@ -171,7 +170,7 @@ class TestResendVerificationRateLimit:
                 json={"email": email},
             )
             # Will return 400 (no webhook) or 200 — not 429
-            assert resp.status_code != 429, f"Rate limited too early on request {i+1}"
+            assert resp.status_code != 429, f"Rate limited too early on request {i + 1}"
 
         # 4th request should be rate-limited
         resp = client.post(
@@ -182,9 +181,7 @@ class TestResendVerificationRateLimit:
         body = resp.json()
         assert body["detail"] == _EXPECTED_429_ERROR
 
-    def test_different_emails_have_separate_limits(
-        self, client: TestClient
-    ) -> None:
+    def test_different_emails_have_separate_limits(self, client: TestClient) -> None:
         # Exhaust limit for email-a
         for _ in range(3):
             client.post(
@@ -203,9 +200,7 @@ class TestResendVerificationRateLimit:
 class TestMagicLinkRateLimit:
     """Magic link: 5 requests/min per email."""
 
-    def test_magic_link_rate_limit_triggers_after_5(
-        self, client: TestClient
-    ) -> None:
+    def test_magic_link_rate_limit_triggers_after_5(self, client: TestClient) -> None:
         email = "magic-limit@test.com"
         for i in range(5):
             resp = client.post(
@@ -213,7 +208,7 @@ class TestMagicLinkRateLimit:
                 json={"email": email},
             )
             # Will return 400 (no webhook configured) — not 429
-            assert resp.status_code != 429, f"Rate limited too early on request {i+1}"
+            assert resp.status_code != 429, f"Rate limited too early on request {i + 1}"
 
         # 6th request should be rate-limited
         resp = client.post(
@@ -237,7 +232,7 @@ class TestPasswordResetRateLimit:
                 "/v1/auth/users/reset-password",
                 json={"email": email},
             )
-            assert resp.status_code != 429, f"Rate limited too early on request {i+1}"
+            assert resp.status_code != 429, f"Rate limited too early on request {i + 1}"
 
         # 6th request should be rate-limited
         resp = client.post(
@@ -263,7 +258,7 @@ class TestMfaChallengeRateLimit:
                 json={"ticket": fake_ticket, "code": "000000"},
             )
             # Will return 401 (invalid ticket) — not 429
-            assert resp.status_code != 429, f"Rate limited too early on request {i+1}"
+            assert resp.status_code != 429, f"Rate limited too early on request {i + 1}"
 
         # 6th request should be rate-limited
         resp = client.post(

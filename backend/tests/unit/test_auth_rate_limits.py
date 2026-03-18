@@ -8,13 +8,11 @@ Tests verify:
 
 from __future__ import annotations
 
-import time
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI, HTTPException, Request
-from starlette.testclient import TestClient
 
 from pqdb_api.routes.user_auth import (
     _check_email_rate_limit,
@@ -61,7 +59,7 @@ class TestRateLimitResponseFormat:
             )
 
         assert exc_info.value.status_code == 429
-        detail = exc_info.value.detail
+        detail: object = exc_info.value.detail
         assert detail == {
             "error": {
                 "code": "rate_limited",
@@ -101,7 +99,7 @@ class TestRateLimitResponseFormat:
             )
 
         assert exc_info.value.status_code == 429
-        detail = exc_info.value.detail
+        detail: object = exc_info.value.detail
         assert detail == {
             "error": {
                 "code": "rate_limited",

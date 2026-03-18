@@ -54,7 +54,7 @@ class TestMfaChallengeRateLimit:
             _check_mfa_rate_limit(request, ticket="ticket-xyz")
 
         assert exc_info.value.status_code == 429
-        detail = exc_info.value.detail
+        detail: object = exc_info.value.detail
         assert detail == {
             "error": {
                 "code": "rate_limited",
