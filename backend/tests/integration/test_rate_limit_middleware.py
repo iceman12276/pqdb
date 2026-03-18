@@ -10,12 +10,10 @@ Boots the real FastAPI app with real Postgres and verifies:
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import (

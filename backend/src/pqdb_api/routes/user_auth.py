@@ -43,9 +43,9 @@ from pqdb_api.middleware.api_key import (
 )
 from pqdb_api.services.auth import hash_password, verify_password
 from pqdb_api.services.auth_engine import ensure_auth_tables, get_auth_settings
-from pqdb_api.services.rate_limiter import RateLimiter
 from pqdb_api.services.email_verification import VERIFICATION_TOKEN_EXPIRY_SECONDS
 from pqdb_api.services.mfa import MFAService
+from pqdb_api.services.rate_limiter import RateLimiter
 from pqdb_api.services.user_auth import UserAuthService
 from pqdb_api.services.webhook import (
     WebhookDispatcher,
@@ -201,9 +201,11 @@ def _get_or_create_limiter(
     """Get or lazily create a RateLimiter on app.state."""
     state = request.app.state
     if not hasattr(state, attr_name):
-        setattr(state, attr_name, RateLimiter(
-            max_requests=max_requests, window_seconds=window_seconds
-        ))
+        setattr(
+            state,
+            attr_name,
+            RateLimiter(max_requests=max_requests, window_seconds=window_seconds),
+        )
     limiter: RateLimiter = getattr(state, attr_name)
     return limiter
 

@@ -6,7 +6,6 @@ Verifies header format, per-IP vs per-project keying, and env var config.
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -203,7 +202,7 @@ class TestCrudRateLimiting:
 
 
 class TestNoRateLimitOnOtherRoutes:
-    """Routes outside /v1/db/ and /v1/auth/{signup,login,refresh} are not rate limited."""
+    """Non-rate-limited routes have no rate limit headers."""
 
     def test_health_no_rate_limit_headers(self) -> None:
         app = _make_test_app(

@@ -15,9 +15,8 @@ import math
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.types import ASGIApp
 
-from pqdb_api.services.rate_limiter import RateLimitResult, RateLimiter
+from pqdb_api.services.rate_limiter import RateLimiter, RateLimitResult
 
 # Developer auth paths that get per-IP rate limiting
 _AUTH_RATE_LIMITED_PREFIXES = (
@@ -42,9 +41,7 @@ def _get_client_ip(request: Request) -> str:
     return "unknown"
 
 
-def _add_rate_limit_headers(
-    response: Response, result: RateLimitResult
-) -> None:
+def _add_rate_limit_headers(response: Response, result: RateLimitResult) -> None:
     """Add X-RateLimit-* headers to a response."""
     response.headers["X-RateLimit-Limit"] = str(result.limit)
     response.headers["X-RateLimit-Remaining"] = str(result.remaining)
@@ -90,9 +87,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Check CRUD rate limit (per-project, keyed by apikey header)
         if path.startswith(_CRUD_PREFIX):
-            limiter = getattr(
-                request.app.state, "crud_rate_limiter", None
-            )
+            limiter = getattr(request.app.state, "crud_rate_limiter", None)
             if limiter is not None:
                 # Use apikey header as the rate limit key.
                 # Each apikey maps 1:1 to a project, so keying by apikey
