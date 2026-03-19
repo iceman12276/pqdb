@@ -1,13 +1,32 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { TopBar } from "~/components/top-bar";
 import { ThemeProvider } from "~/lib/theme";
+import { createQueryWrapper } from "../query-wrapper";
+
+const { mockFetchProjects, mockNavigate } = vi.hoisted(() => ({
+  mockFetchProjects: vi.fn().mockResolvedValue([]),
+  mockNavigate: vi.fn(),
+}));
+
+vi.mock("~/lib/projects", () => ({
+  fetchProjects: mockFetchProjects,
+  fetchProjectKeys: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("~/lib/navigation", () => ({
+  useNavigate: () => mockNavigate,
+}));
+
+import { TopBar } from "~/components/top-bar";
 
 function renderWithTheme() {
+  const { wrapper: QueryWrapper } = createQueryWrapper();
   return render(
-    <ThemeProvider>
-      <TopBar />
-    </ThemeProvider>,
+    <QueryWrapper>
+      <ThemeProvider>
+        <TopBar />
+      </ThemeProvider>
+    </QueryWrapper>,
   );
 }
 
@@ -22,9 +41,9 @@ describe("TopBar", () => {
     expect(screen.getByText("Account")).toBeInTheDocument();
   });
 
-  it("renders the Project selector", () => {
+  it("renders the Project selector dropdown", () => {
     renderWithTheme();
-    expect(screen.getByText("Project")).toBeInTheDocument();
+    expect(screen.getByTestId("project-selector")).toBeInTheDocument();
   });
 
   it("renders the Connect button", () => {
