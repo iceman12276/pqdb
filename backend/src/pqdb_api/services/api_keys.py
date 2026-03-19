@@ -66,6 +66,33 @@ async def create_project_keys(
     return results
 
 
+async def create_single_key(
+    project_id: uuid.UUID, role: str, session: AsyncSession
+) -> dict[str, str]:
+    """Create a single API key for a project.
+
+    Returns the full key info (one-time display). Key is stored as a hash.
+    """
+    full_key = generate_api_key(role)
+    key_hash = hash_api_key(full_key)
+    key_prefix = full_key[:8]
+
+    api_key = ApiKey(
+        id=uuid.uuid4(),
+        project_id=project_id,
+        key_hash=key_hash,
+        key_prefix=key_prefix,
+        role=role,
+    )
+    session.add(api_key)
+    return {
+        "id": str(api_key.id),
+        "role": role,
+        "key": full_key,
+        "key_prefix": key_prefix,
+    }
+
+
 async def list_project_keys(
     project_id: uuid.UUID, session: AsyncSession
 ) -> list[ApiKey]:

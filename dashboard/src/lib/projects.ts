@@ -77,6 +77,16 @@ export async function fetchProjectKeys(projectId: string): Promise<ApiKeyInfo[]>
   return result.data as ApiKeyInfo[];
 }
 
+export async function fetchServiceKey(projectId: string): Promise<ApiKeyCreated> {
+  const result = await api.fetch(`/v1/projects/${projectId}/keys/service-key`, {
+    method: "POST",
+  });
+  if (!result.ok) {
+    throw new Error("Failed to generate service key");
+  }
+  return result.data as ApiKeyCreated;
+}
+
 export async function rotateProjectKeys(projectId: string): Promise<ApiKeyCreated[]> {
   const result = await api.fetch(`/v1/projects/${projectId}/keys/rotate`, {
     method: "POST",

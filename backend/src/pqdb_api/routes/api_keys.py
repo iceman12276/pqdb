@@ -12,7 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pqdb_api.database import get_session
 from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.project import Project
-from pqdb_api.services.api_keys import list_project_keys, rotate_project_keys
+from pqdb_api.services.api_keys import (
+    create_single_key,
+    list_project_keys,
+    rotate_project_keys,
+)
 
 logger = structlog.get_logger()
 
@@ -77,6 +81,38 @@ async def list_keys(
         )
         for k in keys
     ]
+
+
+@router.post(
+    "/{project_id}/keys/service-key",
+    response_model=ApiKeyCreatedResponse,
+)
+async def generate_service_key(
+    project_id: uuid.UUID,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> ApiKeyCreatedResponse:
+    """Generate a new service API key for Dashboard use.
+
+    Creates an additional service key without invalidating existing keys.
+    Returns the full key (one-time display). Requires developer JWT.
+    """
+    await _get_project_for_developer(project_id, developer_id, session)
+
+    key_info = await create_single_key(project_id, "service", session)
+    await session.commit()
+
+    logger.info(
+        "service_key_generated",
+        project_id=str(project_id),
+        developer_id=str(developer_id),
+    )
+    return ApiKeyCreatedResponse(
+        id=key_info["id"],
+        role=key_info["role"],
+        key=key_info["key"],
+        key_prefix=key_info["key_prefix"],
+    )
 
 
 @router.post(
