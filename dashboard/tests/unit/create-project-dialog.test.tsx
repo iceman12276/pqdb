@@ -33,9 +33,9 @@ describe("CreateProjectDialog", () => {
     expect(screen.getByLabelText(/project name/i)).toBeInTheDocument();
   });
 
-  it("renders region select with default", () => {
+  it("shows default region as static text", () => {
     render(<CreateProjectDialog {...defaultProps} />);
-    expect(screen.getByLabelText(/region/i)).toBeInTheDocument();
+    expect(screen.getByText(/us-east-1 \(default\)/)).toBeInTheDocument();
   });
 
   it("shows validation error when name is empty", async () => {

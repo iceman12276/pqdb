@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { createQueryWrapper } from "../query-wrapper";
 
 const { mockFetchProjects, mockNavigate } = vi.hoisted(() => ({
   mockFetchProjects: vi.fn(),
@@ -43,13 +43,15 @@ describe("ProjectList", () => {
 
   it("shows loading skeleton while fetching", () => {
     mockFetchProjects.mockReturnValue(new Promise(() => {})); // never resolves
-    render(<ProjectList />);
+    const { wrapper } = createQueryWrapper();
+    render(<ProjectList />, { wrapper });
     expect(screen.getByTestId("project-list-loading")).toBeInTheDocument();
   });
 
   it("renders project cards after loading", async () => {
     mockFetchProjects.mockResolvedValueOnce(mockProjects);
-    render(<ProjectList />);
+    const { wrapper } = createQueryWrapper();
+    render(<ProjectList />, { wrapper });
 
     expect(await screen.findByText("My App")).toBeInTheDocument();
     expect(screen.getByText("Test Project")).toBeInTheDocument();
@@ -57,7 +59,8 @@ describe("ProjectList", () => {
 
   it("shows status badge for each project", async () => {
     mockFetchProjects.mockResolvedValueOnce(mockProjects);
-    render(<ProjectList />);
+    const { wrapper } = createQueryWrapper();
+    render(<ProjectList />, { wrapper });
 
     expect(await screen.findByText("active")).toBeInTheDocument();
     expect(screen.getByText("provisioning")).toBeInTheDocument();
@@ -65,7 +68,8 @@ describe("ProjectList", () => {
 
   it("shows region for each project", async () => {
     mockFetchProjects.mockResolvedValueOnce(mockProjects);
-    render(<ProjectList />);
+    const { wrapper } = createQueryWrapper();
+    render(<ProjectList />, { wrapper });
 
     expect(await screen.findByText("us-east-1")).toBeInTheDocument();
     expect(screen.getByText("eu-west-1")).toBeInTheDocument();
@@ -73,9 +77,9 @@ describe("ProjectList", () => {
 
   it("shows created date for each project", async () => {
     mockFetchProjects.mockResolvedValueOnce(mockProjects);
-    render(<ProjectList />);
+    const { wrapper } = createQueryWrapper();
+    render(<ProjectList />, { wrapper });
 
-    // Should display formatted date
     await waitFor(() => {
       expect(screen.getByText(/Jan 15, 2026/)).toBeInTheDocument();
     });
@@ -83,7 +87,8 @@ describe("ProjectList", () => {
 
   it("shows empty state when no projects exist", async () => {
     mockFetchProjects.mockResolvedValueOnce([]);
-    render(<ProjectList />);
+    const { wrapper } = createQueryWrapper();
+    render(<ProjectList />, { wrapper });
 
     expect(await screen.findByTestId("empty-state")).toBeInTheDocument();
     expect(screen.getByText(/no projects yet/i)).toBeInTheDocument();
@@ -91,7 +96,8 @@ describe("ProjectList", () => {
 
   it("renders Create Project button", async () => {
     mockFetchProjects.mockResolvedValueOnce([]);
-    render(<ProjectList />);
+    const { wrapper } = createQueryWrapper();
+    render(<ProjectList />, { wrapper });
 
     expect(
       await screen.findByRole("button", { name: /create project/i }),
@@ -100,7 +106,8 @@ describe("ProjectList", () => {
 
   it("shows error state on fetch failure", async () => {
     mockFetchProjects.mockRejectedValueOnce(new Error("Failed to load projects"));
-    render(<ProjectList />);
+    const { wrapper } = createQueryWrapper();
+    render(<ProjectList />, { wrapper });
 
     expect(await screen.findByText(/failed to load projects/i)).toBeInTheDocument();
   });

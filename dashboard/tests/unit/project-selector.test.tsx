@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createQueryWrapper } from "../query-wrapper";
 
 const { mockFetchProjects, mockNavigate } = vi.hoisted(() => ({
   mockFetchProjects: vi.fn(),
@@ -43,11 +44,13 @@ describe("ProjectSelector", () => {
 
   it("renders the selector button", async () => {
     mockFetchProjects.mockResolvedValueOnce(mockProjects);
+    const { wrapper } = createQueryWrapper();
     render(
       <ProjectSelector
         selectedProjectId={null}
         onProjectSelect={vi.fn()}
       />,
+      { wrapper },
     );
 
     expect(screen.getByTestId("project-selector")).toBeInTheDocument();
@@ -55,11 +58,13 @@ describe("ProjectSelector", () => {
 
   it("shows 'Select project' when none selected", async () => {
     mockFetchProjects.mockResolvedValueOnce(mockProjects);
+    const { wrapper } = createQueryWrapper();
     render(
       <ProjectSelector
         selectedProjectId={null}
         onProjectSelect={vi.fn()}
       />,
+      { wrapper },
     );
 
     await waitFor(() => {
@@ -69,11 +74,13 @@ describe("ProjectSelector", () => {
 
   it("shows selected project name", async () => {
     mockFetchProjects.mockResolvedValueOnce(mockProjects);
+    const { wrapper } = createQueryWrapper();
     render(
       <ProjectSelector
         selectedProjectId="p1"
         onProjectSelect={vi.fn()}
       />,
+      { wrapper },
     );
 
     await waitFor(() => {
@@ -85,26 +92,23 @@ describe("ProjectSelector", () => {
     const user = userEvent.setup();
     mockFetchProjects.mockResolvedValueOnce(mockProjects);
     const onSelect = vi.fn();
+    const { wrapper } = createQueryWrapper();
 
     render(
       <ProjectSelector
         selectedProjectId={null}
         onProjectSelect={onSelect}
       />,
+      { wrapper },
     );
 
-    // Wait for projects to load by checking that the button renders
-    const button = await screen.findByRole("button", { name: /select project/i });
-
-    // Wait for the async fetch to resolve so projects are populated
+    // Wait for projects to load
     await waitFor(() => {
       expect(mockFetchProjects).toHaveBeenCalled();
     });
 
-    // Small delay for state update after fetch resolves
-    await new Promise((r) => setTimeout(r, 10));
-
-    // Click the selector to open dropdown
+    // Click the selector to open dropdown — wait for data to be available
+    const button = await screen.findByRole("button", { name: /select project/i });
     await user.click(button);
 
     // Click on a project option in the dropdown

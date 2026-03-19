@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ThemeProvider } from "~/lib/theme";
+import { createQueryWrapper } from "../query-wrapper";
 
 const { mockFetchProjects, mockNavigate } = vi.hoisted(() => ({
   mockFetchProjects: vi.fn().mockResolvedValue([]),
@@ -19,10 +20,13 @@ vi.mock("~/lib/navigation", () => ({
 import { TopBar } from "~/components/top-bar";
 
 function renderWithTheme() {
+  const { wrapper: QueryWrapper } = createQueryWrapper();
   return render(
-    <ThemeProvider>
-      <TopBar />
-    </ThemeProvider>,
+    <QueryWrapper>
+      <ThemeProvider>
+        <TopBar />
+      </ThemeProvider>
+    </QueryWrapper>,
   );
 }
 

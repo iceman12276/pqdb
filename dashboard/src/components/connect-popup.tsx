@@ -1,8 +1,8 @@
-import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Separator } from "~/components/ui/separator";
 import { Badge } from "~/components/ui/badge";
-import { fetchProjectKeys, type ApiKeyInfo } from "~/lib/projects";
+import { fetchProjectKeys } from "~/lib/projects";
 
 interface ConnectPopupProps {
   projectId: string | null;
@@ -10,21 +10,14 @@ interface ConnectPopupProps {
 }
 
 export function ConnectPopup({ projectId, projectName }: ConnectPopupProps) {
-  const [keys, setKeys] = React.useState<ApiKeyInfo[]>([]);
-  const [loading, setLoading] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!projectId) return;
-    setLoading(true);
-    fetchProjectKeys(projectId)
-      .then((data) => {
-        setKeys(data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setLoading(false);
-      });
-  }, [projectId]);
+  const {
+    data: keys,
+    isLoading,
+  } = useQuery({
+    queryKey: ["projectKeys", projectId],
+    queryFn: () => fetchProjectKeys(projectId!),
+    enabled: !!projectId,
+  });
 
   if (!projectId) {
     return (
@@ -34,7 +27,7 @@ export function ConnectPopup({ projectId, projectName }: ConnectPopupProps) {
     );
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div data-testid="connect-loading" className="space-y-2 p-2">
         <Skeleton className="h-4 w-full" />
@@ -44,13 +37,12 @@ export function ConnectPopup({ projectId, projectName }: ConnectPopupProps) {
     );
   }
 
-  const anonKey = keys.find((k) => k.role === "anon");
-  const serviceKey = keys.find((k) => k.role === "service_role");
+  const anonKey = keys?.find((k) => k.role === "anon");
 
   const snippet = `import { createClient } from '@pqdb/client'
 
 const client = createClient({
-  url: '${window.location.origin}',
+  url: 'http://localhost:8000',
   apiKey: '${anonKey?.key_prefix ?? "your-anon-key"}...',
 })`;
 
@@ -61,7 +53,7 @@ const client = createClient({
           API Keys — {projectName}
         </h4>
         <div className="space-y-2">
-          {keys.map((key) => (
+          {keys?.map((key) => (
             <div
               key={key.id}
               className="flex items-center justify-between gap-2"

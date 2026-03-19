@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { fetchProjects, type Project } from "~/lib/projects";
 
@@ -11,15 +12,13 @@ export function ProjectSelector({
   selectedProjectId,
   onProjectSelect,
 }: ProjectSelectorProps) {
-  const [projects, setProjects] = React.useState<Project[]>([]);
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
-    fetchProjects()
-      .then(setProjects)
-      .catch(() => {});
-  }, []);
+  const { data: projects = [] } = useQuery({
+    queryKey: ["projects"],
+    queryFn: fetchProjects,
+  });
 
   React.useEffect(() => {
     function handleClickOutside(e: MouseEvent) {

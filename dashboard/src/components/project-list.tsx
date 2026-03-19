@@ -1,45 +1,32 @@
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { ProjectCard } from "~/components/project-card";
 import { CreateProjectDialog } from "~/components/create-project-dialog";
-import { fetchProjects, type Project, type ProjectCreateResponse } from "~/lib/projects";
+import { fetchProjects, type ProjectCreateResponse } from "~/lib/projects";
 import { useNavigate } from "~/lib/navigation";
 
 export function ProjectList() {
   const navigate = useNavigate();
-  const [projects, setProjects] = React.useState<Project[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
 
-  React.useEffect(() => {
-    let cancelled = false;
-    fetchProjects()
-      .then((data) => {
-        if (!cancelled) {
-          setProjects(data);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load projects");
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const {
+    data: projects,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["projects"],
+    queryFn: fetchProjects,
+  });
 
   function handleCreated(project: ProjectCreateResponse) {
     setDialogOpen(false);
     navigate({ to: "/projects/$projectId", params: { projectId: project.id } });
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div data-testid="project-list-loading" className="space-y-4">
         <Skeleton className="h-32 w-full" />
@@ -52,12 +39,14 @@ export function ProjectList() {
   if (error) {
     return (
       <div className="text-center py-12">
-        <p className="text-destructive">{error}</p>
+        <p className="text-destructive">
+          {error instanceof Error ? error.message : "Failed to load projects"}
+        </p>
       </div>
     );
   }
 
-  if (projects.length === 0) {
+  if (!projects || projects.length === 0) {
     return (
       <div data-testid="empty-state" className="text-center py-12">
         <h2 className="text-lg font-medium">No projects yet</h2>

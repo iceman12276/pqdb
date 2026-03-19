@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { createQueryWrapper } from "../query-wrapper";
 
 const { mockFetchProjectKeys } = vi.hoisted(() => ({
   mockFetchProjectKeys: vi.fn(),
@@ -33,13 +33,15 @@ describe("ConnectPopup", () => {
   });
 
   it("shows 'Select a project' when no project is selected", () => {
-    render(<ConnectPopup projectId={null} projectName={null} />);
+    const { wrapper } = createQueryWrapper();
+    render(<ConnectPopup projectId={null} projectName={null} />, { wrapper });
     expect(screen.getByText(/select a project first/i)).toBeInTheDocument();
   });
 
   it("fetches and displays API keys for selected project", async () => {
     mockFetchProjectKeys.mockResolvedValueOnce(mockKeys);
-    render(<ConnectPopup projectId="p1" projectName="My App" />);
+    const { wrapper } = createQueryWrapper();
+    render(<ConnectPopup projectId="p1" projectName="My App" />, { wrapper });
 
     expect(await screen.findByText("anon")).toBeInTheDocument();
     expect(screen.getByText("service_role")).toBeInTheDocument();
@@ -47,7 +49,8 @@ describe("ConnectPopup", () => {
 
   it("displays masked key prefixes", async () => {
     mockFetchProjectKeys.mockResolvedValueOnce(mockKeys);
-    render(<ConnectPopup projectId="p1" projectName="My App" />);
+    const { wrapper } = createQueryWrapper();
+    render(<ConnectPopup projectId="p1" projectName="My App" />, { wrapper });
 
     await waitFor(() => {
       const matches = screen.getAllByText(/pqdb_anon_abc/);
@@ -55,18 +58,23 @@ describe("ConnectPopup", () => {
     });
   });
 
-  it("shows SDK connection snippet", async () => {
+  it("shows SDK connection snippet with correct API URL", async () => {
     mockFetchProjectKeys.mockResolvedValueOnce(mockKeys);
-    render(<ConnectPopup projectId="p1" projectName="My App" />);
+    const { wrapper } = createQueryWrapper();
+    render(<ConnectPopup projectId="p1" projectName="My App" />, { wrapper });
 
     await waitFor(() => {
       expect(screen.getByText(/createClient/)).toBeInTheDocument();
     });
+    // Verify the snippet uses the API server URL, not window.location.origin
+    const snippet = screen.getByText(/createClient/).closest("pre");
+    expect(snippet?.textContent).toContain("http://localhost:8000");
   });
 
   it("shows loading state while fetching keys", () => {
     mockFetchProjectKeys.mockReturnValue(new Promise(() => {}));
-    render(<ConnectPopup projectId="p1" projectName="My App" />);
+    const { wrapper } = createQueryWrapper();
+    render(<ConnectPopup projectId="p1" projectName="My App" />, { wrapper });
     expect(screen.getByTestId("connect-loading")).toBeInTheDocument();
   });
 });
