@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AuthGuard } from "~/components/auth-guard";
+import { ProjectList } from "~/components/project-list";
 
 export const Route = createFileRoute("/projects/")({
   component: ProjectsPage,
@@ -8,12 +9,7 @@ export const Route = createFileRoute("/projects/")({
 function ProjectsPage() {
   return (
     <AuthGuard>
-      <div>
-        <h1 className="text-2xl font-bold">Projects</h1>
-        <p className="mt-2 text-muted-foreground">
-          Your projects will appear here.
-        </p>
-      </div>
+      <ProjectList />
     </AuthGuard>
   );
 }
