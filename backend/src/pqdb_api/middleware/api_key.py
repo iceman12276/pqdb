@@ -133,11 +133,17 @@ async def get_project_context(
     if project is None or project.database_name is None:
         raise HTTPException(status_code=403, detail="Project not provisioned")
 
-    return ProjectContext(
+    ctx = ProjectContext(
         project_id=matched_key.project_id,
         key_role=matched_key.role,
         database_name=project.database_name,
     )
+
+    # Store on request.state for audit middleware to pick up
+    request.state.audit_project_id = ctx.project_id
+    request.state.audit_database_name = ctx.database_name
+
+    return ctx
 
 
 async def get_project_session(
