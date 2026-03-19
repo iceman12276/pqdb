@@ -21,17 +21,11 @@ from pqdb_api.services.audit_log import ensure_audit_table
 
 router = APIRouter(prefix="/v1/projects", tags=["overview"])
 
-_COUNT_TABLES_SQL = text(
-    "SELECT COUNT(DISTINCT table_name) FROM _pqdb_columns"
-)
+_COUNT_TABLES_SQL = text("SELECT COUNT(DISTINCT table_name) FROM _pqdb_columns")
 
-_COUNT_USERS_SQL = text(
-    "SELECT COUNT(*) FROM _pqdb_users"
-)
+_COUNT_USERS_SQL = text("SELECT COUNT(*) FROM _pqdb_users")
 
-_COUNT_POLICIES_SQL = text(
-    "SELECT COUNT(*) FROM _pqdb_policies"
-)
+_COUNT_POLICIES_SQL = text("SELECT COUNT(*) FROM _pqdb_policies")
 
 _COUNT_DB_REQUESTS_SQL = text(
     "SELECT COUNT(*) FROM _pqdb_audit_log WHERE event_type = 'database'"
@@ -98,12 +92,8 @@ async def get_project_overview(
     try:
         await ensure_audit_table(project_session)
 
-        stats["tables_count"] = await _safe_count(
-            project_session, _COUNT_TABLES_SQL
-        )
-        stats["auth_users_count"] = await _safe_count(
-            project_session, _COUNT_USERS_SQL
-        )
+        stats["tables_count"] = await _safe_count(project_session, _COUNT_TABLES_SQL)
+        stats["auth_users_count"] = await _safe_count(project_session, _COUNT_USERS_SQL)
         stats["rls_policies_count"] = await _safe_count(
             project_session, _COUNT_POLICIES_SQL
         )

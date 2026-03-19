@@ -7,7 +7,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import (
@@ -17,27 +16,20 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from pqdb_api.database import get_session
-from pqdb_api.middleware.api_key import ProjectContext, get_project_context, get_project_session
 from pqdb_api.middleware.audit import AuditMiddleware
-from pqdb_api.middleware.user_auth import get_current_user
+from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.db import router as db_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.logs import router as logs_router
 from pqdb_api.routes.project_overview import router as overview_router
 from pqdb_api.routes.projects import router as projects_router
-from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.services.audit_log import ensure_audit_table, write_audit_log
 from pqdb_api.services.auth import generate_ed25519_keypair
 from pqdb_api.services.rate_limiter import RateLimiter
-
 from tests.integration.conftest import (
-    PG_HOST,
-    PG_PASS,
-    PG_PORT,
-    PG_USER,
     auth_headers,
-    signup_and_get_token,
     create_project,
+    signup_and_get_token,
 )
 
 
@@ -46,7 +38,6 @@ def _make_audit_test_app(test_db_url: str) -> FastAPI:
     from unittest.mock import AsyncMock, MagicMock
 
     from pqdb_api.config import Settings
-    from pqdb_api.models.base import Base
     from pqdb_api.services.provisioner import DatabaseProvisioner, make_database_name
     from pqdb_api.services.vault import VaultClient
 
@@ -67,7 +58,7 @@ def _make_audit_test_app(test_db_url: str) -> FastAPI:
         stored_keys[str(project_id)] = key
 
     def _mock_get_keys(project_id: uuid.UUID) -> Any:
-        from pqdb_api.services.vault import VersionedHmacKeys, VaultError
+        from pqdb_api.services.vault import VaultError, VersionedHmacKeys
 
         key = stored_keys.get(str(project_id))
         if key is None:
@@ -124,7 +115,7 @@ class TestAuditLogMiddleware:
     """Tests for audit log middleware writing entries on project-scoped requests."""
 
     def test_audit_log_written_on_db_request(self, test_db_url: str) -> None:
-        """Audit middleware should write a log entry when a project-scoped request is made."""
+        """Audit middleware should write a log entry for project-scoped requests."""
         app = _make_audit_test_app(test_db_url)
         with TestClient(app) as client:
             token = signup_and_get_token(client)
@@ -203,7 +194,7 @@ class TestAuditLogEndpoint:
                             session,
                             event_type="database",
                             method="POST",
-                            path=f"/v1/db/users/select",
+                            path="/v1/db/users/select",
                             status_code=200,
                             project_id=pid,
                             user_id=None,
@@ -211,7 +202,9 @@ class TestAuditLogEndpoint:
                         )
                 await engine.dispose()
 
-            asyncio.get_event_loop().run_until_complete(_write_entries())
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(_write_entries())
+            loop.close()
 
             resp = client.get(
                 f"/v1/projects/{project['id']}/logs",
@@ -267,7 +260,9 @@ class TestAuditLogEndpoint:
                     )
                 await engine.dispose()
 
-            asyncio.get_event_loop().run_until_complete(_write_entries())
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(_write_entries())
+            loop.close()
 
             # Filter by database
             resp = client.get(
@@ -311,7 +306,7 @@ class TestAuditLogEndpoint:
                             session,
                             event_type="database",
                             method="GET",
-                            path=f"/v1/db/tables",
+                            path="/v1/db/tables",
                             status_code=200,
                             project_id=pid,
                             user_id=None,
@@ -319,7 +314,9 @@ class TestAuditLogEndpoint:
                         )
                 await engine.dispose()
 
-            asyncio.get_event_loop().run_until_complete(_write_entries())
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(_write_entries())
+            loop.close()
 
             resp = client.get(
                 f"/v1/projects/{project['id']}/logs?limit=2&offset=0",

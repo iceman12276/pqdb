@@ -11,15 +11,18 @@ import uuid
 from typing import Any
 
 import structlog
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import Response
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
 )
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
+from starlette.responses import Response
 
-from pqdb_api.middleware.api_key import _build_project_database_url, _get_or_create_engine
+from pqdb_api.middleware.api_key import (
+    _build_project_database_url,
+    _get_or_create_engine,
+)
 from pqdb_api.services.audit_log import (
     classify_event_type,
     ensure_audit_table,
@@ -51,19 +54,13 @@ class AuditMiddleware(BaseHTTPMiddleware):
             return response
 
         # Extract project context from request state if available
-        project_id: uuid.UUID | None = getattr(
-            request.state, "audit_project_id", None
-        )
-        database_name: str | None = getattr(
-            request.state, "audit_database_name", None
-        )
+        project_id: uuid.UUID | None = getattr(request.state, "audit_project_id", None)
+        database_name: str | None = getattr(request.state, "audit_database_name", None)
 
         if project_id is None or database_name is None:
             return response
 
-        user_id: uuid.UUID | None = getattr(
-            request.state, "audit_user_id", None
-        )
+        user_id: uuid.UUID | None = getattr(request.state, "audit_user_id", None)
 
         # Get client IP
         ip_address = request.client.host if request.client else "unknown"
@@ -112,9 +109,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
         project_db_url = _build_project_database_url(
             settings.database_url, database_name
         )
-        engine = _get_or_create_engine(
-            request.app.state, project_db_url, database_name
-        )
+        engine = _get_or_create_engine(request.app.state, project_db_url, database_name)
         factory = async_sessionmaker(
             engine, class_=AsyncSession, expire_on_commit=False
         )

@@ -61,7 +61,8 @@ _SELECT_SQL = text(
 _INSERT_SQL = text(
     "INSERT INTO _pqdb_audit_log "
     "(id, event_type, method, path, status_code, project_id, user_id, ip_address) "
-    "VALUES (:id, :event_type, :method, :path, :status_code, :project_id, :user_id, :ip_address)"
+    "VALUES (:id, :event_type, :method, :path, "
+    ":status_code, :project_id, :user_id, :ip_address)"
 )
 
 
