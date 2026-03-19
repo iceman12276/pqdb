@@ -16,8 +16,11 @@ import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects/index'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as ProjectsProjectIdIndexRouteImport } from './routes/projects/$projectId/index'
+import { Route as ProjectsProjectIdSqlRouteImport } from './routes/projects/$projectId/sql'
 import { Route as ProjectsProjectIdSchemaRouteImport } from './routes/projects/$projectId/schema'
 import { Route as ProjectsProjectIdLogsRouteImport } from './routes/projects/$projectId/logs'
+import { Route as ProjectsProjectIdKeysRouteImport } from './routes/projects/$projectId.keys'
+import { Route as ProjectsProjectIdAuthRouteImport } from './routes/projects/$projectId.auth'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -54,6 +57,11 @@ const ProjectsProjectIdIndexRoute = ProjectsProjectIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdSqlRoute = ProjectsProjectIdSqlRouteImport.update({
+  id: '/sql',
+  path: '/sql',
+  getParentRoute: () => ProjectsProjectIdRoute,
+} as any)
 const ProjectsProjectIdSchemaRoute = ProjectsProjectIdSchemaRouteImport.update({
   id: '/schema',
   path: '/schema',
@@ -64,6 +72,16 @@ const ProjectsProjectIdLogsRoute = ProjectsProjectIdLogsRouteImport.update({
   path: '/logs',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdKeysRoute = ProjectsProjectIdKeysRouteImport.update({
+  id: '/keys',
+  path: '/keys',
+  getParentRoute: () => ProjectsProjectIdRoute,
+} as any)
+const ProjectsProjectIdAuthRoute = ProjectsProjectIdAuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => ProjectsProjectIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -72,8 +90,11 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
+  '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -82,8 +103,11 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/projects': typeof ProjectsIndexRoute
   '/settings': typeof SettingsIndexRoute
+  '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
+  '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId': typeof ProjectsProjectIdIndexRoute
 }
 export interface FileRoutesById {
@@ -94,8 +118,11 @@ export interface FileRoutesById {
   '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
+  '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -107,8 +134,11 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/projects/'
     | '/settings/'
+    | '/projects/$projectId/auth'
+    | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/schema'
+    | '/projects/$projectId/sql'
     | '/projects/$projectId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -117,8 +147,11 @@ export interface FileRouteTypes {
     | '/signup'
     | '/projects'
     | '/settings'
+    | '/projects/$projectId/auth'
+    | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/schema'
+    | '/projects/$projectId/sql'
     | '/projects/$projectId'
   id:
     | '__root__'
@@ -128,8 +161,11 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/projects/'
     | '/settings/'
+    | '/projects/$projectId/auth'
+    | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/schema'
+    | '/projects/$projectId/sql'
     | '/projects/$projectId/'
   fileRoutesById: FileRoutesById
 }
@@ -193,6 +229,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdIndexRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/sql': {
+      id: '/projects/$projectId/sql'
+      path: '/sql'
+      fullPath: '/projects/$projectId/sql'
+      preLoaderRoute: typeof ProjectsProjectIdSqlRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
     '/projects/$projectId/schema': {
       id: '/projects/$projectId/schema'
       path: '/schema'
@@ -207,18 +250,38 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdLogsRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/keys': {
+      id: '/projects/$projectId/keys'
+      path: '/keys'
+      fullPath: '/projects/$projectId/keys'
+      preLoaderRoute: typeof ProjectsProjectIdKeysRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
+    '/projects/$projectId/auth': {
+      id: '/projects/$projectId/auth'
+      path: '/auth'
+      fullPath: '/projects/$projectId/auth'
+      preLoaderRoute: typeof ProjectsProjectIdAuthRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
   }
 }
 
 interface ProjectsProjectIdRouteChildren {
+  ProjectsProjectIdAuthRoute: typeof ProjectsProjectIdAuthRoute
+  ProjectsProjectIdKeysRoute: typeof ProjectsProjectIdKeysRoute
   ProjectsProjectIdLogsRoute: typeof ProjectsProjectIdLogsRoute
   ProjectsProjectIdSchemaRoute: typeof ProjectsProjectIdSchemaRoute
+  ProjectsProjectIdSqlRoute: typeof ProjectsProjectIdSqlRoute
   ProjectsProjectIdIndexRoute: typeof ProjectsProjectIdIndexRoute
 }
 
 const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
+  ProjectsProjectIdAuthRoute: ProjectsProjectIdAuthRoute,
+  ProjectsProjectIdKeysRoute: ProjectsProjectIdKeysRoute,
   ProjectsProjectIdLogsRoute: ProjectsProjectIdLogsRoute,
   ProjectsProjectIdSchemaRoute: ProjectsProjectIdSchemaRoute,
+  ProjectsProjectIdSqlRoute: ProjectsProjectIdSqlRoute,
   ProjectsProjectIdIndexRoute: ProjectsProjectIdIndexRoute,
 }
 
