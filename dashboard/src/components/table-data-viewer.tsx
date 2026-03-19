@@ -325,6 +325,7 @@ export function TableDataViewer({
 function UnlockDialog({ onUnlock }: { onUnlock: (key: string) => void }) {
   const [open, setOpen] = React.useState(false);
   const [key, setKey] = React.useState("");
+  const [warningDismissed, setWarningDismissed] = React.useState(false);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -336,7 +337,10 @@ function UnlockDialog({ onUnlock }: { onUnlock: (key: string) => void }) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(next) => {
+      setOpen(next);
+      if (!next) setWarningDismissed(false);
+    }}>
       <DialogTrigger
         render={
           <Button variant="outline" size="sm">
@@ -353,6 +357,27 @@ function UnlockDialog({ onUnlock }: { onUnlock: (key: string) => void }) {
             held in memory only and never sent to the server.
           </DialogDescription>
         </DialogHeader>
+        {!warningDismissed && (
+          <div
+            data-testid="encryption-key-warning"
+            className="rounded-md border border-yellow-500/50 bg-yellow-50 dark:bg-yellow-950/30 p-3 text-sm text-yellow-800 dark:text-yellow-200"
+          >
+            <p className="font-medium mb-1">Important</p>
+            <p>
+              Your encryption key is never sent to the server. If you lose this
+              key, your encrypted data is permanently unrecoverable. Store it
+              securely.
+            </p>
+            <button
+              type="button"
+              className="mt-2 text-xs underline hover:no-underline"
+              onClick={() => setWarningDismissed(true)}
+              aria-label="Dismiss"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="encryption-key">Encryption Key</Label>
