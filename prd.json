@@ -50,8 +50,8 @@
         "Production build succeeds"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #59 merged. Login/signup forms, JWT auth store, API client with auto-refresh, AuthGuard, Vite proxy, shadcn/ui components. 57 tests."
     },
     {
       "id": "US-045",
