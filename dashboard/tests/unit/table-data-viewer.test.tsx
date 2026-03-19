@@ -176,6 +176,51 @@ describe("TableDataViewer", () => {
     expect(await screen.findByText(/enter.*encryption key/i)).toBeInTheDocument();
   });
 
+  it("shows zero-knowledge warning in the unlock dialog", async () => {
+    const user = userEvent.setup();
+    mockFetchTableRows.mockResolvedValueOnce(mockRowsData);
+    mockFetchSchema.mockResolvedValueOnce(mockSchemaData);
+    render(
+      <Wrapper>
+        <TableDataViewer projectId="p1" tableName="users" apiKey="pqdb_service_abc" />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Alice")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    const warning = await screen.findByTestId("encryption-key-warning");
+    expect(warning).toBeInTheDocument();
+    expect(warning.textContent).toMatch(/never sent to the server/i);
+    expect(warning.textContent).toMatch(/permanently unrecoverable/i);
+    expect(warning.textContent).toMatch(/store it securely/i);
+  });
+
+  it("allows dismissing the unlock dialog warning", async () => {
+    const user = userEvent.setup();
+    mockFetchTableRows.mockResolvedValueOnce(mockRowsData);
+    mockFetchSchema.mockResolvedValueOnce(mockSchemaData);
+    render(
+      <Wrapper>
+        <TableDataViewer projectId="p1" tableName="users" apiKey="pqdb_service_abc" />
+      </Wrapper>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Alice")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /unlock/i }));
+    const warning = await screen.findByTestId("encryption-key-warning");
+    expect(warning).toBeInTheDocument();
+
+    const dismissBtn = screen.getByRole("button", { name: /dismiss/i });
+    await user.click(dismissBtn);
+    expect(screen.queryByTestId("encryption-key-warning")).not.toBeInTheDocument();
+  });
+
   it("shows insert row button", async () => {
     mockFetchTableRows.mockResolvedValueOnce(mockRowsData);
     mockFetchSchema.mockResolvedValueOnce(mockSchemaData);

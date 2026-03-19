@@ -105,6 +105,15 @@ export function createClient(
   const http = new HttpClient(projectUrl, apiKey);
   const auth = new AuthClient(http, options?.projectId);
 
+  // One-time warning about encryption key backup responsibility
+  if (options?.encryptionKey) {
+    console.warn(
+      "[pqdb] Your encryption key is never sent to the server. " +
+      "If you lose this key, your encrypted data is permanently unrecoverable. " +
+      "Store it securely (password manager, secure vault, or offline backup).",
+    );
+  }
+
   // Crypto state — lazily initialized
   let resolvedCryptoCtx: CryptoContext | null = null;
   let cryptoCtxPromise: Promise<CryptoContext> | null = null;
