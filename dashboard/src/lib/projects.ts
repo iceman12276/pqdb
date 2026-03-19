@@ -76,3 +76,13 @@ export async function fetchProjectKeys(projectId: string): Promise<ApiKeyInfo[]>
   }
   return result.data as ApiKeyInfo[];
 }
+
+export async function rotateProjectKeys(projectId: string): Promise<ApiKeyCreated[]> {
+  const result = await api.fetch(`/v1/projects/${projectId}/keys/rotate`, {
+    method: "POST",
+  });
+  if (!result.ok) {
+    throw new Error("Failed to rotate API keys");
+  }
+  return result.data as ApiKeyCreated[];
+}
