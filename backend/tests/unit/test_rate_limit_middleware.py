@@ -112,7 +112,8 @@ class TestRateLimitHeaders:
         with TestClient(app) as client:
             resp = client.get("/v1/auth/signup")
             reset = int(resp.headers["x-ratelimit-reset"])
-            assert 0 < reset <= 60
+            # math.ceil() can round up by 1s depending on exact timing
+            assert 0 < reset <= 61
 
 
 class TestPerIPKeying:

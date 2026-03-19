@@ -3,6 +3,7 @@ import { api } from "~/lib/api-client";
 import { setTokens } from "~/lib/auth-store";
 import { useNavigate } from "~/lib/navigation";
 import { isValidEmail } from "~/lib/validation";
+import { startPasskeyAuthentication } from "~/lib/passkey";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -15,12 +16,35 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 
+function getOAuthRedirectUri(): string {
+  return `${window.location.origin}/login`;
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+
+  // Handle OAuth callback: extract tokens from URL hash fragment
+  React.useEffect(() => {
+    const hash = window.location.hash;
+    if (hash) {
+      const params = new URLSearchParams(hash.substring(1));
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
+      if (accessToken && refreshToken) {
+        setTokens(
+          { access_token: accessToken, refresh_token: refreshToken },
+          { persist: true },
+        );
+        // Clear the hash to avoid re-processing
+        window.history.replaceState(null, "", "/login");
+        navigate({ to: "/projects" });
+      }
+    }
+  }, [navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -54,6 +78,28 @@ export function LoginPage() {
         );
         navigate({ to: "/projects" });
       }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleOAuthLogin(provider: "google" | "github") {
+    const redirectUri = encodeURIComponent(getOAuthRedirectUri());
+    window.location.href =
+      `/v1/auth/oauth/${provider}/authorize?redirect_uri=${redirectUri}`;
+  }
+
+  async function handlePasskeyLogin() {
+    setError(null);
+    setLoading(true);
+    try {
+      const tokens = await startPasskeyAuthentication();
+      setTokens(tokens, { persist: true });
+      navigate({ to: "/projects" });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Passkey authentication failed";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -121,24 +167,27 @@ export function LoginPage() {
             <Button
               type="button"
               variant="outline"
-              disabled
               className="w-full"
+              disabled={loading}
+              onClick={() => handleOAuthLogin("google")}
             >
               Sign in with Google
             </Button>
             <Button
               type="button"
               variant="outline"
-              disabled
               className="w-full"
+              disabled={loading}
+              onClick={() => handleOAuthLogin("github")}
             >
               Sign in with GitHub
             </Button>
             <Button
               type="button"
               variant="outline"
-              disabled
               className="w-full"
+              disabled={loading}
+              onClick={handlePasskeyLogin}
             >
               Sign in with Passkey
             </Button>
