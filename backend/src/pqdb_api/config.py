@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # OAuth redirect URI allowlist (comma-separated origins)
     allowed_redirect_uris_raw: str = "http://localhost:3000"
 
+    # WebAuthn / Passkey settings
+    webauthn_rp_id: str = "localhost"
+    webauthn_rp_name: str = "pqdb"
+    webauthn_origin: str = "http://localhost:3000"
+
     @property
     def allowed_redirect_uris(self) -> list[str]:
         parts = self.allowed_redirect_uris_raw.split(",")
