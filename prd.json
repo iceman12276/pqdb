@@ -313,8 +313,8 @@
         "Production build succeeds"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #68 merged. Unlock warning, settings Encryption section, SDK one-time console.warn."
     },
     {
       "id": "US-055",
