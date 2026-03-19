@@ -89,7 +89,7 @@ describe("ApiKeysPage", () => {
     });
   });
 
-  it("shows SDK connection snippet", async () => {
+  it("shows SDK connection snippet with placeholder instead of masked key", async () => {
     mockFetchProjectKeys.mockResolvedValueOnce(mockKeys);
     const { wrapper } = createQueryWrapper();
     render(<ApiKeysPage projectId="p1" />, { wrapper });
@@ -99,9 +99,11 @@ describe("ApiKeysPage", () => {
     });
 
     const snippet = screen.getByTestId("sdk-snippet");
-    expect(snippet.textContent).toContain("http://localhost:8000");
-    expect(snippet.textContent).toContain("pqdb_anon_abc123");
     expect(snippet.textContent).toContain("createClient");
+    expect(snippet.textContent).toContain("http://localhost:8000");
+    expect(snippet.textContent).toContain("<your-anon-key>");
+    // Must NOT contain the masked key prefix
+    expect(snippet.textContent).not.toContain("pqdb_anon_abc123");
   });
 
   it("copies key to clipboard when copy button is clicked", async () => {
@@ -121,7 +123,7 @@ describe("ApiKeysPage", () => {
     });
   });
 
-  it("copies SDK snippet to clipboard", async () => {
+  it("copies SDK snippet with placeholder to clipboard", async () => {
     mockFetchProjectKeys.mockResolvedValueOnce(mockKeys);
     const { wrapper } = createQueryWrapper();
     render(<ApiKeysPage projectId="p1" />, { wrapper });
@@ -134,7 +136,7 @@ describe("ApiKeysPage", () => {
     fireEvent.click(snippetCopyBtn);
     await waitFor(() => {
       expect(mockWriteText).toHaveBeenCalledWith(
-        expect.stringContaining("createClient"),
+        expect.stringContaining("<your-anon-key>"),
       );
     });
   });
@@ -192,6 +194,36 @@ describe("ApiKeysPage", () => {
     expect(
       screen.getByText(/keys are shown only once/i),
     ).toBeInTheDocument();
+  });
+
+  it("shows SDK snippet with full anon key in rotation modal", async () => {
+    mockFetchProjectKeys.mockResolvedValueOnce(mockKeys);
+    mockRotateProjectKeys.mockResolvedValueOnce(mockRotatedKeys);
+    const user = userEvent.setup();
+    const { wrapper } = createQueryWrapper();
+    render(<ApiKeysPage projectId="p1" />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("pqdb_anon_abc123****")).toBeInTheDocument();
+    });
+
+    // Click rotate and confirm
+    await user.click(screen.getByRole("button", { name: /rotate keys/i }));
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+
+    // Wait for new keys modal
+    await waitFor(() => {
+      expect(
+        screen.getByText("pqdb_anon_newkey123456789012345678901234"),
+      ).toBeInTheDocument();
+    });
+
+    // Should show an SDK snippet with the full anon key
+    const snippet = screen.getByTestId("new-keys-snippet");
+    expect(snippet.textContent).toContain("createClient");
+    expect(snippet.textContent).toContain(
+      "pqdb_anon_newkey123456789012345678901234",
+    );
   });
 
   it("shows error state when fetch fails", async () => {

@@ -108,7 +108,7 @@ export function ApiKeysPage({ projectId }: ApiKeysPageProps) {
 
   const snippet = `import { createClient } from '@pqdb/client'
 
-const client = createClient('http://localhost:8000', '${anonKey ? maskKey(anonKey.key_prefix) : "pqdb_anon_..."}')`;
+const client = createClient('http://localhost:8000', '<your-anon-key>')`;
 
   return (
     <div className="space-y-6">
@@ -219,6 +219,25 @@ const client = createClient('http://localhost:8000', '${anonKey ? maskKey(anonKe
               </div>
             ))}
           </div>
+          {(() => {
+            const newAnonKey = newKeys.find((k) => k.role === "anon");
+            if (!newAnonKey) return null;
+            const newSnippet = `import { createClient } from '@pqdb/client'\n\nconst client = createClient('http://localhost:8000', '${newAnonKey.key}')`;
+            return (
+              <>
+                <Separator />
+                <div>
+                  <h4 className="text-sm font-medium mb-2">SDK Connection Snippet</h4>
+                  <pre
+                    data-testid="new-keys-snippet"
+                    className="rounded-md bg-muted p-4 text-sm overflow-x-auto"
+                  >
+                    <code>{newSnippet}</code>
+                  </pre>
+                </div>
+              </>
+            );
+          })()}
           <DialogFooter>
             <Button onClick={() => setShowNewKeysDialog(false)}>Done</Button>
           </DialogFooter>
