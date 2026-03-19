@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pqdb_api.config import Settings
 from pqdb_api.database import dispose_engine, init_engine
 from pqdb_api.logging import setup_logging
+from pqdb_api.middleware.audit import AuditMiddleware
 from pqdb_api.middleware.rate_limit import RateLimitMiddleware
 from pqdb_api.routes.api_keys import router as api_keys_router
 from pqdb_api.routes.auth import router as auth_router
@@ -21,11 +22,13 @@ from pqdb_api.routes.db import router as db_router
 from pqdb_api.routes.developer_oauth import router as developer_oauth_router
 from pqdb_api.routes.google_oauth import router as google_oauth_router
 from pqdb_api.routes.health import router as health_router
+from pqdb_api.routes.logs import router as logs_router
 from pqdb_api.routes.mfa import router as mfa_router
 from pqdb_api.routes.oauth_github import router as oauth_github_router
 from pqdb_api.routes.oauth_providers import router as oauth_providers_router
 from pqdb_api.routes.passkeys import router as passkeys_router
 from pqdb_api.routes.policies import router as policies_router
+from pqdb_api.routes.project_overview import router as overview_router
 from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.routes.roles import router as roles_router
 from pqdb_api.routes.user_auth import router as user_auth_router
@@ -90,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(AuditMiddleware)
     app.add_middleware(RateLimitMiddleware)
 
     app.include_router(health_router)
@@ -104,6 +108,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(oauth_providers_router)
     app.include_router(google_oauth_router)
     app.include_router(db_router)
+    app.include_router(logs_router)
+    app.include_router(overview_router)
     app.include_router(developer_oauth_router)
     app.include_router(passkeys_router)
     app.include_router(policies_router)
