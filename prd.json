@@ -73,8 +73,8 @@
         "Production build succeeds"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #60 merged. Project list with cards, create dialog, project selector, Connect popup. TanStack Query, shadcn/ui components. 82 tests."
     },
     {
       "id": "US-046",
