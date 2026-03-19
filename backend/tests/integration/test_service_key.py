@@ -98,9 +98,7 @@ class TestServiceKeyGeneration:
         )
         assert resp.status_code == 404
 
-    def test_other_developers_project_returns_404(
-        self, client: TestClient
-    ) -> None:
+    def test_other_developers_project_returns_404(self, client: TestClient) -> None:
         token_a = signup_and_get_token(client, email="svckey_a@test.com")
         token_b = signup_and_get_token(client, email="svckey_b@test.com")
         project = create_project(client, token_a, name="svckey-private")
@@ -138,9 +136,7 @@ class TestServiceKeyGeneration:
         )
         assert len(list_resp2.json()) == 3
 
-    def test_generated_key_is_unique_each_call(
-        self, client: TestClient
-    ) -> None:
+    def test_generated_key_is_unique_each_call(self, client: TestClient) -> None:
         token = signup_and_get_token(client, email="svckey_uniq@test.com")
         project = create_project(client, token)
         project_id = project["id"]
