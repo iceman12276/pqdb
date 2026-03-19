@@ -1,7 +1,7 @@
 {
   "project": "pqdb",
   "branchName": "main",
-  "description": "Phase 3a — Dashboard + Developer Auth: TanStack Start Dashboard UI (Supabase-style), schema visualizer, table editor with client-side decryption, query playground, Developer OAuth (Google/GitHub), Passkey/WebAuthn, encryption key management UX",
+  "description": "Phase 3a \u2014 Dashboard + Developer Auth: TanStack Start Dashboard UI (Supabase-style), schema visualizer, table editor with client-side decryption, query playground, Developer OAuth (Google/GitHub), Passkey/WebAuthn, encryption key management UX",
   "userStories": [
     {
       "id": "US-043",
@@ -33,7 +33,9 @@
       "id": "US-044",
       "title": "Dashboard login/signup pages",
       "description": "As a developer, I want login and signup pages so that I can authenticate with the pqdb platform via the Dashboard.",
-      "dependsOn": ["US-043"],
+      "dependsOn": [
+        "US-043"
+      ],
       "acceptanceCriteria": [
         "/login page with email/password form calling existing POST /v1/auth/login endpoint",
         "/signup page with email/password form calling existing POST /v1/auth/signup endpoint",
@@ -57,7 +59,9 @@
       "id": "US-045",
       "title": "Project list + create project pages",
       "description": "As a developer, I want to see my projects and create new ones from the Dashboard so that I can manage my pqdb projects visually.",
-      "dependsOn": ["US-044"],
+      "dependsOn": [
+        "US-044"
+      ],
       "acceptanceCriteria": [
         "/projects page lists all projects for the authenticated developer (calls GET /v1/projects)",
         "Each project card shows: name, status badge (active/archived), region, created date",
@@ -80,7 +84,9 @@
       "id": "US-046",
       "title": "Project overview page + logs page",
       "description": "As a developer, I want to see my project's status and logs so that I can monitor its health and activity.",
-      "dependsOn": ["US-045"],
+      "dependsOn": [
+        "US-045"
+      ],
       "acceptanceCriteria": [
         "/projects/:id page shows project overview with status cards: STATUS, TABLES count, ENCRYPTION (ML-KEM-768), HMAC KEY version, AUTH USERS count, RLS POLICIES count",
         "Overview page shows project URL and connection info",
@@ -97,14 +103,16 @@
         "Production build succeeds"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #65 merged. Project overview (6 status cards), audit log table + middleware, logs page with filters. 37 tests."
     },
     {
       "id": "US-047",
       "title": "API key management page",
       "description": "As a developer, I want to manage API keys from the Dashboard so that I can view, rotate, and copy connection info.",
-      "dependsOn": ["US-045"],
+      "dependsOn": [
+        "US-045"
+      ],
       "acceptanceCriteria": [
         "/projects/:id/keys page shows anon and service API keys in masked format (pqdb_anon_****...****)",
         "Rotate Keys button calls POST /v1/projects/{id}/keys/rotate, shows new keys in a one-time display modal",
@@ -124,7 +132,9 @@
       "id": "US-048",
       "title": "Schema browser + schema visualizer",
       "description": "As a developer, I want to browse my schema and see it as a visual ERD so that I can understand my database structure at a glance.",
-      "dependsOn": ["US-045"],
+      "dependsOn": [
+        "US-045"
+      ],
       "acceptanceCriteria": [
         "/projects/:id/schema page with two views: list view (table list with columns) and ERD view (React Flow)",
         "ERD view: each table rendered as a node with columns listed inside",
@@ -151,7 +161,9 @@
       "id": "US-049",
       "title": "Table editor with data viewer + client-side decryption",
       "description": "As a developer, I want to view and edit table data in the Dashboard with the ability to decrypt sensitive columns so that I can see my actual data.",
-      "dependsOn": ["US-048"],
+      "dependsOn": [
+        "US-048"
+      ],
       "acceptanceCriteria": [
         "/projects/:id/tables page lists all tables with row counts",
         "/projects/:id/tables/:name page shows paginated rows with column headers",
@@ -159,7 +171,7 @@
         "Unlock button prompts developer to enter their encryption key",
         "Encryption key loaded into @pqdb/client SDK running in the browser",
         "SDK fetches ciphertext from API, decrypts client-side, displays plaintext",
-        "Key held in memory only — never sent to server, never persisted to localStorage/sessionStorage/cookies",
+        "Key held in memory only \u2014 never sent to server, never persisted to localStorage/sessionStorage/cookies",
         "Lock button clears the key from memory and reverts to [encrypted] display",
         "Closing the tab clears the key automatically",
         "Row insert form: creates new rows via POST /v1/db/{table}/insert",
@@ -177,7 +189,9 @@
       "id": "US-050",
       "title": "Query playground",
       "description": "As a developer, I want a query playground so that I can build and execute queries visually with decrypted results.",
-      "dependsOn": ["US-048"],
+      "dependsOn": [
+        "US-048"
+      ],
       "acceptanceCriteria": [
         "/projects/:id/sql page with query builder interface",
         "Query builder uses SDK query builder syntax: select table, choose columns, add filters (.eq, .gt, .lt, etc.), set limit/offset/order",
@@ -200,22 +214,24 @@
       "id": "US-051",
       "title": "Auth settings page",
       "description": "As a developer, I want to configure auth settings from the Dashboard so that I can manage OAuth providers, roles, RLS policies, and verification settings visually.",
-      "dependsOn": ["US-045"],
+      "dependsOn": [
+        "US-045"
+      ],
       "acceptanceCriteria": [
         "/projects/:id/auth page with tabs: Providers, Roles, Policies, Settings",
         "Providers tab: lists configured OAuth providers (from GET /v1/projects/{id}/auth/providers), with Add Provider form",
         "Roles tab: lists roles (from GET /v1/projects/{id}/auth/roles), with Create Role form and delete buttons (built-in roles cannot be deleted)",
         "Policies tab: per-table policy viewer and editor (from GET /v1/db/tables/{name}/policies), with Add Policy form (operation, role, condition dropdowns)",
         "Settings tab: auth settings form (require_email_verification, password_min_length, mfa_enabled, webhook URL)",
-        "All forms call existing Phase 2b API endpoints — no new backend work",
+        "All forms call existing Phase 2b API endpoints \u2014 no new backend work",
         "Unit tests pass (tab rendering, form validation, API call payloads)",
         "Verify in browser",
         "Typecheck passes",
         "Production build succeeds"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #64 merged. Auth settings page: Providers/Roles/Policies/Settings tabs. 21 tests."
     },
     {
       "id": "US-052",
@@ -231,11 +247,11 @@
         "New developer created via OAuth gets email_verified = true automatically",
         "VaultClient gains store_platform_oauth_credentials(), get_platform_oauth_credentials(), delete_platform_oauth_credentials() for path secret/pqdb/platform/oauth/{provider}",
         "Platform operator configures credentials via env vars or admin endpoint",
-        "Reuses existing OAuthProvider ABC from Phase 2b — GoogleOAuthProvider and GitHubOAuthProvider work with platform credential source",
+        "Reuses existing OAuthProvider ABC from Phase 2b \u2014 GoogleOAuthProvider and GitHubOAuthProvider work with platform credential source",
         "Returns 400 if provider not configured",
         "Returns 400 if state JWT invalid or expired",
         "Unit tests pass (state JWT generation, callback validation, account linking logic, Vault storage)",
-        "Integration tests pass (full authorize → callback → developer created/linked → JWT issued)",
+        "Integration tests pass (full authorize \u2192 callback \u2192 developer created/linked \u2192 JWT issued)",
         "Service responds to health check",
         "Typecheck passes",
         "Production build succeeds"
@@ -248,7 +264,10 @@
       "id": "US-053",
       "title": "Developer OAuth + Passkey/WebAuthn Dashboard integration",
       "description": "As a developer, I want to sign in with Google, GitHub, or a passkey from the Dashboard so that I have multiple secure login options.",
-      "dependsOn": ["US-044", "US-052"],
+      "dependsOn": [
+        "US-044",
+        "US-052"
+      ],
       "acceptanceCriteria": [
         "Login page Sign in with Google and Sign in with GitHub buttons wired to GET /v1/auth/oauth/{provider}/authorize?redirect_uri=...",
         "OAuth callback handling: Dashboard extracts tokens from redirect, stores in memory",
@@ -264,7 +283,7 @@
         "WebAuthn Relying Party ID configurable via PQDB_WEBAUTHN_RP_ID env var (default: localhost)",
         "py_webauthn added as backend dependency via uv add py-webauthn",
         "Unit tests pass (challenge generation, attestation validation mock, assertion validation mock, credential CRUD)",
-        "Integration tests pass (register passkey → authenticate with passkey → JWT issued; OAuth login flow)",
+        "Integration tests pass (register passkey \u2192 authenticate with passkey \u2192 JWT issued; OAuth login flow)",
         "Service responds to health check",
         "Verify in browser",
         "Typecheck passes",
@@ -278,7 +297,9 @@
       "id": "US-054",
       "title": "Encryption key management UX",
       "description": "As a developer, I want clear guidance on encryption key management so that I understand the zero-knowledge model and don't accidentally lose my key.",
-      "dependsOn": ["US-049"],
+      "dependsOn": [
+        "US-049"
+      ],
       "acceptanceCriteria": [
         "Dashboard: Unlock modal includes a dismissable warning: Your encryption key is never sent to the server. If you lose this key, your encrypted data is permanently unrecoverable. Store it securely.",
         "Dashboard: /projects/:id/settings page gains an Encryption section explaining the zero-knowledge model and key backup best practices",
@@ -299,15 +320,19 @@
       "id": "US-055",
       "title": "Phase 3a E2E tests",
       "description": "As the engineering team, we need end-to-end tests proving all Phase 3a capabilities work: Dashboard pages, data viewer with decryption, developer OAuth, and passkey login.",
-      "dependsOn": ["US-054", "US-053", "US-051"],
+      "dependsOn": [
+        "US-054",
+        "US-053",
+        "US-051"
+      ],
       "acceptanceCriteria": [
         "Test setup: Docker Compose starts Postgres + Vault, FastAPI backend runs, Dashboard dev server runs, Playwright configured for headless browser testing",
-        "Test 1 — Dashboard flow: Login with email/password → create project → view in project list → navigate to project overview → see status cards",
-        "Test 2 — Schema visualizer: Create tables with mixed sensitivity → navigate to schema page → ERD renders with correct sensitivity badges and relationships",
-        "Test 3 — Data viewer + decryption: Insert data via SDK → navigate to table editor → encrypted columns show [encrypted] → unlock with encryption key → plaintext visible → lock → reverts to [encrypted]",
-        "Test 4 — Developer OAuth: Configure Google OAuth (mock) → click Sign in with Google → simulate callback → developer account linked → Dashboard access",
-        "Test 5 — Passkey: Register passkey (WebAuthn mock via Playwright virtual authenticator) → sign out → sign in with passkey → Dashboard access",
-        "Test 6 — Key management UX: Encryption key warning appears in SDK console, Dashboard settings page shows encryption section",
+        "Test 1 \u2014 Dashboard flow: Login with email/password \u2192 create project \u2192 view in project list \u2192 navigate to project overview \u2192 see status cards",
+        "Test 2 \u2014 Schema visualizer: Create tables with mixed sensitivity \u2192 navigate to schema page \u2192 ERD renders with correct sensitivity badges and relationships",
+        "Test 3 \u2014 Data viewer + decryption: Insert data via SDK \u2192 navigate to table editor \u2192 encrypted columns show [encrypted] \u2192 unlock with encryption key \u2192 plaintext visible \u2192 lock \u2192 reverts to [encrypted]",
+        "Test 4 \u2014 Developer OAuth: Configure Google OAuth (mock) \u2192 click Sign in with Google \u2192 simulate callback \u2192 developer account linked \u2192 Dashboard access",
+        "Test 5 \u2014 Passkey: Register passkey (WebAuthn mock via Playwright virtual authenticator) \u2192 sign out \u2192 sign in with passkey \u2192 Dashboard access",
+        "Test 6 \u2014 Key management UX: Encryption key warning appears in SDK console, Dashboard settings page shows encryption section",
         "All 6 tests pass",
         "CI passes (Playwright tests run headless in GitHub Actions)",
         "Typecheck passes",
