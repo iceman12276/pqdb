@@ -15,6 +15,7 @@ import {
   apiCreateProject,
   apiCreateTable,
   injectTokens,
+  mockProjectKeys,
 } from "./helpers";
 
 const PASSWORD = "TestPassword123!";
@@ -72,6 +73,7 @@ async function encryptValue(plaintext: string, encryptionKey: string): Promise<s
 
 test.describe("Data viewer + decryption", () => {
   let accessToken: string;
+  let refreshToken: string;
   let projectId: string;
   let serviceRoleKey: string;
 
@@ -79,14 +81,15 @@ test.describe("Data viewer + decryption", () => {
     const email = testEmail();
     const tokens = await apiSignup(BASE_URL, email, PASSWORD);
     accessToken = tokens.access_token;
+    refreshToken = tokens.refresh_token;
 
     const project = await apiCreateProject(BASE_URL, accessToken, `decrypt-e2e-${Date.now()}`);
     projectId = project.id;
-    serviceRoleKey = project.api_keys.find((k) => k.role === "service_role")!.key;
+    serviceRoleKey = project.api_keys.find((k) => k.role === "service")!.key;
 
     // Create table with mixed columns
     await apiCreateTable(BASE_URL, serviceRoleKey, "contacts", [
-      { name: "id", data_type: "uuid", sensitivity: "plain", owner: true },
+      { name: "contact_id", data_type: "uuid", sensitivity: "plain", owner: true },
       { name: "name", data_type: "text", sensitivity: "plain" },
       { name: "email", data_type: "text", sensitivity: "searchable" },
       { name: "phone", data_type: "text", sensitivity: "private" },
@@ -106,9 +109,9 @@ test.describe("Data viewer + decryption", () => {
         rows: [
           {
             name: "Alice",
-            email_encrypted: encryptedEmail,
+            email: encryptedEmail,
             email_index: "dummy-blind-index-value",
-            phone_encrypted: encryptedPhone,
+            phone: encryptedPhone,
           },
         ],
       }),
@@ -121,8 +124,9 @@ test.describe("Data viewer + decryption", () => {
 
   test("encrypted columns show [encrypted], unlock shows plaintext, lock reverts", async ({ page }) => {
     // Navigate to the table editor
-    await page.goto("/login");
-    await injectTokens(page, accessToken, accessToken);
+    await page.goto("/login", { waitUntil: "networkidle" });
+    await injectTokens(page, accessToken, refreshToken);
+    await mockProjectKeys(page, projectId, serviceRoleKey);
     await page.goto(`/projects/${projectId}/tables/contacts`);
 
     // Wait for table data to load

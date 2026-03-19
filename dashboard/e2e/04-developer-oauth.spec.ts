@@ -22,31 +22,21 @@ const BASE_URL = "http://localhost:8000";
 
 test.describe("Developer OAuth", () => {
   test("Sign in with Google button redirects to OAuth authorize endpoint", async ({ page }) => {
-    // Intercept navigation to the OAuth endpoint
-    let oauthUrl: string | null = null;
+    await page.goto("/login", { waitUntil: "networkidle" });
 
-    await page.route("**/v1/auth/oauth/google/authorize*", async (route) => {
-      oauthUrl = route.request().url();
-      // Return a mock response instead of following the redirect
-      await route.fulfill({
-        status: 400,
-        contentType: "application/json",
-        body: JSON.stringify({
-          detail: "OAuth provider 'google' is not configured",
-        }),
-      });
-    });
-
-    await page.goto("/login");
+    // Start waiting for the navigation request BEFORE clicking
+    const requestPromise = page.waitForRequest(
+      (req) => req.url().includes("/v1/auth/oauth/google/authorize"),
+      { timeout: 10_000 },
+    );
 
     // Click "Sign in with Google"
     await page.getByRole("button", { name: "Sign in with Google" }).click();
 
-    // Wait for the request to be made
-    await page.waitForTimeout(1000);
+    // Wait for the navigation request
+    const request = await requestPromise;
+    const oauthUrl = request.url();
 
-    // The OAuth URL should have been captured
-    expect(oauthUrl).toBeTruthy();
     expect(oauthUrl).toContain("/v1/auth/oauth/google/authorize");
     expect(oauthUrl).toContain("redirect_uri=");
   });
@@ -64,7 +54,7 @@ test.describe("Developer OAuth", () => {
       token_type: "bearer",
     }).toString();
 
-    await page.goto(`/login#${hash}`);
+    await page.goto(`/login#${hash}`, { waitUntil: "networkidle" });
 
     // The LoginPage useEffect should detect the tokens and redirect to /projects
     await expect(page).toHaveURL(/\/projects/, { timeout: 15_000 });
@@ -76,24 +66,19 @@ test.describe("Developer OAuth", () => {
   });
 
   test("Sign in with GitHub button redirects to OAuth authorize endpoint", async ({ page }) => {
-    let githubOauthUrl: string | null = null;
+    await page.goto("/login", { waitUntil: "networkidle" });
 
-    await page.route("**/v1/auth/oauth/github/authorize*", async (route) => {
-      githubOauthUrl = route.request().url();
-      await route.fulfill({
-        status: 400,
-        contentType: "application/json",
-        body: JSON.stringify({
-          detail: "OAuth provider 'github' is not configured",
-        }),
-      });
-    });
+    // Start waiting for the navigation request BEFORE clicking
+    const requestPromise = page.waitForRequest(
+      (req) => req.url().includes("/v1/auth/oauth/github/authorize"),
+      { timeout: 10_000 },
+    );
 
-    await page.goto("/login");
     await page.getByRole("button", { name: "Sign in with GitHub" }).click();
-    await page.waitForTimeout(1000);
 
-    expect(githubOauthUrl).toBeTruthy();
+    const request = await requestPromise;
+    const githubOauthUrl = request.url();
+
     expect(githubOauthUrl).toContain("/v1/auth/oauth/github/authorize");
     expect(githubOauthUrl).toContain("redirect_uri=");
   });

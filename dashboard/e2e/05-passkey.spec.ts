@@ -7,17 +7,17 @@
  * Uses Playwright's CDP session to add a virtual authenticator that
  * automatically responds to WebAuthn requests.
  */
-import { test, expect, type BrowserContext, type CDPSession } from "@playwright/test";
+import { test, expect, type Page, type CDPSession } from "@playwright/test";
 import { testEmail, apiSignup, injectTokens } from "./helpers";
 
 const PASSWORD = "TestPassword123!";
 const BASE_URL = "http://localhost:8000";
 
-async function addVirtualAuthenticator(context: BrowserContext): Promise<{
+async function addVirtualAuthenticator(page: Page): Promise<{
   cdp: CDPSession;
   authenticatorId: string;
 }> {
-  const cdp = await context.newCDPSession(context.pages()[0]);
+  const cdp = await page.context().newCDPSession(page);
   await cdp.send("WebAuthn.enable");
   const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
     options: {
@@ -35,20 +35,19 @@ async function addVirtualAuthenticator(context: BrowserContext): Promise<{
 test.describe("Passkey authentication", () => {
   test("register passkey from settings, sign out, sign in with passkey", async ({
     page,
-    context,
   }) => {
     // 1. Create developer account
     const email = testEmail();
     const tokens = await apiSignup(BASE_URL, email, PASSWORD);
 
-    // 2. Add virtual authenticator via CDP
-    const { cdp, authenticatorId } = await addVirtualAuthenticator(context);
+    // 2. Add virtual authenticator via CDP (must be on same page)
+    const { cdp, authenticatorId } = await addVirtualAuthenticator(page);
 
     try {
       // 3. Navigate to settings page (authenticated)
-      await page.goto("/login");
+      await page.goto("/login", { waitUntil: "networkidle" });
       await injectTokens(page, tokens.access_token, tokens.refresh_token);
-      await page.goto("/settings");
+      await page.goto("/settings", { waitUntil: "networkidle" });
 
       // Wait for settings page to load
       await expect(page.getByText("Security")).toBeVisible({ timeout: 15_000 });
@@ -70,7 +69,7 @@ test.describe("Passkey authentication", () => {
       });
 
       // 6. Navigate to login and sign in with passkey
-      await page.goto("/login");
+      await page.goto("/login", { waitUntil: "networkidle" });
       await page.getByRole("button", { name: "Sign in with Passkey" }).click();
 
       // Virtual authenticator handles the WebAuthn ceremony automatically

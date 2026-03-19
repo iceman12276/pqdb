@@ -11,6 +11,7 @@ import {
   apiCreateProject,
   apiCreateTable,
   injectTokens,
+  mockProjectKeys,
 } from "./helpers";
 
 const PASSWORD = "TestPassword123!";
@@ -18,6 +19,7 @@ const BASE_URL = "http://localhost:8000";
 
 test.describe("Schema visualizer", () => {
   let accessToken: string;
+  let refreshToken: string;
   let projectId: string;
   let serviceRoleKey: string;
 
@@ -27,14 +29,15 @@ test.describe("Schema visualizer", () => {
     // Create developer + project via API for speed
     const tokens = await apiSignup(BASE_URL, email, PASSWORD);
     accessToken = tokens.access_token;
+    refreshToken = tokens.refresh_token;
 
     const project = await apiCreateProject(BASE_URL, accessToken, `schema-e2e-${Date.now()}`);
     projectId = project.id;
-    serviceRoleKey = project.api_keys.find((k) => k.role === "service_role")!.key;
+    serviceRoleKey = project.api_keys.find((k) => k.role === "service")!.key;
 
     // Create a table with mixed sensitivity columns
     await apiCreateTable(BASE_URL, serviceRoleKey, "users", [
-      { name: "id", data_type: "uuid", sensitivity: "plain", owner: true },
+      { name: "user_id", data_type: "uuid", sensitivity: "plain", owner: true },
       { name: "username", data_type: "text", sensitivity: "plain" },
       { name: "email", data_type: "text", sensitivity: "searchable" },
       { name: "ssn", data_type: "text", sensitivity: "private" },
@@ -42,17 +45,18 @@ test.describe("Schema visualizer", () => {
 
     // Create a second table for relationship testing
     await apiCreateTable(BASE_URL, serviceRoleKey, "posts", [
-      { name: "id", data_type: "uuid", sensitivity: "plain", owner: true },
+      { name: "post_id", data_type: "uuid", sensitivity: "plain", owner: true },
       { name: "title", data_type: "text", sensitivity: "plain" },
       { name: "body", data_type: "text", sensitivity: "private" },
-      { name: "user_id", data_type: "uuid", sensitivity: "plain" },
+      { name: "author_id", data_type: "uuid", sensitivity: "plain" },
     ]);
   });
 
   test("displays tables with sensitivity badges in list view", async ({ page }) => {
-    // Inject auth tokens and navigate
-    await page.goto("/login");
-    await injectTokens(page, accessToken, accessToken);
+    // Inject auth tokens and mock project keys so schema fetch works
+    await page.goto("/login", { waitUntil: "networkidle" });
+    await injectTokens(page, accessToken, refreshToken);
+    await mockProjectKeys(page, projectId, serviceRoleKey);
     await page.goto(`/projects/${projectId}/schema`);
 
     // Wait for schema to load
@@ -69,8 +73,9 @@ test.describe("Schema visualizer", () => {
   });
 
   test("ERD tab renders the flow diagram", async ({ page }) => {
-    await page.goto("/login");
-    await injectTokens(page, accessToken, accessToken);
+    await page.goto("/login", { waitUntil: "networkidle" });
+    await injectTokens(page, accessToken, refreshToken);
+    await mockProjectKeys(page, projectId, serviceRoleKey);
     await page.goto(`/projects/${projectId}/schema`);
 
     await expect(page.getByText("Schema")).toBeVisible({ timeout: 15_000 });
@@ -86,8 +91,9 @@ test.describe("Schema visualizer", () => {
   });
 
   test("logical vs physical view toggle works", async ({ page }) => {
-    await page.goto("/login");
-    await injectTokens(page, accessToken, accessToken);
+    await page.goto("/login", { waitUntil: "networkidle" });
+    await injectTokens(page, accessToken, refreshToken);
+    await mockProjectKeys(page, projectId, serviceRoleKey);
     await page.goto(`/projects/${projectId}/schema`);
 
     await expect(page.getByText("Schema")).toBeVisible({ timeout: 15_000 });

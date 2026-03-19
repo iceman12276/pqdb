@@ -5,14 +5,24 @@ import { type Page, expect } from "@playwright/test";
 
 /** Generate a unique email for test isolation. */
 export function testEmail(): string {
-  return `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
+  return `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
 }
 
 /** Sign up a new developer via the Dashboard and navigate to /projects. */
 export async function signUp(page: Page, email: string, password: string): Promise<void> {
-  await page.goto("/signup");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
+  await page.goto("/signup", { waitUntil: "networkidle" });
+  // Wait for React hydration — input must respond to user interaction
+  const emailInput = page.locator("#email");
+  await emailInput.waitFor({ state: "visible", timeout: 10_000 });
+  // Type character-by-character to ensure React picks up the input
+  await emailInput.click();
+  await emailInput.fill(email);
+  const passwordInput = page.locator("#password");
+  await passwordInput.click();
+  await passwordInput.fill(password);
+  // Verify inputs have values before clicking submit
+  await expect(emailInput).toHaveValue(email);
+  await expect(passwordInput).toHaveValue(password);
   await page.getByRole("button", { name: "Create account" }).click();
   // Wait for redirect to /projects
   await expect(page).toHaveURL(/\/projects/, { timeout: 15_000 });
@@ -20,10 +30,17 @@ export async function signUp(page: Page, email: string, password: string): Promi
 
 /** Log in an existing developer via the Dashboard and navigate to /projects. */
 export async function logIn(page: Page, email: string, password: string): Promise<void> {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.goto("/login", { waitUntil: "networkidle" });
+  const emailInput = page.locator("#email");
+  await emailInput.waitFor({ state: "visible", timeout: 10_000 });
+  await emailInput.click();
+  await emailInput.fill(email);
+  const passwordInput = page.locator("#password");
+  await passwordInput.click();
+  await passwordInput.fill(password);
+  await expect(emailInput).toHaveValue(email);
+  await expect(passwordInput).toHaveValue(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(/\/projects/, { timeout: 15_000 });
 }
 
@@ -63,6 +80,58 @@ export async function injectTokens(
     },
     { access_token: accessToken, refresh_token: refreshToken },
   );
+}
+
+/**
+ * Intercept the GET /v1/projects/{projectId}/keys endpoint to return the full
+ * API key as `key_prefix`. The Dashboard uses key_prefix from the list-keys
+ * endpoint as the apikey header; this mock ensures the full key is used so
+ * that project-scoped API calls (schema, tables, etc.) succeed in E2E tests.
+ */
+export async function mockProjectKeys(
+  page: Page,
+  projectId: string,
+  serviceKey: string,
+  anonKey?: string,
+): Promise<void> {
+  // The Dashboard route code looks for role "service_role" (not "service" which
+  // the backend actually returns). We return "service_role" to match the
+  // Dashboard's expectation, and the full key as key_prefix (the real endpoint
+  // only returns a truncated prefix, which breaks backend auth).
+  const keys = [
+    {
+      id: "mock-service-key-id",
+      role: "service_role",
+      key_prefix: serviceKey,
+      created_at: new Date().toISOString(),
+    },
+  ];
+  if (anonKey) {
+    keys.push({
+      id: "mock-anon-key-id",
+      role: "anon",
+      key_prefix: anonKey,
+      created_at: new Date().toISOString(),
+    });
+  }
+
+  await page.route(`**/v1/projects/${projectId}/keys`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(keys),
+    });
+  });
+
+  // Strip the Authorization header from project-scoped /v1/db/* requests.
+  // The Dashboard's api.fetch sends the developer JWT as Authorization,
+  // but the backend's get_current_user validates it as a project user JWT
+  // and returns 401 when the format doesn't match.
+  await page.route("**/v1/db/**", async (route) => {
+    const headers = { ...route.request().headers() };
+    delete headers["authorization"];
+    await route.continue({ headers });
+  });
 }
 
 /**

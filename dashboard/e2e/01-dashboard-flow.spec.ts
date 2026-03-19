@@ -5,7 +5,7 @@
  * navigate to project overview -> see status cards.
  */
 import { test, expect } from "@playwright/test";
-import { testEmail, signUp, createProject } from "./helpers";
+import { testEmail, signUp, logIn, createProject } from "./helpers";
 
 const PASSWORD = "TestPassword123!";
 
@@ -53,13 +53,7 @@ test.describe("Dashboard flow", () => {
     // Clear session (simulate sign-out)
     await page.evaluate(() => sessionStorage.clear());
 
-    // Log in
-    await page.goto("/login");
-    await page.getByLabel("Email").fill(email);
-    await page.getByLabel("Password").fill(PASSWORD);
-    await page.getByRole("button", { name: "Sign in" }).click();
-
-    // Should redirect to projects
-    await expect(page).toHaveURL(/\/projects/, { timeout: 15_000 });
+    // Log in using the helper (handles hydration wait)
+    await logIn(page, email, PASSWORD);
   });
 });
