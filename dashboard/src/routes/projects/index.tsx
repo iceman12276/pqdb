@@ -1,17 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AuthGuard } from "~/components/auth-guard";
 
-export const Route = createFileRoute("/")({
-  component: HomePage,
+export const Route = createFileRoute("/projects/")({
+  component: ProjectsPage,
 });
 
-function HomePage() {
+function ProjectsPage() {
   return (
     <AuthGuard>
       <div>
-        <h1 className="text-2xl font-bold">Welcome to pqdb Dashboard</h1>
+        <h1 className="text-2xl font-bold">Projects</h1>
         <p className="mt-2 text-muted-foreground">
-          Select a project to get started.
+          Your projects will appear here.
         </p>
       </div>
     </AuthGuard>
