@@ -16,7 +16,7 @@ import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects/index'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as ProjectsProjectIdSchemaRouteImport } from './routes/projects/$projectId/schema'
-import { Route as ProjectsProjectIdKeysRouteImport } from './routes/projects/$projectId.keys'
+import { Route as ProjectsProjectIdAuthRouteImport } from './routes/projects/$projectId.auth'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -53,9 +53,9 @@ const ProjectsProjectIdSchemaRoute = ProjectsProjectIdSchemaRouteImport.update({
   path: '/schema',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
-const ProjectsProjectIdKeysRoute = ProjectsProjectIdKeysRouteImport.update({
-  id: '/keys',
-  path: '/keys',
+const ProjectsProjectIdAuthRoute = ProjectsProjectIdAuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
 
@@ -66,7 +66,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
-  '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
+  '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
 }
 export interface FileRoutesByTo {
@@ -76,7 +76,7 @@ export interface FileRoutesByTo {
   '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
   '/projects': typeof ProjectsIndexRoute
   '/settings': typeof SettingsIndexRoute
-  '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
+  '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
 }
 export interface FileRoutesById {
@@ -87,7 +87,7 @@ export interface FileRoutesById {
   '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
-  '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
+  '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
 }
 export interface FileRouteTypes {
@@ -99,7 +99,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/projects/'
     | '/settings/'
-    | '/projects/$projectId/keys'
+    | '/projects/$projectId/auth'
     | '/projects/$projectId/schema'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -109,7 +109,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/projects'
     | '/settings'
-    | '/projects/$projectId/keys'
+    | '/projects/$projectId/auth'
     | '/projects/$projectId/schema'
   id:
     | '__root__'
@@ -119,7 +119,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/projects/'
     | '/settings/'
-    | '/projects/$projectId/keys'
+    | '/projects/$projectId/auth'
     | '/projects/$projectId/schema'
   fileRoutesById: FileRoutesById
 }
@@ -183,23 +183,23 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdSchemaRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
-    '/projects/$projectId/keys': {
-      id: '/projects/$projectId/keys'
-      path: '/keys'
-      fullPath: '/projects/$projectId/keys'
-      preLoaderRoute: typeof ProjectsProjectIdKeysRouteImport
+    '/projects/$projectId/auth': {
+      id: '/projects/$projectId/auth'
+      path: '/auth'
+      fullPath: '/projects/$projectId/auth'
+      preLoaderRoute: typeof ProjectsProjectIdAuthRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
   }
 }
 
 interface ProjectsProjectIdRouteChildren {
-  ProjectsProjectIdKeysRoute: typeof ProjectsProjectIdKeysRoute
+  ProjectsProjectIdAuthRoute: typeof ProjectsProjectIdAuthRoute
   ProjectsProjectIdSchemaRoute: typeof ProjectsProjectIdSchemaRoute
 }
 
 const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
-  ProjectsProjectIdKeysRoute: ProjectsProjectIdKeysRoute,
+  ProjectsProjectIdAuthRoute: ProjectsProjectIdAuthRoute,
   ProjectsProjectIdSchemaRoute: ProjectsProjectIdSchemaRoute,
 }
 
