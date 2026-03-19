@@ -16,6 +16,10 @@ vi.mock("~/lib/navigation", () => ({
   useNavigate: () => mockNavigate,
 }));
 
+vi.mock("~/lib/passkey", () => ({
+  startPasskeyAuthentication: vi.fn(),
+}));
+
 import { LoginPage } from "~/components/login-page";
 
 describe("LoginPage", () => {
@@ -49,17 +53,17 @@ describe("LoginPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("placeholder OAuth buttons are disabled", () => {
+  it("OAuth and passkey buttons are enabled", () => {
     render(<LoginPage />);
     expect(
       screen.getByRole("button", { name: /sign in with google/i }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     expect(
       screen.getByRole("button", { name: /sign in with github/i }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     expect(
       screen.getByRole("button", { name: /sign in with passkey/i }),
-    ).toBeDisabled();
+    ).toBeEnabled();
   });
 
   it("renders a link to signup page", () => {

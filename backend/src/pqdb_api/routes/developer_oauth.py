@@ -24,11 +24,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pqdb_api.database import get_session
+from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.developer import Developer, DeveloperOAuthIdentity
 from pqdb_api.services.auth import (
     JWT_ALGORITHM,
@@ -370,3 +371,59 @@ async def developer_oauth_callback(
     final_url = f"{redirect_uri}#{fragment}"
 
     return RedirectResponse(url=final_url, status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# OAuth identity management (for settings page)
+# ---------------------------------------------------------------------------
+@router.get("/identities")
+async def list_oauth_identities(
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    """List OAuth identities linked to the current developer."""
+    result = await session.execute(
+        select(DeveloperOAuthIdentity).where(
+            DeveloperOAuthIdentity.developer_id == developer_id
+        )
+    )
+    identities = result.scalars().all()
+    return [
+        {
+            "id": str(i.id),
+            "provider": i.provider,
+            "email": i.email,
+            "created_at": i.created_at.isoformat(),
+        }
+        for i in identities
+    ]
+
+
+@router.delete("/identities/{identity_id}")
+async def unlink_oauth_identity(
+    identity_id: uuid.UUID,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """Unlink an OAuth identity from the current developer."""
+    result = await session.execute(
+        select(DeveloperOAuthIdentity).where(
+            DeveloperOAuthIdentity.id == identity_id,
+            DeveloperOAuthIdentity.developer_id == developer_id,
+        )
+    )
+    identity = result.scalar_one_or_none()
+    if identity is None:
+        raise HTTPException(status_code=404, detail="OAuth identity not found")
+
+    await session.execute(
+        delete(DeveloperOAuthIdentity).where(DeveloperOAuthIdentity.id == identity_id)
+    )
+    await session.commit()
+
+    logger.info(
+        "developer_oauth_unlinked",
+        developer_id=str(developer_id),
+        provider=identity.provider,
+    )
+    return {"status": "unlinked"}

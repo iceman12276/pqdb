@@ -127,8 +127,7 @@ async def get_challenge(
         )
         existing_creds = creds_result.scalars().all()
         exclude_credentials = [
-            PublicKeyCredentialDescriptor(id=c.credential_id)
-            for c in existing_creds
+            PublicKeyCredentialDescriptor(id=c.credential_id) for c in existing_creds
         ]
 
         reg_options = webauthn.generate_registration_options(
