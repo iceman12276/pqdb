@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects/index'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
+import { Route as ProjectsProjectIdSchemaRouteImport } from './routes/projects/$projectId/schema'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -46,31 +47,39 @@ const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
   path: '/projects/$projectId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsProjectIdSchemaRoute = ProjectsProjectIdSchemaRouteImport.update({
+  id: '/schema',
+  path: '/schema',
+  getParentRoute: () => ProjectsProjectIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
   '/projects': typeof ProjectsIndexRoute
   '/settings': typeof SettingsIndexRoute
+  '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
-  '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/projects/$projectId': typeof ProjectsProjectIdRouteWithChildren
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/projects/'
     | '/settings/'
+    | '/projects/$projectId/schema'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/projects'
     | '/settings'
+    | '/projects/$projectId/schema'
   id:
     | '__root__'
     | '/'
@@ -97,13 +108,14 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/projects/'
     | '/settings/'
+    | '/projects/$projectId/schema'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   SignupRoute: typeof SignupRoute
-  ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
+  ProjectsProjectIdRoute: typeof ProjectsProjectIdRouteWithChildren
   ProjectsIndexRoute: typeof ProjectsIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
@@ -152,14 +164,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$projectId/schema': {
+      id: '/projects/$projectId/schema'
+      path: '/schema'
+      fullPath: '/projects/$projectId/schema'
+      preLoaderRoute: typeof ProjectsProjectIdSchemaRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
   }
 }
+
+interface ProjectsProjectIdRouteChildren {
+  ProjectsProjectIdSchemaRoute: typeof ProjectsProjectIdSchemaRoute
+}
+
+const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
+  ProjectsProjectIdSchemaRoute: ProjectsProjectIdSchemaRoute,
+}
+
+const ProjectsProjectIdRouteWithChildren =
+  ProjectsProjectIdRoute._addFileChildren(ProjectsProjectIdRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   SignupRoute: SignupRoute,
-  ProjectsProjectIdRoute: ProjectsProjectIdRoute,
+  ProjectsProjectIdRoute: ProjectsProjectIdRouteWithChildren,
   ProjectsIndexRoute: ProjectsIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
