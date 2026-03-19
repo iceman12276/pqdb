@@ -182,8 +182,8 @@
         "Production build succeeds"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #67 merged. Table editor + client-side decryption: EncryptionContext, PQC decrypt, Unlock/Lock, row CRUD. 16 tests."
     },
     {
       "id": "US-050",
@@ -207,8 +207,8 @@
         "Production build succeeds"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #66 merged. Query playground: query builder, results table, EncryptionContext, query history. 24 tests."
     },
     {
       "id": "US-051",
