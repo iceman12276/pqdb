@@ -271,8 +271,8 @@
         "Production build succeeds"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #61 merged. Passkey endpoints (py_webauthn), OAuth button wiring, settings page, Alembic migration. 55 tests (36 backend + 19 dashboard)."
     },
     {
       "id": "US-054",
