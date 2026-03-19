@@ -144,8 +144,8 @@
         "Production build succeeds"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PR #62 merged. Schema browser + ERD visualizer with React Flow, sensitivity badges, logical/physical toggle, Add Column form. 13 tests."
     },
     {
       "id": "US-049",
