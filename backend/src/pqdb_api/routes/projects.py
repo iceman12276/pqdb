@@ -211,6 +211,32 @@ async def list_projects(
     return [_project_response(p) for p in projects]
 
 
+@router.get("/migrations", response_model=list[MigrationItem])
+async def list_migrations(
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[MigrationItem]:
+    """List Alembic migration history from the platform database.
+
+    Reads from the ``alembic_version`` table. Requires developer JWT.
+    Returns an empty list if the table does not exist yet.
+    """
+    from sqlalchemy import text
+
+    try:
+        result = await session.execute(
+            text("SELECT version_num FROM alembic_version")
+        )
+        rows = result.fetchall()
+        return [
+            MigrationItem(version=row[0], applied=True)
+            for row in rows
+        ]
+    except Exception:
+        # alembic_version table may not exist
+        return []
+
+
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: uuid.UUID,
@@ -686,29 +712,3 @@ async def restore_project(
         developer_id=str(developer_id),
     )
     return {"id": str(project.id), "status": project.status}
-
-
-@router.get("/migrations", response_model=list[MigrationItem])
-async def list_migrations(
-    developer_id: uuid.UUID = Depends(get_current_developer_id),
-    session: AsyncSession = Depends(get_session),
-) -> list[MigrationItem]:
-    """List Alembic migration history from the platform database.
-
-    Reads from the ``alembic_version`` table. Requires developer JWT.
-    Returns an empty list if the table does not exist yet.
-    """
-    from sqlalchemy import text
-
-    try:
-        result = await session.execute(
-            text("SELECT version_num FROM alembic_version")
-        )
-        rows = result.fetchall()
-        return [
-            MigrationItem(version=row[0], applied=True)
-            for row in rows
-        ]
-    except Exception:
-        # alembic_version table may not exist
-        return []
