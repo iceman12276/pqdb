@@ -30,6 +30,7 @@ from pqdb_api.routes.passkeys import router as passkeys_router
 from pqdb_api.routes.policies import router as policies_router
 from pqdb_api.routes.project_overview import router as overview_router
 from pqdb_api.routes.projects import router as projects_router
+from pqdb_api.routes.realtime_ws import realtime_ws_endpoint
 from pqdb_api.routes.roles import router as roles_router
 from pqdb_api.routes.user_auth import router as user_auth_router
 from pqdb_api.services.auth import generate_ed25519_keypair
@@ -113,5 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(developer_oauth_router)
     app.include_router(passkeys_router)
     app.include_router(policies_router)
+
+    app.add_websocket_route("/v1/realtime", realtime_ws_endpoint)
 
     return app
