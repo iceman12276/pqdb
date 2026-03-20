@@ -111,8 +111,8 @@
       "dependsOn": [
         "US-064"
       ],
-      "passes": false,
-      "notes": "",
+      "passes": true,
+      "notes": "PR #84 merged. Realtime RLS: owner/all/none, service bypass, fallback. 26 tests.",
       "priority": 3,
       "description": "",
       "acceptanceCriteria": []
