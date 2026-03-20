@@ -113,7 +113,7 @@ class TestCreateIndex:
         _create_vector_table(client)
         # Insert enough rows for IVFFlat to work
         rows = [
-            {"title": f"doc_{i}", "embedding": f"[{i*0.1},{i*0.2},{i*0.3}]"}
+            {"title": f"doc_{i}", "embedding": f"[{i * 0.1},{i * 0.2},{i * 0.3}]"}
             for i in range(10)
         ]
         client.post("/v1/db/documents/insert", json={"rows": rows})
@@ -253,9 +253,7 @@ class TestDropIndex:
 
     def test_400_wrong_table_prefix(self, client: TestClient) -> None:
         _create_vector_table(client)
-        resp = client.delete(
-            "/v1/db/tables/documents/indexes/idx_other_embedding_hnsw"
-        )
+        resp = client.delete("/v1/db/tables/documents/indexes/idx_other_embedding_hnsw")
         assert resp.status_code == 400
         assert "does not belong" in resp.json()["detail"]
 

@@ -71,9 +71,7 @@ def validate_index_request(
         raise IndexError(f"Column {column!r} not found")
 
     if meta["sensitivity"] != "plain":
-        raise IndexError(
-            f"Column {column!r} must be plain sensitivity for indexing"
-        )
+        raise IndexError(f"Column {column!r} must be plain sensitivity for indexing")
 
     if not _VECTOR_RE.match(meta["data_type"]):
         raise IndexError(
@@ -147,8 +145,7 @@ async def create_index(
     # Check if index already exists
     result = await session.execute(
         text(
-            "SELECT 1 FROM pg_indexes "
-            "WHERE schemaname = 'public' AND indexname = :name"
+            "SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = :name"
         ),
         {"name": index_name},
     )
@@ -266,8 +263,7 @@ async def drop_index(
 
     result = await session.execute(
         text(
-            "SELECT 1 FROM pg_indexes "
-            "WHERE schemaname = 'public' AND indexname = :name"
+            "SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = :name"
         ),
         {"name": index_name},
     )
