@@ -875,7 +875,9 @@ async def execute_sql(
             # Use a read-only transaction for safety
             await session.execute(text("SET TRANSACTION READ ONLY"))
 
-        result = await session.execute(text(body.query))
+        raw_result = await session.execute(text(body.query))
+        # Cast to Any so mypy allows attribute access on CursorResult
+        result: Any = raw_result
 
         if result.returns_rows:
             columns = list(result.keys())
@@ -914,7 +916,4 @@ async def list_extensions(
     result = await session.execute(
         text("SELECT extname, extversion FROM pg_extension ORDER BY extname")
     )
-    return [
-        {"name": row[0], "version": row[1]}
-        for row in result.fetchall()
-    ]
+    return [{"name": row[0], "version": row[1]} for row in result.fetchall()]

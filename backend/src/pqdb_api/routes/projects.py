@@ -71,6 +71,7 @@ def _validate_restore_transition(current_status: str) -> None:
             "Only paused or archived projects can be restored."
         )
 
+
 router = APIRouter(prefix="/v1/projects", tags=["projects"])
 
 
@@ -224,14 +225,9 @@ async def list_migrations(
     from sqlalchemy import text
 
     try:
-        result = await session.execute(
-            text("SELECT version_num FROM alembic_version")
-        )
+        result = await session.execute(text("SELECT version_num FROM alembic_version"))
         rows = result.fetchall()
-        return [
-            MigrationItem(version=row[0], applied=True)
-            for row in rows
-        ]
+        return [MigrationItem(version=row[0], applied=True) for row in rows]
     except Exception:
         # alembic_version table may not exist
         return []

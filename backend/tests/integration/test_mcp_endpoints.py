@@ -24,7 +24,6 @@ from tests.integration.conftest import (
     signup_and_get_token,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -194,9 +193,7 @@ class TestSqlEndpointWriteMode:
         assert resp2.status_code == 200
         assert resp2.json()["rows"] == []
 
-    def test_sql_write_mode_insert_and_read(
-        self, project_client: TestClient
-    ) -> None:
+    def test_sql_write_mode_insert_and_read(self, project_client: TestClient) -> None:
         # Create table
         project_client.post(
             "/v1/db/sql",
@@ -558,9 +555,7 @@ class TestRestoreEndpoint:
         )
         assert resp.status_code == 404
 
-    def test_restore_updates_project_status(
-        self, platform_client: TestClient
-    ) -> None:
+    def test_restore_updates_project_status(self, platform_client: TestClient) -> None:
         """After restoring, GET returns the active status."""
         token = signup_and_get_token(platform_client)
         project = create_project(platform_client, token)
