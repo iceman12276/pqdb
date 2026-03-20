@@ -15,6 +15,23 @@ export interface FilterClause {
 /** Order direction. */
 export type OrderDirection = "asc" | "desc";
 
+/** Distance metric for vector similarity search. */
+export type DistanceMetric = "cosine" | "l2" | "inner_product";
+
+/** Options for .similarTo() vector search. */
+export interface SimilarToOptions {
+  limit: number;
+  distance?: DistanceMetric;
+}
+
+/** Vector similarity search clause sent to the backend. */
+export interface SimilarToClause {
+  column: string;
+  vector: number[];
+  limit: number;
+  distance: DistanceMetric;
+}
+
 /** Query modifiers (limit, offset, order). */
 export interface QueryModifiers {
   limit?: number;
@@ -27,6 +44,7 @@ export interface SelectPayload {
   columns: string[] | "*";
   filters: FilterClause[];
   modifiers: QueryModifiers;
+  similar_to?: SimilarToClause;
 }
 
 /** INSERT query payload. */

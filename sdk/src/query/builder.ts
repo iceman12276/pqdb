@@ -12,6 +12,8 @@ import type {
   FilterOp,
   OrderDirection,
   QueryModifiers,
+  SimilarToClause,
+  SimilarToOptions,
 } from "./types.js";
 import type { CryptoContext } from "./crypto-context.js";
 import {
@@ -97,6 +99,7 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
   private readonly schema: TableSchema<S>;
   private readonly cryptoCtx: CryptoContext | null;
   private readonly getUserId: UserIdProvider | null;
+  private readonly _similarTo: SimilarToClause | null;
 
   constructor(
     http: HttpClient,
@@ -108,6 +111,7 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
     filters: FilterClause[] = [],
     modifiers: QueryModifiers = {},
     getUserId: UserIdProvider | null = null,
+    similarTo: SimilarToClause | null = null,
   ) {
     this.http = http;
     this.tableName = tableName;
@@ -118,6 +122,7 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
     this.filters = filters;
     this.modifiers = modifiers;
     this.getUserId = getUserId;
+    this._similarTo = similarTo;
   }
 
   /** Add an equals filter. */
@@ -162,6 +167,7 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
       this.filters,
       { ...this.modifiers, limit: n },
       this.getUserId,
+      this._similarTo,
     );
   }
 
@@ -177,11 +183,17 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
       this.filters,
       { ...this.modifiers, offset: n },
       this.getUserId,
+      this._similarTo,
     );
   }
 
-  /** Set ordering. */
+  /** Set ordering. Cannot be combined with .similarTo(). */
   order(col: string, direction: OrderDirection): ExecutableQuery<Row, S> {
+    if (this._similarTo) {
+      throw new Error(
+        "Cannot combine .similarTo() with .order() — vector search results are ordered by distance",
+      );
+    }
     return new ExecutableQuery<Row, S>(
       this.http,
       this.tableName,
@@ -192,6 +204,38 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
       this.filters,
       { ...this.modifiers, order: { column: col, direction } },
       this.getUserId,
+      this._similarTo,
+    );
+  }
+
+  /** Add vector similarity search. Cannot be combined with .order(). */
+  similarTo(
+    column: string,
+    vector: number[],
+    options: SimilarToOptions,
+  ): ExecutableQuery<Row, S> {
+    if (this.modifiers.order) {
+      throw new Error(
+        "Cannot combine .similarTo() with .order() — vector search results are ordered by distance",
+      );
+    }
+    const clause: SimilarToClause = {
+      column,
+      vector,
+      limit: options.limit,
+      distance: options.distance ?? "cosine",
+    };
+    return new ExecutableQuery<Row, S>(
+      this.http,
+      this.tableName,
+      this.op,
+      this.payload,
+      this.schema,
+      this.cryptoCtx,
+      this.filters,
+      this.modifiers,
+      this.getUserId,
+      clause,
     );
   }
 
@@ -335,6 +379,7 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
       [...this.filters, { column: col, op, value }],
       this.modifiers,
       this.getUserId,
+      this._similarTo,
     );
   }
 
@@ -345,12 +390,17 @@ class ExecutableQuery<Row, S extends SchemaColumns = SchemaColumns> {
   ): Record<string, unknown> {
     const payload = payloadOverride ?? payloadBase ?? this.payload;
     switch (this.op) {
-      case "select":
-        return {
+      case "select": {
+        const body: Record<string, unknown> = {
           ...payload,
           filters,
           modifiers: this.modifiers,
         };
+        if (this._similarTo) {
+          body.similar_to = this._similarTo;
+        }
+        return body;
+      }
       case "insert":
         return { ...payload };
       case "update":
