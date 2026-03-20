@@ -5,6 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createClient } from "@pqdb/client";
 import type { PqdbClient } from "@pqdb/client";
 import type { ServerConfig } from "./config.js";
+import { registerSchemaTools } from "./schema-tools.js";
 
 export const SERVER_NAME = "pqdb-mcp";
 export const SERVER_VERSION = "0.1.0";
@@ -65,6 +66,9 @@ export function createPqdbMcpServer(config: ServerConfig): PqdbMcpServer {
       ],
     }),
   );
+
+  // Register schema introspection tools and resources (US-057)
+  registerSchemaTools(mcpServer, config.projectUrl, config.apiKey);
 
   return { mcpServer, pqdbClient, encryptionEnabled };
 }
