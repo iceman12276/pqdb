@@ -43,8 +43,8 @@
       "dependsOn": [
         "US-058"
       ],
-      "passes": false,
-      "notes": "",
+      "passes": true,
+      "notes": "PR #85 merged. MCP auth tools + NL query + similar_to. 108 tests.",
       "priority": 4,
       "description": "",
       "acceptanceCriteria": []
@@ -123,8 +123,8 @@
       "dependsOn": [
         "US-065"
       ],
-      "passes": false,
-      "notes": "",
+      "passes": true,
+      "notes": "PR #86 merged. SDK realtime client: subscribe, reconnect, decryption. 22 tests.",
       "priority": 4,
       "description": "",
       "acceptanceCriteria": []
