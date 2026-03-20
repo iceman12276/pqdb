@@ -31,8 +31,8 @@
       "dependsOn": [
         "US-057"
       ],
-      "passes": false,
-      "notes": "",
+      "passes": true,
+      "notes": "PR #83 merged. MCP CRUD tools: query/insert/update/delete with encryption. 24 tests.",
       "priority": 3,
       "description": "",
       "acceptanceCriteria": []
