@@ -65,8 +65,8 @@
       "dependsOn": [
         "US-060"
       ],
-      "passes": false,
-      "notes": "",
+      "passes": true,
+      "notes": "PR #81 merged. Vector index management: HNSW+IVFFlat, Dashboard UI. 28 tests.",
       "priority": 5,
       "description": "",
       "acceptanceCriteria": []
