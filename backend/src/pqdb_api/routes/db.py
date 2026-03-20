@@ -160,6 +160,28 @@ class DeleteRequest(BaseModel):
     filters: list[FilterSchema] = []
 
 
+class SqlRequest(BaseModel):
+    """Request body for POST /v1/db/sql."""
+
+    query: str
+    mode: str = "read"
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        if v not in ("read", "write"):
+            msg = "mode must be 'read' or 'write'"
+            raise ValueError(msg)
+        return v
+
+
+class ExtensionItem(BaseModel):
+    """A single Postgres extension."""
+
+    name: str
+    version: str
+
+
 # --- Helpers ---
 
 
@@ -826,3 +848,72 @@ async def delete_rows(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return {"data": deleted}
+
+
+# --- MCP expansion endpoints ---
+
+
+@router.post("/sql")
+async def execute_sql(
+    body: SqlRequest,
+    session: AsyncSession = Depends(get_project_session),
+    context: ProjectContext = Depends(get_project_context),
+) -> dict[str, Any]:
+    """Execute raw SQL against the project database.
+
+    Requires a service-role API key. Read-only by default (wraps in a
+    read-only transaction). Set ``mode: "write"`` to allow mutations.
+    """
+    if context.key_role != "service":
+        raise HTTPException(
+            status_code=403,
+            detail="Only service_role API keys can execute raw SQL",
+        )
+
+    try:
+        if body.mode == "read":
+            # Use a read-only transaction for safety
+            await session.execute(text("SET TRANSACTION READ ONLY"))
+
+        raw_result = await session.execute(text(body.query))
+        # Cast to Any so mypy allows attribute access on CursorResult
+        result: Any = raw_result
+
+        if result.returns_rows:
+            columns = list(result.keys())
+            rows = _rows_to_dicts(result)
+            row_count = len(rows)
+        else:
+            columns = []
+            rows = []
+            row_count = result.rowcount if result.rowcount >= 0 else 0
+
+        if body.mode == "write":
+            await session.commit()
+
+        return {
+            "rows": rows,
+            "columns": columns,
+            "row_count": row_count,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await session.rollback()
+        logger.error("sql_execution_failed", error=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/extensions")
+async def list_extensions(
+    session: AsyncSession = Depends(get_project_session),
+    context: ProjectContext = Depends(get_project_context),
+) -> list[dict[str, str]]:
+    """List installed Postgres extensions in the project database.
+
+    Requires a valid API key (any role).
+    """
+    result = await session.execute(
+        text("SELECT extname, extversion FROM pg_extension ORDER BY extname")
+    )
+    return [{"name": row[0], "version": row[1]} for row in result.fetchall()]

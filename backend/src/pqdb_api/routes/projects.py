@@ -36,6 +36,42 @@ from pqdb_api.services.vault import VaultClient, VaultError, VersionedHmacKeys
 
 logger = structlog.get_logger()
 
+
+class MigrationItem(BaseModel):
+    """A single Alembic migration entry."""
+
+    version: str
+    applied: bool
+
+
+def _validate_pause_transition(current_status: str) -> None:
+    """Validate that a project can transition to 'paused'.
+
+    Only active projects can be paused.
+
+    Raises ValueError if the transition is invalid.
+    """
+    if current_status != "active":
+        raise ValueError(
+            f"Cannot pause project with status '{current_status}'. "
+            "Only active projects can be paused."
+        )
+
+
+def _validate_restore_transition(current_status: str) -> None:
+    """Validate that a project can transition to 'active' via restore.
+
+    Only paused or archived projects can be restored.
+
+    Raises ValueError if the transition is invalid.
+    """
+    if current_status not in ("paused", "archived"):
+        raise ValueError(
+            f"Cannot restore project with status '{current_status}'. "
+            "Only paused or archived projects can be restored."
+        )
+
+
 router = APIRouter(prefix="/v1/projects", tags=["projects"])
 
 
@@ -174,6 +210,27 @@ async def list_projects(
     )
     projects = result.scalars().all()
     return [_project_response(p) for p in projects]
+
+
+@router.get("/migrations", response_model=list[MigrationItem])
+async def list_migrations(
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[MigrationItem]:
+    """List Alembic migration history from the platform database.
+
+    Reads from the ``alembic_version`` table. Requires developer JWT.
+    Returns an empty list if the table does not exist yet.
+    """
+    from sqlalchemy import text
+
+    try:
+        result = await session.execute(text("SELECT version_num FROM alembic_version"))
+        rows = result.fetchall()
+        return [MigrationItem(version=row[0], applied=True) for row in rows]
+    except Exception:
+        # alembic_version table may not exist
+        return []
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -572,3 +629,82 @@ async def delete_hmac_key_version(
         "current_version": updated_keys.current_version,
         "remaining_versions": list(updated_keys.keys.keys()),
     }
+
+
+# --- MCP expansion endpoints ---
+
+
+@router.post("/{project_id}/pause")
+async def pause_project(
+    project_id: uuid.UUID,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """Pause an active project.
+
+    Sets project status to 'paused'. Only active projects can be paused.
+    Requires developer JWT with project ownership.
+    """
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == developer_id,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    try:
+        _validate_pause_transition(project.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    project.status = "paused"
+    await session.commit()
+    await session.refresh(project)
+
+    logger.info(
+        "project_paused",
+        project_id=str(project.id),
+        developer_id=str(developer_id),
+    )
+    return {"id": str(project.id), "status": project.status}
+
+
+@router.post("/{project_id}/restore")
+async def restore_project(
+    project_id: uuid.UUID,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """Restore a paused or archived project.
+
+    Sets project status back to 'active'. Only paused or archived
+    projects can be restored. Requires developer JWT with project ownership.
+    """
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == developer_id,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    try:
+        _validate_restore_transition(project.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    project.status = "active"
+    await session.commit()
+    await session.refresh(project)
+
+    logger.info(
+        "project_restored",
+        project_id=str(project.id),
+        developer_id=str(developer_id),
+    )
+    return {"id": str(project.id), "status": project.status}
