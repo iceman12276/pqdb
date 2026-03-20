@@ -10,3 +10,6 @@ export { parseArgs, buildConfig } from "./config.js";
 export type { ServerConfig, Transport, ParsedArgs } from "./config.js";
 export { registerSchemaTools } from "./schema-tools.js";
 export { registerCrudTools } from "./crud-tools.js";
+export { registerAuthTools } from "./auth-tools.js";
+export { registerNlQueryTool, translateNaturalLanguage } from "./nl-query.js";
+export type { SchemaInfo, ColumnInfo, TranslationResult } from "./nl-query.js";

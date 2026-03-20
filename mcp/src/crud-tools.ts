@@ -126,8 +126,17 @@ export function registerCrudTools(
         .enum(["asc", "desc"])
         .optional()
         .describe("Order direction (default: asc)"),
+      similar_to: z
+        .object({
+          column: z.string().describe("Vector column to search"),
+          vector: z.array(z.number()).describe("Query vector"),
+          limit: z.number().optional().describe("Max similar results"),
+          distance: z.string().optional().describe("Distance metric (e.g. cosine, l2)"),
+        })
+        .optional()
+        .describe("Vector similarity search parameters"),
     },
-    async ({ table, columns, filters, limit, offset, order_by, order_dir }) => {
+    async ({ table, columns, filters, limit, offset, order_by, order_dir, similar_to }) => {
       try {
         const body: Record<string, unknown> = {
           columns: columns ?? ["*"],
@@ -139,6 +148,10 @@ export function registerCrudTools(
             order_dir: order_dir ?? null,
           },
         };
+
+        if (similar_to) {
+          body.similar_to = similar_to;
+        }
 
         const result = await pqdbPost<{ data: Record<string, unknown>[] }>(
           projectUrl,
