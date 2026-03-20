@@ -1,18 +1,20 @@
 """Unit tests for the realtime WebSocket handler.
 
 Tests protocol messages, subscription management, rate limiting,
-and connection lifecycle without requiring a real database.
+connection lifecycle, and RLS enforcement without requiring a real database.
 """
 
 from __future__ import annotations
 
 import json
+import uuid
 
 from pqdb_api.services.realtime_ws import (
     ConnectionState,
     RealtimeProtocol,
     SubscriptionManager,
     WSRateLimiter,
+    check_realtime_rls,
     parse_ws_message,
 )
 
@@ -187,3 +189,274 @@ class TestRealtimeProtocol:
         assert msg["type"] == "event"
         assert msg["event"] == "DELETE"
         assert msg["row"] == {"id": "abc"}
+
+
+# ---------------------------------------------------------------------------
+# ConnectionState with user_id
+# ---------------------------------------------------------------------------
+class TestConnectionStateUserId:
+    def test_user_id_defaults_to_none(self) -> None:
+        state = ConnectionState(project_id="proj-1", key_role="anon")
+        assert state.user_id is None
+
+    def test_user_id_can_be_set(self) -> None:
+        uid = uuid.uuid4()
+        state = ConnectionState(project_id="proj-1", key_role="anon", user_id=uid)
+        assert state.user_id == uid
+
+    def test_user_role_defaults_to_none(self) -> None:
+        state = ConnectionState(project_id="proj-1", key_role="anon")
+        assert state.user_role is None
+
+    def test_user_role_can_be_set(self) -> None:
+        state = ConnectionState(
+            project_id="proj-1", key_role="anon", user_role="authenticated"
+        )
+        assert state.user_role == "authenticated"
+
+
+# ---------------------------------------------------------------------------
+# Realtime RLS enforcement (check_realtime_rls)
+# ---------------------------------------------------------------------------
+_OWNER_USER_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+_OTHER_USER_ID = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+
+_COLS_WITH_OWNER: list[dict[str, object]] = [
+    {"name": "id", "sensitivity": "plain", "data_type": "uuid", "is_owner": False},
+    {"name": "user_id", "sensitivity": "plain", "data_type": "uuid", "is_owner": True},
+    {"name": "data", "sensitivity": "plain", "data_type": "text", "is_owner": False},
+]
+
+_COLS_NO_OWNER: list[dict[str, object]] = [
+    {"name": "id", "sensitivity": "plain", "data_type": "uuid", "is_owner": False},
+    {"name": "data", "sensitivity": "plain", "data_type": "text", "is_owner": False},
+]
+
+
+class TestCheckRealtimeRls:
+    """Tests for per-event RLS check before WebSocket delivery."""
+
+    # --- Service role bypass ---
+
+    def test_service_role_always_receives(self) -> None:
+        """Service role always receives all events (admin bypass)."""
+        row = {"id": "1", "user_id": str(_OTHER_USER_ID), "data": "secret"}
+        result = check_realtime_rls(
+            row=row,
+            key_role="service",
+            user_id=None,
+            user_role=None,
+            columns_meta=_COLS_WITH_OWNER,
+            policies=None,
+        )
+        assert result is True
+
+    def test_service_role_receives_with_none_policy(self) -> None:
+        """Service role bypasses even 'none' policies."""
+        policy = {"condition": "none", "operation": "select", "role": "authenticated"}
+        result = check_realtime_rls(
+            row={"id": "1"},
+            key_role="service",
+            user_id=None,
+            user_role=None,
+            columns_meta=_COLS_NO_OWNER,
+            policies=[policy],
+        )
+        assert result is True
+
+    # --- No policies + no owner column = open access (Phase 1) ---
+
+    def test_no_policies_no_owner_delivers_to_anon(self) -> None:
+        """No policies + no owner column: all roles receive."""
+        result = check_realtime_rls(
+            row={"id": "1", "data": "hello"},
+            key_role="anon",
+            user_id=None,
+            user_role=None,
+            columns_meta=_COLS_NO_OWNER,
+            policies=None,
+        )
+        assert result is True
+
+    # --- No policies + owner column = basic owner-column RLS ---
+
+    def test_no_policies_owner_column_delivers_to_owner(self) -> None:
+        """Fallback: owner-column RLS delivers if row matches user_id."""
+        row = {"id": "1", "user_id": str(_OWNER_USER_ID), "data": "mine"}
+        result = check_realtime_rls(
+            row=row,
+            key_role="anon",
+            user_id=_OWNER_USER_ID,
+            user_role=None,
+            columns_meta=_COLS_WITH_OWNER,
+            policies=None,
+        )
+        assert result is True
+
+    def test_no_policies_owner_column_denies_non_owner(self) -> None:
+        """Fallback: owner-column RLS denies if row doesn't match user_id."""
+        row = {"id": "1", "user_id": str(_OWNER_USER_ID), "data": "mine"}
+        result = check_realtime_rls(
+            row=row,
+            key_role="anon",
+            user_id=_OTHER_USER_ID,
+            user_role=None,
+            columns_meta=_COLS_WITH_OWNER,
+            policies=None,
+        )
+        assert result is False
+
+    def test_no_policies_owner_column_denies_no_user_id(self) -> None:
+        """Fallback: owner-column RLS denies if no user_id provided."""
+        row = {"id": "1", "user_id": str(_OWNER_USER_ID), "data": "mine"}
+        result = check_realtime_rls(
+            row=row,
+            key_role="anon",
+            user_id=None,
+            user_role=None,
+            columns_meta=_COLS_WITH_OWNER,
+            policies=None,
+        )
+        assert result is False
+
+    # --- Policy condition: all ---
+
+    def test_policy_all_delivers(self) -> None:
+        """Policy condition=all: deliver to everyone."""
+        policy = {"condition": "all", "operation": "select", "role": "authenticated"}
+        result = check_realtime_rls(
+            row={"id": "1", "data": "public"},
+            key_role="anon",
+            user_id=_OWNER_USER_ID,
+            user_role="authenticated",
+            columns_meta=_COLS_NO_OWNER,
+            policies=[policy],
+        )
+        assert result is True
+
+    # --- Policy condition: none ---
+
+    def test_policy_none_denies(self) -> None:
+        """Policy condition=none: don't deliver."""
+        policy = {"condition": "none", "operation": "select", "role": "authenticated"}
+        result = check_realtime_rls(
+            row={"id": "1", "data": "secret"},
+            key_role="anon",
+            user_id=_OWNER_USER_ID,
+            user_role="authenticated",
+            columns_meta=_COLS_NO_OWNER,
+            policies=[policy],
+        )
+        assert result is False
+
+    # --- Policy condition: owner ---
+
+    def test_policy_owner_delivers_to_owner(self) -> None:
+        """Policy condition=owner: deliver if row owner matches user_id."""
+        policy = {"condition": "owner", "operation": "select", "role": "authenticated"}
+        row = {"id": "1", "user_id": str(_OWNER_USER_ID), "data": "mine"}
+        result = check_realtime_rls(
+            row=row,
+            key_role="anon",
+            user_id=_OWNER_USER_ID,
+            user_role="authenticated",
+            columns_meta=_COLS_WITH_OWNER,
+            policies=[policy],
+        )
+        assert result is True
+
+    def test_policy_owner_denies_non_owner(self) -> None:
+        """Policy condition=owner: deny if row owner doesn't match."""
+        policy = {"condition": "owner", "operation": "select", "role": "authenticated"}
+        row = {"id": "1", "user_id": str(_OWNER_USER_ID), "data": "mine"}
+        result = check_realtime_rls(
+            row=row,
+            key_role="anon",
+            user_id=_OTHER_USER_ID,
+            user_role="authenticated",
+            columns_meta=_COLS_WITH_OWNER,
+            policies=[policy],
+        )
+        assert result is False
+
+    def test_policy_owner_denies_no_user_id(self) -> None:
+        """Policy condition=owner: deny if no user_id."""
+        policy = {"condition": "owner", "operation": "select", "role": "authenticated"}
+        row = {"id": "1", "user_id": str(_OWNER_USER_ID), "data": "mine"}
+        result = check_realtime_rls(
+            row=row,
+            key_role="anon",
+            user_id=None,
+            user_role="authenticated",
+            columns_meta=_COLS_WITH_OWNER,
+            policies=[policy],
+        )
+        assert result is False
+
+    def test_policy_owner_denies_no_owner_column(self) -> None:
+        """Policy condition=owner: deny if table has no owner column."""
+        policy = {"condition": "owner", "operation": "select", "role": "authenticated"}
+        row = {"id": "1", "data": "orphan"}
+        result = check_realtime_rls(
+            row=row,
+            key_role="anon",
+            user_id=_OWNER_USER_ID,
+            user_role="authenticated",
+            columns_meta=_COLS_NO_OWNER,
+            policies=[policy],
+        )
+        assert result is False
+
+    # --- No matching policy = deny (default none) ---
+
+    def test_empty_policies_denies(self) -> None:
+        """Empty policies list (no match for role/op): deny."""
+        result = check_realtime_rls(
+            row={"id": "1", "data": "nope"},
+            key_role="anon",
+            user_id=_OWNER_USER_ID,
+            user_role="authenticated",
+            columns_meta=_COLS_NO_OWNER,
+            policies=[],
+        )
+        assert result is False
+
+    # --- DELETE events (id-only row) ---
+
+    def test_delete_event_service_role_delivers(self) -> None:
+        """DELETE events: service role always receives."""
+        result = check_realtime_rls(
+            row={"id": "1"},
+            key_role="service",
+            user_id=None,
+            user_role=None,
+            columns_meta=_COLS_WITH_OWNER,
+            policies=None,
+        )
+        assert result is True
+
+    def test_delete_event_policy_all_delivers(self) -> None:
+        """DELETE events with policy=all: deliver."""
+        policy = {"condition": "all", "operation": "select", "role": "authenticated"}
+        result = check_realtime_rls(
+            row={"id": "1"},
+            key_role="anon",
+            user_id=_OWNER_USER_ID,
+            user_role="authenticated",
+            columns_meta=_COLS_NO_OWNER,
+            policies=[policy],
+        )
+        assert result is True
+
+    def test_delete_event_policy_owner_denies_missing_owner_in_row(self) -> None:
+        """DELETE events with policy=owner: deny (row has no owner data)."""
+        policy = {"condition": "owner", "operation": "select", "role": "authenticated"}
+        result = check_realtime_rls(
+            row={"id": "1"},
+            key_role="anon",
+            user_id=_OWNER_USER_ID,
+            user_role="authenticated",
+            columns_meta=_COLS_WITH_OWNER,
+            policies=[policy],
+        )
+        assert result is False

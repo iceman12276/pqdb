@@ -1,14 +1,15 @@
 """Realtime WebSocket protocol and connection management.
 
-Defines the message protocol, subscription tracking, and rate limiting
-for WebSocket connections. The route handler in routes/realtime_ws.py
-uses these building blocks.
+Defines the message protocol, subscription tracking, rate limiting,
+and per-event RLS enforcement for WebSocket connections. The route
+handler in routes/realtime_ws.py uses these building blocks.
 """
 
 from __future__ import annotations
 
 import json
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -129,6 +130,8 @@ class ConnectionState:
 
     project_id: str
     key_role: str
+    user_id: uuid.UUID | None = None
+    user_role: str | None = None
     subscriptions: SubscriptionManager = field(default_factory=SubscriptionManager)
 
 
@@ -162,3 +165,83 @@ class RealtimeProtocol:
             "event": event_type,
             "row": row,
         }
+
+
+# ---------------------------------------------------------------------------
+# Per-event RLS enforcement for realtime delivery
+# ---------------------------------------------------------------------------
+def _find_owner_column(columns_meta: list[dict[str, Any]]) -> str | None:
+    """Find the owner column name from column metadata, if any."""
+    for col in columns_meta:
+        if col.get("is_owner"):
+            return str(col["name"])
+    return None
+
+
+def check_realtime_rls(
+    *,
+    row: dict[str, Any],
+    key_role: str,
+    user_id: uuid.UUID | None,
+    user_role: str | None,
+    columns_meta: list[dict[str, Any]],
+    policies: list[dict[str, Any]] | None,
+) -> bool:
+    """Check whether a realtime event should be delivered to a subscriber.
+
+    Uses the fetched row data to evaluate RLS — no extra DB query needed.
+
+    Returns True if the event should be delivered, False to suppress.
+
+    Rules:
+    - Service role always receives (admin bypass).
+    - If policies is not None (policies exist for this table):
+      - Empty list (no match for role/op): deny.
+      - condition=none: deny.
+      - condition=all: deliver.
+      - condition=owner: deliver if row[owner_col] == user_id.
+    - If policies is None (no policies for this table):
+      - No owner column: deliver (Phase 1 open access).
+      - Owner column present: deliver if row[owner_col] == user_id.
+    """
+    # Service role always bypasses
+    if key_role == "service":
+        return True
+
+    owner_col = _find_owner_column(columns_meta)
+
+    # Policy-based RLS
+    if policies is not None:
+        if len(policies) == 0:
+            return False
+
+        condition = policies[0].get("condition")
+
+        if condition == "none":
+            return False
+
+        if condition == "all":
+            return True
+
+        if condition == "owner":
+            if user_id is None or owner_col is None:
+                return False
+            row_owner = row.get(owner_col)
+            if row_owner is None:
+                return False
+            return str(row_owner) == str(user_id)
+
+        # Unknown condition — deny
+        return False
+
+    # Fallback: basic owner-column RLS (no policies defined)
+    if owner_col is None:
+        return True
+
+    if user_id is None:
+        return False
+
+    row_owner = row.get(owner_col)
+    if row_owner is None:
+        return False
+    return str(row_owner) == str(user_id)
