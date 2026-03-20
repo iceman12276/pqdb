@@ -28,7 +28,7 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Authentication", icon: Shield, path: "/auth" },
   { label: "Realtime", icon: Radio, path: "/realtime" },
   { label: "Logs", icon: ScrollText, path: "/logs" },
-  { label: "MCP", icon: Bot, path: "/mcp", disabled: true },
+  { label: "MCP", icon: Bot, path: "/mcp" },
   { label: "Project Settings", icon: Settings, path: "/settings" },
 ];
 

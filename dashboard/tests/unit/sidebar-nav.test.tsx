@@ -59,15 +59,15 @@ describe("SidebarNav", () => {
     }
   });
 
-  it("grays out MCP item (Realtime is now active)", () => {
+  it("grays out Realtime item (MCP is now active)", () => {
     mockUseParams.mockReturnValue({ projectId: "proj-123" });
     render(<SidebarNav />);
 
     const realtimeItem = screen.getByText("Realtime").closest("a");
-    const mcpItem = screen.getByText("MCP").closest("a");
+    expect(realtimeItem).toHaveAttribute("aria-disabled", "true");
 
-    expect(realtimeItem).not.toHaveAttribute("aria-disabled", "true");
-    expect(mcpItem).toHaveAttribute("aria-disabled", "true");
+    const mcpItem = screen.getByText("MCP").closest("a");
+    expect(mcpItem).not.toHaveAttribute("aria-disabled", "true");
   });
 
   it("does not gray out non-disabled items", () => {
@@ -96,9 +96,6 @@ describe("SidebarNav", () => {
 
     const authLink = screen.getByText("Authentication").closest("a");
     expect(authLink).toHaveAttribute("href", "/projects/proj-abc/auth");
-
-    const realtimeLink = screen.getByText("Realtime").closest("a");
-    expect(realtimeLink).toHaveAttribute("href", "/projects/proj-abc/realtime");
 
     const logsLink = screen.getByText("Logs").closest("a");
     expect(logsLink).toHaveAttribute("href", "/projects/proj-abc/logs");
