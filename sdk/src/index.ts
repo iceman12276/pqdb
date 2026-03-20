@@ -50,4 +50,7 @@ export type {
   FilterClause,
   OrderDirection,
   QueryModifiers,
+  DistanceMetric,
+  SimilarToOptions,
+  SimilarToClause,
 } from "./query/types.js";
