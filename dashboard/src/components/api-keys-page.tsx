@@ -198,7 +198,7 @@ const client = createClient('http://localhost:8000', '<your-anon-key>')`;
 
       {/* New Keys One-Time Display Dialog */}
       <Dialog open={showNewKeysDialog} onOpenChange={setShowNewKeysDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>New API Keys</DialogTitle>
             <DialogDescription className="flex items-center gap-2 text-amber-600">
@@ -211,7 +211,7 @@ const client = createClient('http://localhost:8000', '<your-anon-key>')`;
               <div key={key.id} className="space-y-1">
                 <Badge variant="outline">{key.role}</Badge>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 break-all text-sm bg-muted p-2 rounded">
+                  <code className="min-w-0 flex-1 break-all text-sm bg-muted p-2 rounded font-mono select-all">
                     {key.key}
                   </code>
                   <CopyButton text={key.key} label={`Copy ${key.role} key`} />
@@ -222,15 +222,18 @@ const client = createClient('http://localhost:8000', '<your-anon-key>')`;
           {(() => {
             const newAnonKey = newKeys.find((k) => k.role === "anon");
             if (!newAnonKey) return null;
-            const newSnippet = `import { createClient } from '@pqdb/client'\n\nconst client = createClient('http://localhost:8000', '${newAnonKey.key}')`;
+            const newSnippet = `import { createClient } from '@pqdb/client'\n\nconst client = createClient(\n  'http://localhost:8000',\n  '${newAnonKey.key}'\n)`;
             return (
               <>
                 <Separator />
                 <div>
-                  <h4 className="text-sm font-medium mb-2">SDK Connection Snippet</h4>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium">SDK Connection Snippet</h4>
+                    <CopyButton text={newSnippet} label="Copy snippet" />
+                  </div>
                   <pre
                     data-testid="new-keys-snippet"
-                    className="rounded-md bg-muted p-4 text-sm overflow-x-auto"
+                    className="rounded-md bg-muted p-4 text-sm overflow-x-auto font-mono"
                   >
                     <code>{newSnippet}</code>
                   </pre>
