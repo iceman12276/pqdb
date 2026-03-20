@@ -6,12 +6,14 @@ Provides ``/v1/realtime`` WebSocket connections with:
 - Server heartbeat every 30 seconds
 - pg_notify listener for INSERT/UPDATE/DELETE events
 - Row fetch on INSERT/UPDATE, id-only on DELETE
+- Per-event RLS enforcement before delivery (US-065)
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from typing import Any
 
 import asyncpg
@@ -34,6 +36,7 @@ from pqdb_api.services.realtime_ws import (
     ConnectionState,
     RealtimeProtocol,
     WSRateLimiter,
+    check_realtime_rls,
     parse_ws_message,
 )
 
@@ -107,6 +110,40 @@ async def _authenticate_ws(
         )
 
 
+def _parse_user_token(
+    websocket: WebSocket,
+    project_id: uuid.UUID,
+) -> tuple[uuid.UUID | None, str | None]:
+    """Extract user_id and role from optional token query param.
+
+    Returns (user_id, user_role) or (None, None) if no token or invalid.
+    """
+    token = websocket.query_params.get("token")
+    if not token:
+        return None, None
+
+    try:
+        from pqdb_api.middleware.user_auth import _validate_user_jwt
+
+        key = websocket.app.state.jwt_public_key
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
+        if isinstance(key, (str, bytes)):
+            pem = key.encode() if isinstance(key, str) else key
+            loaded = load_pem_public_key(pem)
+            if not isinstance(loaded, Ed25519PublicKey):
+                return None, None
+            key = loaded
+        elif not isinstance(key, Ed25519PublicKey):
+            return None, None
+
+        user_ctx = _validate_user_jwt(token, key, expected_project_id=project_id)
+        return user_ctx.user_id, user_ctx.role
+    except Exception:
+        return None, None
+
+
 def _build_raw_dsn(asyncpg_url: str) -> str:
     """Convert a SQLAlchemy asyncpg URL to a raw PostgreSQL DSN.
 
@@ -138,6 +175,67 @@ async def _fetch_row(
         else:
             out[k] = v
     return out
+
+
+async def _get_column_meta_for_rls(
+    session: AsyncSession, table_name: str
+) -> list[dict[str, Any]]:
+    """Load column metadata for RLS checks. Returns empty list on failure."""
+    try:
+        from pqdb_api.services.schema_engine import ensure_metadata_table
+
+        await ensure_metadata_table(session)
+        result = await session.execute(
+            text(
+                "SELECT column_name, sensitivity, data_type, is_owner "
+                "FROM _pqdb_columns WHERE table_name = :name ORDER BY id"
+            ),
+            {"name": table_name},
+        )
+        return [
+            {
+                "name": r[0],
+                "sensitivity": r[1],
+                "data_type": r[2],
+                "is_owner": bool(r[3]),
+            }
+            for r in result.fetchall()
+        ]
+    except Exception:
+        return []
+
+
+async def _resolve_policies_for_rls(
+    session: AsyncSession,
+    table_name: str,
+    user_role: str | None,
+) -> list[dict[str, Any]] | None:
+    """Resolve RLS policies for realtime delivery (select operation).
+
+    Returns:
+    - None if no policies exist for this table (fall back to basic RLS)
+    - A list with the matching policy dict if found
+    - An empty list if policies exist but not for this role/op => deny
+    """
+    try:
+        from pqdb_api.services.auth_engine import ensure_auth_tables
+        from pqdb_api.services.roles_policies import (
+            get_policies_for_table,
+            lookup_policy,
+        )
+
+        await ensure_auth_tables(session)
+        all_policies = await get_policies_for_table(session, table_name)
+        if not all_policies:
+            return None
+
+        role = user_role if user_role else "anon"
+        policy = await lookup_policy(session, table_name, "select", role)
+        if policy is None:
+            return []
+        return [policy]
+    except Exception:
+        return None
 
 
 async def _listen_loop(
@@ -191,6 +289,29 @@ async def _listen_loop(
                     continue
                 row_data = fetched
 
+            # Per-event RLS check before delivery (US-065)
+            async with project_session_factory() as session:
+                columns_meta = await _get_column_meta_for_rls(session, table)
+                policies = await _resolve_policies_for_rls(
+                    session, table, state.user_role
+                )
+
+            if not check_realtime_rls(
+                row=row_data,
+                key_role=state.key_role,
+                user_id=state.user_id,
+                user_role=state.user_role,
+                columns_meta=columns_meta,
+                policies=policies,
+            ):
+                logger.debug(
+                    "realtime_ws.rls_filtered",
+                    table=table,
+                    event=event,
+                    pk=pk,
+                )
+                continue
+
             msg = RealtimeProtocol.event(
                 table=table,
                 event_type=event,
@@ -229,12 +350,17 @@ async def realtime_ws_endpoint(websocket: WebSocket) -> None:
     if context is None:
         return
 
+    # Parse optional user token for RLS
+    user_id, user_role = _parse_user_token(websocket, context.project_id)
+
     # Accept the connection
     await websocket.accept()
 
     state = ConnectionState(
         project_id=str(context.project_id),
         key_role=context.key_role,
+        user_id=user_id,
+        user_role=user_role,
     )
 
     settings = websocket.app.state.settings
