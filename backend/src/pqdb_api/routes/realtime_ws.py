@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import uuid
+import uuid as uuid_mod
+from datetime import datetime
 from typing import Any
 
 import asyncpg
@@ -112,8 +113,8 @@ async def _authenticate_ws(
 
 def _parse_user_token(
     websocket: WebSocket,
-    project_id: uuid.UUID,
-) -> tuple[uuid.UUID | None, str | None]:
+    project_id: uuid_mod.UUID,
+) -> tuple[uuid_mod.UUID | None, str | None]:
     """Extract user_id and role from optional token query param.
 
     Returns (user_id, user_role) or (None, None) if no token or invalid.
@@ -161,17 +162,23 @@ async def _fetch_row(
 
     safe_table = _validate_identifier(table)
     # Table name is validated against ^[a-z][a-z0-9_]*$ — safe for interpolation.
+    # The pk comes from the trigger as text (NEW.id::text), but id is bigint —
+    # cast to int so asyncpg doesn't reject the string-to-integer bind.
     # nosemgrep: avoid-sqlalchemy-text
     sql = text(f"SELECT * FROM {safe_table} WHERE id = :pk")  # noqa: S608
-    result = await session.execute(sql, {"pk": pk})
+    result = await session.execute(sql, {"pk": int(pk)})
     row = result.mappings().fetchone()
     if row is None:
         return None
-    # Convert bytes to strings for JSON serialization
+    # Convert non-JSON-serializable types for JSON serialization
     out: dict[str, Any] = {}
     for k, v in row.items():
         if isinstance(v, (bytes, bytearray, memoryview)):
             out[k] = bytes(v).decode("utf-8")
+        elif isinstance(v, uuid_mod.UUID):
+            out[k] = str(v)
+        elif isinstance(v, datetime):
+            out[k] = v.isoformat()
         else:
             out[k] = v
     return out
@@ -307,7 +314,7 @@ async def _listen_loop(
                 logger.debug(
                     "realtime_ws.rls_filtered",
                     table=table,
-                    event=event,
+                    event_type=event,
                     pk=pk,
                 )
                 continue
