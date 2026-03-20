@@ -64,6 +64,74 @@ export async function addColumn(
   }
 }
 
+// --- Index types ---
+
+export type IndexType = "hnsw" | "ivfflat";
+export type IndexDistance = "cosine" | "l2" | "inner_product";
+
+export interface VectorIndex {
+  index_name: string;
+  column: string;
+  type: IndexType;
+  distance: IndexDistance;
+}
+
+export interface CreateIndexRequest {
+  column: string;
+  type: IndexType;
+  distance: IndexDistance;
+}
+
+export async function fetchIndexes(
+  tableName: string,
+  apiKey: string,
+): Promise<VectorIndex[]> {
+  const result = await api.fetch(`/v1/db/tables/${tableName}/indexes`, {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch indexes");
+  }
+  return result.data as VectorIndex[];
+}
+
+export async function createIndex(
+  tableName: string,
+  body: CreateIndexRequest,
+  apiKey: string,
+): Promise<VectorIndex> {
+  const result = await api.fetch(`/v1/db/tables/${tableName}/indexes`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: apiKey,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!result.ok) {
+    const data = result.data as { detail?: string } | null;
+    throw new Error(data?.detail ?? "Failed to create index");
+  }
+  return result.data as VectorIndex;
+}
+
+export async function dropIndex(
+  tableName: string,
+  indexName: string,
+  apiKey: string,
+): Promise<void> {
+  const result = await api.fetch(
+    `/v1/db/tables/${tableName}/indexes/${indexName}`,
+    {
+      method: "DELETE",
+      headers: { apikey: apiKey },
+    },
+  );
+  if (!result.ok) {
+    throw new Error("Failed to drop index");
+  }
+}
+
 /**
  * Physical column name mapping.
  * Sensitive columns have shadow columns in the physical schema.
