@@ -59,4 +59,16 @@ describe("auth-store", () => {
     clearTokens();
     expect(sessionStorage.getItem("pqdb-tokens")).toBeNull();
   });
+
+  it("clears service key cache entries from sessionStorage on logout", () => {
+    sessionStorage.setItem("pqdb_service_key_proj1", "key1");
+    sessionStorage.setItem("pqdb_service_key_proj2", "key2");
+    sessionStorage.setItem("unrelated-item", "keep-me");
+
+    clearTokens();
+
+    expect(sessionStorage.getItem("pqdb_service_key_proj1")).toBeNull();
+    expect(sessionStorage.getItem("pqdb_service_key_proj2")).toBeNull();
+    expect(sessionStorage.getItem("unrelated-item")).toBe("keep-me");
+  });
 });

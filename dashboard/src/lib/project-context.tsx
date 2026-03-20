@@ -2,14 +2,28 @@
  * ProjectContext — shared React context for the current project + service API key.
  *
  * When a project is loaded, fetches a service API key from the backend
- * via POST /v1/projects/{id}/keys/service-key. The key is held in memory
- * only (never persisted to localStorage/sessionStorage).
+ * via POST /v1/projects/{id}/keys/service-key. The key is cached in
+ * sessionStorage per project ID to avoid creating duplicate keys on
+ * every page navigation.
  *
  * Child components use `useProjectContext()` to get the apiKey for /v1/db/* calls.
  */
 
 import * as React from "react";
 import { fetchProject, fetchServiceKey, type Project } from "./projects";
+
+const SERVICE_KEY_PREFIX = "pqdb_service_key_";
+
+function getCachedServiceKey(projectId: string): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  return sessionStorage.getItem(SERVICE_KEY_PREFIX + projectId);
+}
+
+function cacheServiceKey(projectId: string, key: string): void {
+  if (typeof sessionStorage !== "undefined") {
+    sessionStorage.setItem(SERVICE_KEY_PREFIX + projectId, key);
+  }
+}
 
 interface ProjectContextState {
   project: Project | null;
@@ -44,14 +58,20 @@ export function ProjectProvider({
 
     async function load() {
       try {
-        const [proj, keyInfo] = await Promise.all([
+        const cachedKey = getCachedServiceKey(projectId);
+        const [proj, key] = await Promise.all([
           fetchProject(projectId),
-          fetchServiceKey(projectId),
+          cachedKey
+            ? Promise.resolve(cachedKey)
+            : fetchServiceKey(projectId).then((info) => {
+                cacheServiceKey(projectId, info.key);
+                return info.key;
+              }),
         ]);
         if (!cancelled) {
           setState({
             project: proj,
-            apiKey: keyInfo.key,
+            apiKey: key,
             loading: false,
             error: null,
           });

@@ -28,6 +28,7 @@ function TestConsumer() {
 describe("ProjectContext", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
   });
 
   it("starts in loading state", () => {
@@ -127,5 +128,80 @@ describe("ProjectContext", () => {
     });
     expect(mockFetchProject).toHaveBeenCalledWith("p42");
     expect(mockFetchServiceKey).toHaveBeenCalledWith("p42");
+  });
+
+  describe("service key caching", () => {
+    const SERVICE_KEY_PREFIX = "pqdb_service_key_";
+    const FAKE_PROJECT = {
+      id: "p1",
+      name: "My Project",
+      region: "us-east-1",
+      status: "active",
+      database_name: "pqdb_project_p1",
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    const FAKE_KEY = "pqdb_service_abc12345678901234567890";
+
+    it("caches service key in sessionStorage after first fetch", async () => {
+      mockFetchProject.mockResolvedValueOnce(FAKE_PROJECT);
+      mockFetchServiceKey.mockResolvedValueOnce({
+        id: "key-1",
+        role: "service",
+        key: FAKE_KEY,
+        key_prefix: "pqdb_ser",
+      });
+
+      render(
+        <ProjectProvider projectId="p1">
+          <TestConsumer />
+        </ProjectProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("loading")).toHaveTextContent("false");
+      });
+      expect(sessionStorage.getItem(SERVICE_KEY_PREFIX + "p1")).toBe(FAKE_KEY);
+    });
+
+    it("uses cached key from sessionStorage instead of calling fetchServiceKey", async () => {
+      sessionStorage.setItem(SERVICE_KEY_PREFIX + "p1", "pqdb_service_cached_key");
+      mockFetchProject.mockResolvedValueOnce(FAKE_PROJECT);
+
+      render(
+        <ProjectProvider projectId="p1">
+          <TestConsumer />
+        </ProjectProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("loading")).toHaveTextContent("false");
+      });
+      expect(mockFetchServiceKey).not.toHaveBeenCalled();
+      expect(screen.getByTestId("apiKey")).toHaveTextContent("pqdb_service_cached_key");
+    });
+
+    it("uses separate cache keys per project", async () => {
+      sessionStorage.setItem(SERVICE_KEY_PREFIX + "p1", "pqdb_service_cached_key");
+      mockFetchProject.mockResolvedValueOnce({ ...FAKE_PROJECT, id: "p2" });
+      mockFetchServiceKey.mockResolvedValueOnce({
+        id: "key-2",
+        role: "service",
+        key: "pqdb_service_new_key",
+        key_prefix: "pqdb_ser",
+      });
+
+      render(
+        <ProjectProvider projectId="p2">
+          <TestConsumer />
+        </ProjectProvider>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("loading")).toHaveTextContent("false");
+      });
+      expect(mockFetchServiceKey).toHaveBeenCalledWith("p2");
+      expect(screen.getByTestId("apiKey")).toHaveTextContent("pqdb_service_new_key");
+      expect(sessionStorage.getItem(SERVICE_KEY_PREFIX + "p2")).toBe("pqdb_service_new_key");
+    });
   });
 });

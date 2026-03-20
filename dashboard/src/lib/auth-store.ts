@@ -45,9 +45,22 @@ export function setTokens(
   }
 }
 
+const SERVICE_KEY_PREFIX = "pqdb_service_key_";
+
 export function clearTokens(): void {
   memoryTokens = null;
   if (typeof sessionStorage !== "undefined") {
     sessionStorage.removeItem(SESSION_KEY);
+    // Clear cached service keys to prevent stale keys after logout
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k?.startsWith(SERVICE_KEY_PREFIX)) {
+        keysToRemove.push(k);
+      }
+    }
+    for (const k of keysToRemove) {
+      sessionStorage.removeItem(k);
+    }
   }
 }
