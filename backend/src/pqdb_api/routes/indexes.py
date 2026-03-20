@@ -17,11 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pqdb_api.middleware.api_key import get_project_session
 from pqdb_api.services.indexes import (
     DistanceMetric,
-    IndexError as IdxError,
     IndexType,
     create_index,
     drop_index,
     list_indexes,
+)
+from pqdb_api.services.indexes import (
+    IndexError as IdxError,
 )
 from pqdb_api.services.schema_engine import ensure_metadata_table
 
