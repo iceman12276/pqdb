@@ -25,6 +25,7 @@ from pqdb_api.services.auth_engine import ensure_auth_tables, get_auth_settings
 from pqdb_api.services.crud import (
     CrudError,
     FilterOp,
+    SimilarTo,
     build_delete_sql,
     build_insert_sql,
     build_select_sql,
@@ -35,6 +36,7 @@ from pqdb_api.services.crud import (
     validate_filter_column,
     validate_owner_for_insert,
     validate_owner_for_update,
+    validate_similar_to,
 )
 from pqdb_api.services.email_verification import should_enforce_email_verification
 from pqdb_api.services.roles_policies import (
@@ -104,6 +106,23 @@ class FilterSchema(BaseModel):
         return v
 
 
+class SimilarToSchema(BaseModel):
+    """Vector similarity search parameters for select."""
+
+    column: str
+    vector: list[float]
+    limit: int
+    distance: str = "cosine"
+
+    @field_validator("distance")
+    @classmethod
+    def validate_distance(cls, v: str) -> str:
+        valid = {"cosine", "l2", "inner_product"}
+        if v not in valid:
+            raise ValueError(f"distance must be one of {sorted(valid)}")
+        return v
+
+
 class ModifiersSchema(BaseModel):
     """Query modifiers for select."""
 
@@ -125,6 +144,7 @@ class SelectRequest(BaseModel):
     columns: list[str] = ["*"]
     filters: list[FilterSchema] = []
     modifiers: ModifiersSchema = ModifiersSchema()
+    similar_to: SimilarToSchema | None = None
 
 
 class UpdateRequest(BaseModel):
@@ -614,6 +634,20 @@ async def select_rows(
     except CrudError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
+    # Validate and build similar_to if present
+    similar: SimilarTo | None = None
+    if body.similar_to is not None:
+        similar = SimilarTo(
+            column=body.similar_to.column,
+            vector=body.similar_to.vector,
+            limit=body.similar_to.limit,
+            distance=body.similar_to.distance,
+        )
+        try:
+            validate_similar_to(similar, columns_meta)
+        except CrudError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     # Build order_by as list of tuples
     order_by: list[tuple[str, str]] | None = None
     if body.modifiers.order_by:
@@ -628,6 +662,7 @@ async def select_rows(
             limit=body.modifiers.limit,
             offset=body.modifiers.offset,
             order_by=order_by,
+            similar_to=similar,
         )
     except CrudError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

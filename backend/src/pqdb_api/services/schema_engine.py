@@ -216,6 +216,13 @@ class ColumnDefinition:
         validate_column_name(self.name)
         # Normalize and validate data_type to prevent SQL injection in DDL
         object.__setattr__(self, "data_type", validate_data_type(self.data_type))
+        # Vector columns must be plain — encrypted vectors are not supported
+        if re.match(r"^vector\(\d+\)$", self.data_type) and self.sensitivity != "plain":
+            raise ValueError(
+                f"Vector columns cannot be sensitive: column {self.name!r} "
+                f"has sensitivity {self.sensitivity!r}. "
+                f"Vector columns must use sensitivity='plain'."
+            )
         # Owner column constraints
         if self.is_owner:
             if self.data_type != "uuid":

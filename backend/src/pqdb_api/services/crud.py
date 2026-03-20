@@ -10,7 +10,9 @@ Sensitive columns are routed to their physical shadow columns:
 from __future__ import annotations
 
 import enum
+import re
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from pqdb_api.services.schema_engine import validate_table_name
@@ -41,6 +43,69 @@ _OP_SQL = {
 
 # Searchable columns only support equality-based filtering via blind index
 _SEARCHABLE_ALLOWED_OPS = frozenset({FilterOp.EQ, FilterOp.IN})
+
+# pgvector distance operators
+_DISTANCE_OPS = {
+    "cosine": "<=>",
+    "l2": "<->",
+    "inner_product": "<#>",
+}
+
+_VECTOR_RE = re.compile(r"^vector\((\d+)\)$")
+
+
+@dataclass(frozen=True)
+class SimilarTo:
+    """Vector similarity search parameters."""
+
+    column: str
+    vector: list[float]
+    limit: int
+    distance: str = "cosine"
+
+
+def validate_similar_to(
+    similar_to: SimilarTo,
+    columns_meta: list[dict[str, str]],
+) -> None:
+    """Validate similar_to against column metadata.
+
+    Checks:
+    - Column exists and is plain sensitivity
+    - Column data_type is vector(N)
+    - Vector dimension matches column's declared dimension
+    - Distance metric is supported
+    """
+    meta = _find_column_meta(similar_to.column, columns_meta)
+    if meta is None:
+        raise CrudError(f"Unknown column: {similar_to.column!r}")
+
+    if meta["sensitivity"] != "plain":
+        raise CrudError(
+            f"Column {similar_to.column!r} is sensitive — "
+            f"vector similarity search requires plain columns"
+        )
+
+    match = _VECTOR_RE.match(meta["data_type"])
+    if match is None:
+        raise CrudError(
+            f"Column {similar_to.column!r} is not a vector column "
+            f"(type: {meta['data_type']!r})"
+        )
+
+    declared_dim = int(match.group(1))
+    actual_dim = len(similar_to.vector)
+    if declared_dim != actual_dim:
+        raise CrudError(
+            f"Vector dimension mismatch for column {similar_to.column!r}: "
+            f"expected {declared_dim}, got {actual_dim}"
+        )
+
+    if similar_to.distance not in _DISTANCE_OPS:
+        raise CrudError(
+            f"Unsupported distance metric {similar_to.distance!r}; "
+            f"must be one of {sorted(_DISTANCE_OPS)}"
+        )
 
 
 def _find_column_meta(
@@ -224,12 +289,18 @@ def build_select_sql(
     limit: int | None = None,
     offset: int | None = None,
     order_by: list[tuple[str, str]] | None = None,
+    similar_to: SimilarTo | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Build a parameterized SELECT statement.
 
-    Returns (sql, params) tuple.
+    Returns (sql, params) tuple. When similar_to is provided, generates
+    ORDER BY {column} <op> :similar_vec LIMIT :similar_limit instead
+    of any explicit order_by/limit.
     """
     validate_table_name(table_name)
+
+    if similar_to is not None and order_by:
+        raise CrudError("similar_to cannot be combined with order_by")
 
     col_str = "*" if not columns else ", ".join(columns)
     sql = f'SELECT {col_str} FROM "{table_name}"'
@@ -241,16 +312,24 @@ def build_select_sql(
         sql += where_sql
         params.update(where_params)
 
-    if order_by:
-        order_parts = []
-        for col, direction in order_by:
-            d = "ASC" if direction.lower() == "asc" else "DESC"
-            order_parts.append(f"{col} {d}")
-        sql += " ORDER BY " + ", ".join(order_parts)
+    if similar_to is not None:
+        op = _DISTANCE_OPS[similar_to.distance]
+        vec_str = "[" + ",".join(str(v) for v in similar_to.vector) + "]"
+        sql += f" ORDER BY {similar_to.column} {op} :similar_vec"
+        params["similar_vec"] = vec_str
+        sql += " LIMIT :similar_limit"
+        params["similar_limit"] = similar_to.limit
+    else:
+        if order_by:
+            order_parts = []
+            for col, direction in order_by:
+                d = "ASC" if direction.lower() == "asc" else "DESC"
+                order_parts.append(f"{col} {d}")
+            sql += " ORDER BY " + ", ".join(order_parts)
 
-    if limit is not None:
-        sql += " LIMIT :limit"
-        params["limit"] = limit
+        if limit is not None:
+            sql += " LIMIT :limit"
+            params["limit"] = limit
 
     if offset is not None:
         sql += " OFFSET :offset"
