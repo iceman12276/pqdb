@@ -135,8 +135,8 @@
       "dependsOn": [
         "US-059"
       ],
-      "passes": false,
-      "notes": "",
+      "passes": true,
+      "notes": "PR #88 merged. Dashboard MCP page: connection info, tool list, Test Tool UI. 15 tests.",
       "priority": 5,
       "description": "",
       "acceptanceCriteria": []
@@ -147,8 +147,8 @@
       "dependsOn": [
         "US-066"
       ],
-      "passes": false,
-      "notes": "",
+      "passes": true,
+      "notes": "PR #87 merged. Dashboard Realtime page: live event inspector, stats. 16 tests.",
       "priority": 5,
       "description": "",
       "acceptanceCriteria": []
