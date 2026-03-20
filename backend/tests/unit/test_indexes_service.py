@@ -9,12 +9,14 @@ from __future__ import annotations
 import pytest
 
 from pqdb_api.services.indexes import (
-    IndexType,
     DistanceMetric,
+    IndexType,
     build_create_index_sql,
     build_drop_index_sql,
     generate_index_name,
     validate_index_request,
+)
+from pqdb_api.services.indexes import (
     IndexError as IdxError,
 )
 
@@ -40,34 +42,48 @@ class TestValidateIndexRequest:
         columns_meta = [
             {"name": "embedding", "sensitivity": "plain", "data_type": "vector(3)"},
         ]
-        validate_index_request("embedding", IndexType.HNSW, DistanceMetric.COSINE, columns_meta)
+        validate_index_request(
+            "embedding", IndexType.HNSW, DistanceMetric.COSINE, columns_meta
+        )
 
     def test_valid_ivfflat_l2(self) -> None:
         columns_meta = [
             {"name": "vec", "sensitivity": "plain", "data_type": "vector(128)"},
         ]
-        validate_index_request("vec", IndexType.IVFFLAT, DistanceMetric.L2, columns_meta)
+        validate_index_request(
+            "vec", IndexType.IVFFLAT, DistanceMetric.L2, columns_meta
+        )
 
     def test_reject_nonexistent_column(self) -> None:
         columns_meta = [
             {"name": "title", "sensitivity": "plain", "data_type": "text"},
         ]
         with pytest.raises(IdxError, match="not found"):
-            validate_index_request("embedding", IndexType.HNSW, DistanceMetric.COSINE, columns_meta)
+            validate_index_request(
+                "embedding", IndexType.HNSW, DistanceMetric.COSINE, columns_meta
+            )
 
     def test_reject_non_vector_column(self) -> None:
         columns_meta = [
             {"name": "title", "sensitivity": "plain", "data_type": "text"},
         ]
         with pytest.raises(IdxError, match="not a vector"):
-            validate_index_request("title", IndexType.HNSW, DistanceMetric.COSINE, columns_meta)
+            validate_index_request(
+                "title", IndexType.HNSW, DistanceMetric.COSINE, columns_meta
+            )
 
     def test_reject_non_plain_column(self) -> None:
         columns_meta = [
-            {"name": "embedding", "sensitivity": "searchable", "data_type": "vector(3)"},
+            {
+                "name": "embedding",
+                "sensitivity": "searchable",
+                "data_type": "vector(3)",
+            },  # noqa: E501
         ]
         with pytest.raises(IdxError, match="plain"):
-            validate_index_request("embedding", IndexType.HNSW, DistanceMetric.COSINE, columns_meta)
+            validate_index_request(
+                "embedding", IndexType.HNSW, DistanceMetric.COSINE, columns_meta
+            )
 
 
 class TestBuildCreateIndexSql:
@@ -75,7 +91,10 @@ class TestBuildCreateIndexSql:
 
     def test_hnsw_cosine(self) -> None:
         sql = build_create_index_sql(
-            "documents", "embedding", IndexType.HNSW, DistanceMetric.COSINE,
+            "documents",
+            "embedding",
+            IndexType.HNSW,
+            DistanceMetric.COSINE,
         )
         assert "CREATE INDEX" in sql
         assert "idx_documents_embedding_hnsw" in sql
@@ -84,7 +103,10 @@ class TestBuildCreateIndexSql:
 
     def test_ivfflat_l2(self) -> None:
         sql = build_create_index_sql(
-            "items", "vec", IndexType.IVFFLAT, DistanceMetric.L2,
+            "items",
+            "vec",
+            IndexType.IVFFLAT,
+            DistanceMetric.L2,
         )
         assert "idx_items_vec_ivfflat" in sql
         assert "ivfflat" in sql.lower()
@@ -92,13 +114,19 @@ class TestBuildCreateIndexSql:
 
     def test_hnsw_inner_product(self) -> None:
         sql = build_create_index_sql(
-            "docs", "emb", IndexType.HNSW, DistanceMetric.INNER_PRODUCT,
+            "docs",
+            "emb",
+            IndexType.HNSW,
+            DistanceMetric.INNER_PRODUCT,
         )
         assert "vector_ip_ops" in sql
 
     def test_ivfflat_cosine(self) -> None:
         sql = build_create_index_sql(
-            "docs", "emb", IndexType.IVFFLAT, DistanceMetric.COSINE,
+            "docs",
+            "emb",
+            IndexType.IVFFLAT,
+            DistanceMetric.COSINE,
         )
         assert "ivfflat" in sql.lower()
         assert "vector_cosine_ops" in sql
