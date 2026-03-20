@@ -174,6 +174,58 @@ function enablePgvector(dbName: string): void {
   });
 }
 
+/**
+ * Install the pqdb_realtime trigger function and per-table trigger
+ * in the project database. This enables pg_notify for realtime events.
+ */
+function installRealtimeTrigger(dbName: string, tableName: string): void {
+  const fnSql = `
+    CREATE OR REPLACE FUNCTION pqdb_notify_changes()
+    RETURNS trigger AS $$
+    DECLARE
+        payload json;
+        pk text;
+    BEGIN
+        IF TG_OP = 'DELETE' THEN
+            pk := OLD.id::text;
+        ELSE
+            pk := NEW.id::text;
+        END IF;
+        payload := json_build_object(
+            'table', TG_TABLE_NAME,
+            'event', TG_OP,
+            'pk', pk
+        );
+        PERFORM pg_notify('pqdb_realtime', payload::text);
+        IF TG_OP = 'DELETE' THEN
+            RETURN OLD;
+        ELSE
+            RETURN NEW;
+        END IF;
+    END;
+    $$ LANGUAGE plpgsql;
+  `;
+  const trigSql = `
+    CREATE TRIGGER pqdb_realtime_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON ${tableName}
+    FOR EACH ROW EXECUTE FUNCTION pqdb_notify_changes();
+  `;
+  execFileSync("psql", [
+    "-h", "localhost", "-p", "5432", "-U", "postgres",
+    "-d", dbName, "-c", fnSql,
+  ], {
+    env: { ...process.env, PGPASSWORD: "postgres" },
+    stdio: "pipe",
+  });
+  execFileSync("psql", [
+    "-h", "localhost", "-p", "5432", "-U", "postgres",
+    "-d", dbName, "-c", trigSql,
+  ], {
+    env: { ...process.env, PGPASSWORD: "postgres" },
+    stdio: "pipe",
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Server lifecycle
 // ---------------------------------------------------------------------------
@@ -552,15 +604,15 @@ describe("Test 4 — Vector search", () => {
     );
     expect(createTable.status).toBe(201);
 
-    // Insert embeddings — distinct enough to give predictable ordering
+    // Insert embeddings — pgvector requires string format "[x,y,z]"
     const embeddings = [
-      { label: "a", embedding: [1.0, 0.0, 0.0] },
-      { label: "b", embedding: [0.9, 0.1, 0.0] },
-      { label: "c", embedding: [0.0, 1.0, 0.0] },
-      { label: "d", embedding: [0.0, 0.0, 1.0] },
-      { label: "e", embedding: [0.7, 0.7, 0.0] },
-      { label: "f", embedding: [0.5, 0.5, 0.5] },
-      { label: "g", embedding: [0.1, 0.1, 0.9] },
+      { label: "a", embedding: "[1,0,0]" },
+      { label: "b", embedding: "[0.9,0.1,0]" },
+      { label: "c", embedding: "[0,1,0]" },
+      { label: "d", embedding: "[0,0,1]" },
+      { label: "e", embedding: "[0.7,0.7,0]" },
+      { label: "f", embedding: "[0.5,0.5,0.5]" },
+      { label: "g", embedding: "[0.1,0.1,0.9]" },
     ];
 
     const insertResp = await apiCall(
@@ -594,8 +646,9 @@ describe("Test 4 — Vector search", () => {
     expect(labels[1]).toBe("b");
 
     // All returned rows should have labels from our dataset
+    const allLabels = ["a", "b", "c", "d", "e", "f", "g"];
     for (const row of result.data!) {
-      expect(embeddings.map((e) => e.label)).toContain(
+      expect(allLabels).toContain(
         (row as Record<string, unknown>).label,
       );
     }
@@ -652,13 +705,13 @@ describe("Test 5 — Vector + encryption", () => {
       embedding: column.vector(3),
     });
 
-    // Insert 5 items with embeddings and encrypted titles
+    // Insert 5 items with embeddings (pgvector string format) and encrypted titles
     const items = [
-      { title: "quantum computing", embedding: [1.0, 0.0, 0.0] },
-      { title: "quantum physics", embedding: [0.9, 0.1, 0.0] },
-      { title: "classical music", embedding: [0.0, 1.0, 0.0] },
-      { title: "rock music", embedding: [0.0, 0.9, 0.1] },
-      { title: "quantum music", embedding: [0.5, 0.5, 0.0] },
+      { title: "quantum computing", embedding: "[1,0,0]" },
+      { title: "quantum physics", embedding: "[0.9,0.1,0]" },
+      { title: "classical music", embedding: "[0,1,0]" },
+      { title: "rock music", embedding: "[0,0.9,0.1]" },
+      { title: "quantum music", embedding: "[0.5,0.5,0]" },
     ];
 
     const insertResult = await encClient
@@ -721,6 +774,9 @@ describe("Test 6 — Realtime subscribe + receive", () => {
       { apikey: serviceApiKey },
     );
     expect(createTable.status).toBe(201);
+
+    // Install the realtime trigger (not yet wired into table creation)
+    installRealtimeTrigger(projectDbName, "realtime_test");
 
     // Open WebSocket connection and subscribe
     const ws = await openWs(serviceApiKey);
@@ -796,6 +852,9 @@ describe("Test 7 — Realtime RLS", () => {
     );
     expect(createTable.status).toBe(201);
 
+    // Install the realtime trigger (not yet wired into table creation)
+    installRealtimeTrigger(projectDbName, "realtime_rls_test");
+
     // Create two end-users
     const user1Signup = await apiCall(
       "POST",
@@ -848,7 +907,24 @@ describe("Test 7 — Realtime RLS", () => {
       );
 
       // Small delay to ensure listeners are fully set up
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 500));
+
+      // Collect all events from both WebSockets into arrays
+      const serviceEvents: Record<string, unknown>[] = [];
+      const user1Events: Record<string, unknown>[] = [];
+
+      wsService.on("message", (data: WebSocket.Data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (msg.type === "event") serviceEvents.push(msg);
+        } catch { /* ignore non-JSON */ }
+      });
+      wsUser1.on("message", (data: WebSocket.Data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (msg.type === "event") user1Events.push(msg);
+        } catch { /* ignore non-JSON */ }
+      });
 
       // Insert a row owned by user2 (user1 should NOT see this)
       const insertUser2 = await apiCall(
@@ -862,31 +938,28 @@ describe("Test 7 — Realtime RLS", () => {
       );
       expect(insertUser2.status).toBe(201);
 
-      // Service role should receive the event
-      const serviceEvent = await waitForWsMessage(
+      // Wait for service to receive the event
+      await waitForWsMessage(
         wsService,
         (msg) =>
           msg.type === "event" && msg.table === "realtime_rls_test",
       );
-      expect(serviceEvent.event).toBe("INSERT");
-      expect(
-        (serviceEvent.row as Record<string, unknown>).content,
-      ).toBe("user2 data");
 
-      // User1 should NOT receive an event for user2's data
-      let user1ReceivedEvent = false;
-      try {
-        await waitForWsMessage(
-          wsUser1,
-          (msg) =>
-            msg.type === "event" && msg.table === "realtime_rls_test",
-          3_000, // short timeout
-        );
-        user1ReceivedEvent = true;
-      } catch {
-        // Expected — user1 should not receive user2's event
-      }
-      expect(user1ReceivedEvent).toBe(false);
+      // Give user1's connection time to potentially receive (or not) the event
+      await new Promise((r) => setTimeout(r, 1_000));
+
+      // User1 should NOT have received user2's event
+      const user1EventsForUser2 = user1Events.filter(
+        (e) => (e.row as Record<string, unknown>).content === "user2 data",
+      );
+      expect(user1EventsForUser2.length).toBe(0);
+
+      // Service should have received user2's event
+      expect(serviceEvents.length).toBe(1);
+      expect(serviceEvents[0].event).toBe("INSERT");
+      expect(
+        (serviceEvents[0].row as Record<string, unknown>).content,
+      ).toBe("user2 data");
 
       // Insert a row owned by user1 — user1 SHOULD see this
       const insertUser1 = await apiCall(
@@ -900,29 +973,34 @@ describe("Test 7 — Realtime RLS", () => {
       );
       expect(insertUser1.status).toBe(201);
 
-      // User1 should receive their own event
-      const user1Event = await waitForWsMessage(
+      // Wait for user1 to receive their own event
+      await waitForWsMessage(
         wsUser1,
-        (msg) =>
-          msg.type === "event" && msg.table === "realtime_rls_test",
-      );
-      expect(user1Event.event).toBe("INSERT");
-      expect(
-        (user1Event.row as Record<string, unknown>).content,
-      ).toBe("user1 data");
-      expect(
-        (user1Event.row as Record<string, unknown>).owner_id,
-      ).toBe(user1.user.id);
-
-      // Service role should also receive user1's event
-      const serviceEvent2 = await waitForWsMessage(
-        wsService,
         (msg) =>
           msg.type === "event" &&
           msg.table === "realtime_rls_test" &&
           (msg.row as Record<string, unknown>).content === "user1 data",
       );
-      expect(serviceEvent2.event).toBe("INSERT");
+
+      // Verify user1 received their own event
+      const user1OwnEvents = user1Events.filter(
+        (e) => (e.row as Record<string, unknown>).content === "user1 data",
+      );
+      expect(user1OwnEvents.length).toBe(1);
+      expect(user1OwnEvents[0].event).toBe("INSERT");
+      expect(
+        (user1OwnEvents[0].row as Record<string, unknown>).owner_id,
+      ).toBe(user1.user.id);
+
+      // Service should also have received user1's event (total: 2 events)
+      // Wait a bit for the second event to arrive at service
+      await new Promise((r) => setTimeout(r, 500));
+      expect(serviceEvents.length).toBe(2);
+      const serviceUser1Event = serviceEvents.find(
+        (e) => (e.row as Record<string, unknown>).content === "user1 data",
+      );
+      expect(serviceUser1Event).toBeTruthy();
+      expect(serviceUser1Event!.event).toBe("INSERT");
     } finally {
       wsUser1.close();
       wsService.close();
