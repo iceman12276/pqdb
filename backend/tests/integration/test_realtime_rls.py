@@ -195,38 +195,53 @@ class TestRealtimeRlsWithRealDb:
         """No policies + no owner column = all roles receive (Phase 1)."""
 
         async def _run_test() -> None:
-            await _create_test_table(sf, "notes", [
-                ColumnDefinition(name="content", data_type="text", sensitivity="plain"),
-            ])
+            await _create_test_table(
+                sf,
+                "notes",
+                [
+                    ColumnDefinition(
+                        name="content", data_type="text", sensitivity="plain"
+                    ),
+                ],
+            )
             cols = await _get_column_meta(sf, "notes")
             await _setup_auth_tables(sf)
             policies = await _resolve_policies(sf, "notes", None)
 
             assert policies is None
-            assert check_realtime_rls(
-                row={"id": "1", "content": "hello"},
-                key_role="anon",
-                user_id=None,
-                user_role=None,
-                columns_meta=cols,
-                policies=policies,
-            ) is True
+            assert (
+                check_realtime_rls(
+                    row={"id": "1", "content": "hello"},
+                    key_role="anon",
+                    user_id=None,
+                    user_role=None,
+                    columns_meta=cols,
+                    policies=policies,
+                )
+                is True
+            )
 
         _run(_run_test())
 
-    def test_owner_column_basic_rls(
-        self, sf: async_sessionmaker[AsyncSession]
-    ) -> None:
+    def test_owner_column_basic_rls(self, sf: async_sessionmaker[AsyncSession]) -> None:
         """Owner column present, no policies = basic owner-column RLS."""
 
         async def _run_test() -> None:
-            await _create_test_table(sf, "todos", [
-                ColumnDefinition(
-                    name="user_id", data_type="uuid",
-                    sensitivity="plain", is_owner=True,
-                ),
-                ColumnDefinition(name="task", data_type="text", sensitivity="plain"),
-            ])
+            await _create_test_table(
+                sf,
+                "todos",
+                [
+                    ColumnDefinition(
+                        name="user_id",
+                        data_type="uuid",
+                        sensitivity="plain",
+                        is_owner=True,
+                    ),
+                    ColumnDefinition(
+                        name="task", data_type="text", sensitivity="plain"
+                    ),
+                ],
+            )
             cols = await _get_column_meta(sf, "todos")
             await _setup_auth_tables(sf)
             policies = await _resolve_policies(sf, "todos", None)
@@ -236,39 +251,68 @@ class TestRealtimeRlsWithRealDb:
             row = {"id": "1", "user_id": str(_OWNER_USER_ID), "task": "mine"}
 
             # Owner receives
-            assert check_realtime_rls(
-                row=row, key_role="anon", user_id=_OWNER_USER_ID,
-                user_role=None, columns_meta=cols, policies=policies,
-            ) is True
+            assert (
+                check_realtime_rls(
+                    row=row,
+                    key_role="anon",
+                    user_id=_OWNER_USER_ID,
+                    user_role=None,
+                    columns_meta=cols,
+                    policies=policies,
+                )
+                is True
+            )
 
             # Non-owner denied
-            assert check_realtime_rls(
-                row=row, key_role="anon", user_id=_OTHER_USER_ID,
-                user_role=None, columns_meta=cols, policies=policies,
-            ) is False
+            assert (
+                check_realtime_rls(
+                    row=row,
+                    key_role="anon",
+                    user_id=_OTHER_USER_ID,
+                    user_role=None,
+                    columns_meta=cols,
+                    policies=policies,
+                )
+                is False
+            )
 
             # Service role bypasses
-            assert check_realtime_rls(
-                row=row, key_role="service", user_id=None,
-                user_role=None, columns_meta=cols, policies=policies,
-            ) is True
+            assert (
+                check_realtime_rls(
+                    row=row,
+                    key_role="service",
+                    user_id=None,
+                    user_role=None,
+                    columns_meta=cols,
+                    policies=policies,
+                )
+                is True
+            )
 
         _run(_run_test())
 
-    def test_policy_all_delivers(
-        self, sf: async_sessionmaker[AsyncSession]
-    ) -> None:
+    def test_policy_all_delivers(self, sf: async_sessionmaker[AsyncSession]) -> None:
         """Policy condition=all: deliver to everyone."""
 
         async def _run_test() -> None:
-            await _create_test_table(sf, "announcements", [
-                ColumnDefinition(name="message", data_type="text", sensitivity="plain"),
-            ])
+            await _create_test_table(
+                sf,
+                "announcements",
+                [
+                    ColumnDefinition(
+                        name="message", data_type="text", sensitivity="plain"
+                    ),
+                ],
+            )
             await _setup_auth_tables(sf)
             await _create_role(sf, "authenticated")
             await _create_policy(
-                sf, table_name="announcements", name="allow_read",
-                operation="select", role="authenticated", condition="all",
+                sf,
+                table_name="announcements",
+                name="allow_read",
+                operation="select",
+                role="authenticated",
+                condition="all",
             )
 
             cols = await _get_column_meta(sf, "announcements")
@@ -276,28 +320,42 @@ class TestRealtimeRlsWithRealDb:
 
             assert policies is not None and len(policies) == 1
 
-            assert check_realtime_rls(
-                row={"id": "1", "message": "hi"},
-                key_role="anon", user_id=_OTHER_USER_ID,
-                user_role="authenticated", columns_meta=cols, policies=policies,
-            ) is True
+            assert (
+                check_realtime_rls(
+                    row={"id": "1", "message": "hi"},
+                    key_role="anon",
+                    user_id=_OTHER_USER_ID,
+                    user_role="authenticated",
+                    columns_meta=cols,
+                    policies=policies,
+                )
+                is True
+            )
 
         _run(_run_test())
 
-    def test_policy_none_denies(
-        self, sf: async_sessionmaker[AsyncSession]
-    ) -> None:
+    def test_policy_none_denies(self, sf: async_sessionmaker[AsyncSession]) -> None:
         """Policy condition=none: deny delivery."""
 
         async def _run_test() -> None:
-            await _create_test_table(sf, "secrets", [
-                ColumnDefinition(name="data", data_type="text", sensitivity="plain"),
-            ])
+            await _create_test_table(
+                sf,
+                "secrets",
+                [
+                    ColumnDefinition(
+                        name="data", data_type="text", sensitivity="plain"
+                    ),
+                ],
+            )
             await _setup_auth_tables(sf)
             await _create_role(sf, "authenticated")
             await _create_policy(
-                sf, table_name="secrets", name="deny_read",
-                operation="select", role="authenticated", condition="none",
+                sf,
+                table_name="secrets",
+                name="deny_read",
+                operation="select",
+                role="authenticated",
+                condition="none",
             )
 
             cols = await _get_column_meta(sf, "secrets")
@@ -306,18 +364,30 @@ class TestRealtimeRlsWithRealDb:
             assert policies is not None
 
             # Deny for authenticated user
-            assert check_realtime_rls(
-                row={"id": "1", "data": "classified"},
-                key_role="anon", user_id=_OWNER_USER_ID,
-                user_role="authenticated", columns_meta=cols, policies=policies,
-            ) is False
+            assert (
+                check_realtime_rls(
+                    row={"id": "1", "data": "classified"},
+                    key_role="anon",
+                    user_id=_OWNER_USER_ID,
+                    user_role="authenticated",
+                    columns_meta=cols,
+                    policies=policies,
+                )
+                is False
+            )
 
             # Service role still receives
-            assert check_realtime_rls(
-                row={"id": "1", "data": "classified"},
-                key_role="service", user_id=None,
-                user_role=None, columns_meta=cols, policies=policies,
-            ) is True
+            assert (
+                check_realtime_rls(
+                    row={"id": "1", "data": "classified"},
+                    key_role="service",
+                    user_id=None,
+                    user_role=None,
+                    columns_meta=cols,
+                    policies=policies,
+                )
+                is True
+            )
 
         _run(_run_test())
 
@@ -327,18 +397,30 @@ class TestRealtimeRlsWithRealDb:
         """Policy condition=owner: deliver only to row owner."""
 
         async def _run_test() -> None:
-            await _create_test_table(sf, "messages", [
-                ColumnDefinition(
-                    name="user_id", data_type="uuid",
-                    sensitivity="plain", is_owner=True,
-                ),
-                ColumnDefinition(name="body", data_type="text", sensitivity="plain"),
-            ])
+            await _create_test_table(
+                sf,
+                "messages",
+                [
+                    ColumnDefinition(
+                        name="user_id",
+                        data_type="uuid",
+                        sensitivity="plain",
+                        is_owner=True,
+                    ),
+                    ColumnDefinition(
+                        name="body", data_type="text", sensitivity="plain"
+                    ),
+                ],
+            )
             await _setup_auth_tables(sf)
             await _create_role(sf, "authenticated")
             await _create_policy(
-                sf, table_name="messages", name="owner_read",
-                operation="select", role="authenticated", condition="owner",
+                sf,
+                table_name="messages",
+                name="owner_read",
+                operation="select",
+                role="authenticated",
+                condition="owner",
             )
 
             cols = await _get_column_meta(sf, "messages")
@@ -347,16 +429,30 @@ class TestRealtimeRlsWithRealDb:
             row = {"id": "1", "user_id": str(_OWNER_USER_ID), "body": "private"}
 
             # Owner receives
-            assert check_realtime_rls(
-                row=row, key_role="anon", user_id=_OWNER_USER_ID,
-                user_role="authenticated", columns_meta=cols, policies=policies,
-            ) is True
+            assert (
+                check_realtime_rls(
+                    row=row,
+                    key_role="anon",
+                    user_id=_OWNER_USER_ID,
+                    user_role="authenticated",
+                    columns_meta=cols,
+                    policies=policies,
+                )
+                is True
+            )
 
             # Non-owner denied
-            assert check_realtime_rls(
-                row=row, key_role="anon", user_id=_OTHER_USER_ID,
-                user_role="authenticated", columns_meta=cols, policies=policies,
-            ) is False
+            assert (
+                check_realtime_rls(
+                    row=row,
+                    key_role="anon",
+                    user_id=_OTHER_USER_ID,
+                    user_role="authenticated",
+                    columns_meta=cols,
+                    policies=policies,
+                )
+                is False
+            )
 
         _run(_run_test())
 
@@ -366,16 +462,26 @@ class TestRealtimeRlsWithRealDb:
         """Policies exist for table but not for this role/op = deny."""
 
         async def _run_test() -> None:
-            await _create_test_table(sf, "logs", [
-                ColumnDefinition(name="entry", data_type="text", sensitivity="plain"),
-            ])
+            await _create_test_table(
+                sf,
+                "logs",
+                [
+                    ColumnDefinition(
+                        name="entry", data_type="text", sensitivity="plain"
+                    ),
+                ],
+            )
             await _setup_auth_tables(sf)
 
             # Policy for "admin" role only
             await _create_role(sf, "admin")
             await _create_policy(
-                sf, table_name="logs", name="admin_read",
-                operation="select", role="admin", condition="all",
+                sf,
+                table_name="logs",
+                name="admin_read",
+                operation="select",
+                role="admin",
+                condition="all",
             )
 
             cols = await _get_column_meta(sf, "logs")
@@ -385,10 +491,16 @@ class TestRealtimeRlsWithRealDb:
 
             assert policies is not None and len(policies) == 0
 
-            assert check_realtime_rls(
-                row={"id": "1", "entry": "something"},
-                key_role="anon", user_id=_OWNER_USER_ID,
-                user_role="authenticated", columns_meta=cols, policies=policies,
-            ) is False
+            assert (
+                check_realtime_rls(
+                    row={"id": "1", "entry": "something"},
+                    key_role="anon",
+                    user_id=_OWNER_USER_ID,
+                    user_role="authenticated",
+                    columns_meta=cols,
+                    policies=policies,
+                )
+                is False
+            )
 
         _run(_run_test())
