@@ -9,3 +9,4 @@ export type { PqdbMcpServer } from "./server.js";
 export { parseArgs, buildConfig } from "./config.js";
 export type { ServerConfig, Transport, ParsedArgs } from "./config.js";
 export { registerSchemaTools } from "./schema-tools.js";
+export { registerCrudTools } from "./crud-tools.js";

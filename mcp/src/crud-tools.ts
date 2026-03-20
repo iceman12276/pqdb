@@ -1,0 +1,281 @@
+/**
+ * CRUD tools for the pqdb MCP server.
+ *
+ * Tools:
+ *   - pqdb_query_rows: SELECT rows from a table with optional filters, ordering, pagination
+ *   - pqdb_insert_rows: INSERT rows into a table
+ *   - pqdb_update_rows: UPDATE rows in a table matching filters
+ *   - pqdb_delete_rows: DELETE rows from a table matching filters
+ *
+ * Encryption behavior:
+ *   - When PQDB_ENCRYPTION_KEY is set: encrypted columns are decrypted in results
+ *   - When not set: encrypted columns show "[encrypted]" and inserts/updates
+ *     targeting encrypted columns are rejected
+ */
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+
+/** Filter schema matching the backend's FilterSchema. */
+const FilterZod = z.object({
+  column: z.string(),
+  op: z.enum(["eq", "gt", "lt", "gte", "lte", "in"]),
+  value: z.unknown(),
+});
+
+/** Standard { data, error } response shape. */
+interface CrudResponse {
+  data: unknown[] | null;
+  error: string | null;
+}
+
+/** Make an authenticated POST request to the pqdb API. */
+async function pqdbPost<T>(
+  projectUrl: string,
+  apiKey: string,
+  path: string,
+  body: unknown,
+): Promise<T> {
+  const response = await fetch(`${projectUrl}${path}`, {
+    method: "POST",
+    headers: {
+      apikey: apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    let detail: string;
+    try {
+      const errorBody = (await response.json()) as { detail?: string };
+      detail = errorBody.detail ?? response.statusText;
+    } catch {
+      detail = response.statusText;
+    }
+    throw new Error(detail);
+  }
+
+  return (await response.json()) as T;
+}
+
+/**
+ * Replace values in _encrypted columns with "[encrypted]" when
+ * no encryption key is available.
+ */
+function maskEncryptedValues(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.map((row) => {
+    const masked: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(row)) {
+      masked[key] = key.endsWith("_encrypted") ? "[encrypted]" : value;
+    }
+    return masked;
+  });
+}
+
+/**
+ * Check if any keys in the object end with _encrypted.
+ * Used to reject inserts/updates that target encrypted columns without an encryption key.
+ */
+function hasEncryptedColumns(obj: Record<string, unknown>): boolean {
+  return Object.keys(obj).some((k) => k.endsWith("_encrypted"));
+}
+
+/** Build a success MCP tool result. */
+function successResult(response: CrudResponse) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(response) }],
+  };
+}
+
+/** Build an error MCP tool result. */
+function errorResult(response: CrudResponse) {
+  return {
+    isError: true,
+    content: [{ type: "text" as const, text: JSON.stringify(response) }],
+  };
+}
+
+/**
+ * Register CRUD tools on the MCP server.
+ */
+export function registerCrudTools(
+  mcpServer: McpServer,
+  projectUrl: string,
+  apiKey: string,
+  encryptionEnabled: boolean,
+): void {
+  // ── pqdb_query_rows ───────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_query_rows",
+    "Query rows from a table with optional filters, column selection, ordering, and pagination",
+    {
+      table: z.string().describe("Name of the table to query"),
+      columns: z
+        .array(z.string())
+        .optional()
+        .describe("Columns to return (default: all)"),
+      filters: z
+        .array(FilterZod)
+        .optional()
+        .describe("Filter conditions: { column, op, value }"),
+      limit: z.number().optional().describe("Max rows to return"),
+      offset: z.number().optional().describe("Rows to skip"),
+      order_by: z.string().optional().describe("Column to order by"),
+      order_dir: z
+        .enum(["asc", "desc"])
+        .optional()
+        .describe("Order direction (default: asc)"),
+    },
+    async ({ table, columns, filters, limit, offset, order_by, order_dir }) => {
+      try {
+        const body: Record<string, unknown> = {
+          columns: columns ?? ["*"],
+          filters: filters ?? [],
+          modifiers: {
+            limit: limit ?? null,
+            offset: offset ?? null,
+            order_by: order_by ?? null,
+            order_dir: order_dir ?? null,
+          },
+        };
+
+        const result = await pqdbPost<{ data: Record<string, unknown>[] }>(
+          projectUrl,
+          apiKey,
+          `/v1/db/${encodeURIComponent(table)}/select`,
+          body,
+        );
+
+        const data = encryptionEnabled
+          ? result.data
+          : maskEncryptedValues(result.data);
+
+        return successResult({ data, error: null });
+      } catch (err) {
+        return errorResult({
+          data: null,
+          error: err instanceof Error ? err.message : "Query failed",
+        });
+      }
+    },
+  );
+
+  // ── pqdb_insert_rows ──────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_insert_rows",
+    "Insert one or more rows into a table",
+    {
+      table: z.string().describe("Name of the table to insert into"),
+      rows: z
+        .array(z.record(z.string(), z.unknown()))
+        .describe("Array of row objects to insert"),
+    },
+    async ({ table, rows }) => {
+      // Reject inserts targeting encrypted columns without encryption key
+      if (!encryptionEnabled) {
+        for (const row of rows) {
+          if (hasEncryptedColumns(row)) {
+            return errorResult({
+              data: null,
+              error:
+                "Cannot write to encrypted columns without PQDB_ENCRYPTION_KEY. " +
+                "Set the encryption key to enable client-side encryption.",
+            });
+          }
+        }
+      }
+
+      try {
+        const result = await pqdbPost<{ data: unknown[] }>(
+          projectUrl,
+          apiKey,
+          `/v1/db/${encodeURIComponent(table)}/insert`,
+          { rows },
+        );
+
+        return successResult({ data: result.data, error: null });
+      } catch (err) {
+        return errorResult({
+          data: null,
+          error: err instanceof Error ? err.message : "Insert failed",
+        });
+      }
+    },
+  );
+
+  // ── pqdb_update_rows ──────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_update_rows",
+    "Update rows in a table matching the given filters",
+    {
+      table: z.string().describe("Name of the table to update"),
+      values: z
+        .record(z.string(), z.unknown())
+        .describe("Column-value pairs to set"),
+      filters: z
+        .array(FilterZod)
+        .optional()
+        .describe("Filter conditions to match rows"),
+    },
+    async ({ table, values, filters }) => {
+      // Reject updates targeting encrypted columns without encryption key
+      if (!encryptionEnabled && hasEncryptedColumns(values)) {
+        return errorResult({
+          data: null,
+          error:
+            "Cannot write to encrypted columns without PQDB_ENCRYPTION_KEY. " +
+            "Set the encryption key to enable client-side encryption.",
+        });
+      }
+
+      try {
+        const result = await pqdbPost<{ data: unknown[] }>(
+          projectUrl,
+          apiKey,
+          `/v1/db/${encodeURIComponent(table)}/update`,
+          { values, filters: filters ?? [] },
+        );
+
+        return successResult({ data: result.data, error: null });
+      } catch (err) {
+        return errorResult({
+          data: null,
+          error: err instanceof Error ? err.message : "Update failed",
+        });
+      }
+    },
+  );
+
+  // ── pqdb_delete_rows ──────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_delete_rows",
+    "Delete rows from a table matching the given filters",
+    {
+      table: z.string().describe("Name of the table to delete from"),
+      filters: z
+        .array(FilterZod)
+        .describe("Filter conditions to match rows for deletion"),
+    },
+    async ({ table, filters }) => {
+      try {
+        const result = await pqdbPost<{ data: unknown[] }>(
+          projectUrl,
+          apiKey,
+          `/v1/db/${encodeURIComponent(table)}/delete`,
+          { filters },
+        );
+
+        return successResult({ data: result.data, error: null });
+      } catch (err) {
+        return errorResult({
+          data: null,
+          error: err instanceof Error ? err.message : "Delete failed",
+        });
+      }
+    },
+  );
+}

@@ -6,6 +6,7 @@ import { createClient } from "@pqdb/client";
 import type { PqdbClient } from "@pqdb/client";
 import type { ServerConfig } from "./config.js";
 import { registerSchemaTools } from "./schema-tools.js";
+import { registerCrudTools } from "./crud-tools.js";
 
 export const SERVER_NAME = "pqdb-mcp";
 export const SERVER_VERSION = "0.1.0";
@@ -69,6 +70,9 @@ export function createPqdbMcpServer(config: ServerConfig): PqdbMcpServer {
 
   // Register schema introspection tools and resources (US-057)
   registerSchemaTools(mcpServer, config.projectUrl, config.apiKey);
+
+  // Register CRUD tools (US-058)
+  registerCrudTools(mcpServer, config.projectUrl, config.apiKey, encryptionEnabled);
 
   return { mcpServer, pqdbClient, encryptionEnabled };
 }
