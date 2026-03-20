@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from tests.integration.conftest import PG_HOST, PG_PORT, _make_project_app
 
+
 # ---------------------------------------------------------------------------
 # Skip if Postgres not available
 # ---------------------------------------------------------------------------
@@ -45,11 +46,16 @@ def client(test_db_name: str, test_db_url: str) -> Iterator[TestClient]:
     subprocess.run(
         [
             "psql",
-            "-h", PG_HOST,
-            "-p", str(PG_PORT),
-            "-U", PG_USER,
-            "-d", test_db_name,
-            "-c", "CREATE EXTENSION IF NOT EXISTS vector",
+            "-h",
+            PG_HOST,
+            "-p",
+            str(PG_PORT),
+            "-U",
+            PG_USER,
+            "-d",
+            test_db_name,
+            "-c",
+            "CREATE EXTENSION IF NOT EXISTS vector",
         ],
         env=_pg_env(),
         check=True,
@@ -117,12 +123,17 @@ class TestVectorTableCreation:
             json={
                 "name": "bad_table",
                 "columns": [
-                    {"name": "emb", "data_type": "vector(3)", "sensitivity": "searchable"},
+                    {
+                        "name": "emb",
+                        "data_type": "vector(3)",
+                        "sensitivity": "searchable",
+                    },
                 ],
             },
         )
         assert resp.status_code == 400
-        assert "vector" in resp.json()["detail"].lower() or "sensitive" in resp.json()["detail"].lower()
+        detail = resp.json()["detail"].lower()
+        assert "vector" in detail or "sensitive" in detail
 
     def test_reject_private_vector_column(self, client: TestClient) -> None:
         resp = client.post(

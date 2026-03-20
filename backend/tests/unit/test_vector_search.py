@@ -6,8 +6,6 @@ and schema engine rejection of encrypted vector columns.
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
 from pqdb_api.services.crud import (
@@ -39,7 +37,9 @@ class TestSimilarToDataclass:
         assert st.distance == "cosine"
 
     def test_explicit_l2(self) -> None:
-        st = SimilarTo(column="embedding", vector=[0.1, 0.2, 0.3], limit=5, distance="l2")
+        st = SimilarTo(
+            column="embedding", vector=[0.1, 0.2, 0.3], limit=5, distance="l2"
+        )
         assert st.distance == "l2"
 
     def test_explicit_inner_product(self) -> None:
@@ -89,7 +89,12 @@ class TestValidateSimilarTo:
         validate_similar_to(st, COLUMNS_META)
 
     def test_rejects_invalid_distance_metric(self) -> None:
-        st = SimilarTo(column="embedding", vector=[0.1, 0.2, 0.3], limit=5, distance="hamming")
+        st = SimilarTo(
+            column="embedding",
+            vector=[0.1, 0.2, 0.3],
+            limit=5,
+            distance="hamming",
+        )
         with pytest.raises(CrudError, match="Unsupported distance"):
             validate_similar_to(st, COLUMNS_META)
 
@@ -112,13 +117,21 @@ class TestBuildSelectSQLWithSimilarTo:
         assert params["similar_limit"] == 5
 
     def test_l2_distance(self) -> None:
-        st = SimilarTo(column="embedding", vector=[0.1, 0.2, 0.3], limit=5, distance="l2")
+        st = SimilarTo(
+            column="embedding",
+            vector=[0.1, 0.2, 0.3],
+            limit=5,
+            distance="l2",
+        )
         sql, params = build_select_sql("documents", similar_to=st)
         assert "<->" in sql
 
     def test_inner_product_distance(self) -> None:
         st = SimilarTo(
-            column="embedding", vector=[0.1, 0.2, 0.3], limit=5, distance="inner_product"
+            column="embedding",
+            vector=[0.1, 0.2, 0.3],
+            limit=5,
+            distance="inner_product",
         )
         sql, params = build_select_sql("documents", similar_to=st)
         assert "<#>" in sql
@@ -182,13 +195,25 @@ class TestSchemaEngineRejectsEncryptedVectors:
     """Schema engine must reject vector(N) columns with non-plain sensitivity."""
 
     def test_vector_plain_allowed(self) -> None:
-        col = ColumnDefinition(name="embedding", data_type="vector(3)", sensitivity="plain")
+        col = ColumnDefinition(
+            name="embedding", data_type="vector(3)", sensitivity="plain"
+        )
         assert col.data_type == "vector(3)"
 
     def test_vector_searchable_rejected(self) -> None:
-        with pytest.raises(ValueError, match="[Vv]ector.*cannot.*sensitive|[Ss]ensitive.*vector"):
-            ColumnDefinition(name="embedding", data_type="vector(3)", sensitivity="searchable")
+        pattern = r"[Vv]ector.*cannot.*sensitive|[Ss]ensitive.*vector"
+        with pytest.raises(ValueError, match=pattern):
+            ColumnDefinition(
+                name="embedding",
+                data_type="vector(3)",
+                sensitivity="searchable",
+            )
 
     def test_vector_private_rejected(self) -> None:
-        with pytest.raises(ValueError, match="[Vv]ector.*cannot.*sensitive|[Ss]ensitive.*vector"):
-            ColumnDefinition(name="embedding", data_type="vector(3)", sensitivity="private")
+        pattern = r"[Vv]ector.*cannot.*sensitive|[Ss]ensitive.*vector"
+        with pytest.raises(ValueError, match=pattern):
+            ColumnDefinition(
+                name="embedding",
+                data_type="vector(3)",
+                sensitivity="private",
+            )
