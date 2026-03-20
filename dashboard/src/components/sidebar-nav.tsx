@@ -26,7 +26,7 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Query Playground", icon: Terminal, path: "/sql" },
   { label: "Schema", icon: GitBranch, path: "/schema" },
   { label: "Authentication", icon: Shield, path: "/auth" },
-  { label: "Realtime", icon: Radio, path: "/realtime", disabled: true },
+  { label: "Realtime", icon: Radio, path: "/realtime" },
   { label: "Logs", icon: ScrollText, path: "/logs" },
   { label: "MCP", icon: Bot, path: "/mcp", disabled: true },
   { label: "Project Settings", icon: Settings, path: "/settings" },
