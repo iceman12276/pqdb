@@ -1,0 +1,10 @@
+{
+  "pqdb": {
+    "command": "node",
+    "args": ["./mcp/dist/cli.js", "--project-url", "http://localhost:8000"],
+    "env": {
+      "PQDB_API_KEY": "${PQDB_API_KEY}",
+      "PQDB_ENCRYPTION_KEY": "${PQDB_ENCRYPTION_KEY}"
+    }
+  }
+}
