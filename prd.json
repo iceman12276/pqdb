@@ -19,8 +19,8 @@
       "dependsOn": [
         "US-056"
       ],
-      "passes": false,
-      "notes": "",
+      "passes": true,
+      "notes": "PR #80 merged. MCP schema tools + resources. 19 tests.",
       "priority": 2,
       "description": "",
       "acceptanceCriteria": []
@@ -77,8 +77,8 @@
       "dependsOn": [
         "US-060"
       ],
-      "passes": false,
-      "notes": "",
+      "passes": true,
+      "notes": "PR #79 merged. SDK .similarTo() method. 10 tests.",
       "priority": 5,
       "description": "",
       "acceptanceCriteria": []
@@ -99,8 +99,8 @@
       "dependsOn": [
         "US-063"
       ],
-      "passes": false,
-      "notes": "",
+      "passes": true,
+      "notes": "PR #82 merged. Realtime WebSocket server. 37 tests.",
       "priority": 2,
       "description": "",
       "acceptanceCriteria": []
