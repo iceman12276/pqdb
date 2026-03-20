@@ -15,6 +15,8 @@ export interface ServerConfig {
   apiKey: string;
   /** Optional encryption key for client-side decryption. */
   encryptionKey: string | undefined;
+  /** Optional developer JWT for project management endpoints. */
+  devToken: string | undefined;
 }
 
 export interface ParsedArgs {
@@ -75,5 +77,6 @@ export function buildConfig(args: ParsedArgs): ServerConfig {
     port: args.port,
     apiKey,
     encryptionKey: process.env.PQDB_ENCRYPTION_KEY || undefined,
+    devToken: process.env.PQDB_DEV_TOKEN || undefined,
   };
 }

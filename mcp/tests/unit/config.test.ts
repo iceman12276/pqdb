@@ -141,6 +141,29 @@ describe("buildConfig", () => {
       port: 4000,
       apiKey: "pqdb_service_key456",
       encryptionKey: "enc-key",
+      devToken: undefined,
     });
+  });
+
+  it("includes devToken when PQDB_DEV_TOKEN is set", () => {
+    process.env.PQDB_API_KEY = "pqdb_anon_testkey123";
+    process.env.PQDB_DEV_TOKEN = "my-jwt-token";
+    const config = buildConfig({
+      projectUrl: "http://localhost:8000",
+      transport: "stdio",
+      port: 3001,
+    });
+    expect(config.devToken).toBe("my-jwt-token");
+  });
+
+  it("devToken is undefined when PQDB_DEV_TOKEN is not set", () => {
+    process.env.PQDB_API_KEY = "pqdb_anon_testkey123";
+    delete process.env.PQDB_DEV_TOKEN;
+    const config = buildConfig({
+      projectUrl: "http://localhost:8000",
+      transport: "stdio",
+      port: 3001,
+    });
+    expect(config.devToken).toBeUndefined();
   });
 });

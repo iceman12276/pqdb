@@ -13,3 +13,6 @@ export { registerCrudTools } from "./crud-tools.js";
 export { registerAuthTools } from "./auth-tools.js";
 export { registerNlQueryTool, translateNaturalLanguage } from "./nl-query.js";
 export type { SchemaInfo, ColumnInfo, TranslationResult } from "./nl-query.js";
+export { registerProjectTools } from "./project-tools.js";
+export { registerAdminTools } from "./admin-tools.js";
+export { registerDocsTools, searchDocs, generateTypeScript } from "./docs-tools.js";
