@@ -3,10 +3,12 @@
  */
 import { HttpClient } from "./http.js";
 import { AuthClient } from "./auth.js";
+import { RealtimeClient } from "./realtime.js";
 import { QueryBuilder } from "../query/builder.js";
 import { defineTableSchema } from "../query/schema.js";
 import { deriveKeyPair, decrypt } from "../crypto/encryption.js";
 import { computeBlindIndex } from "../crypto/blind-index.js";
+import { transformSelectResponse } from "../query/crypto-transform.js";
 import type { SchemaColumns, TableSchema } from "../query/schema.js";
 import type { PqdbClientOptions, PqdbResponse } from "./types.js";
 import type { CryptoContext } from "../query/crypto-context.js";
@@ -22,6 +24,7 @@ export interface ReindexResult {
 
 export interface PqdbClient {
   auth: AuthClient;
+  realtime: RealtimeClient;
 
   /** Define a table schema for use with the query builder. */
   defineTable<S extends SchemaColumns>(name: string, columns: S): TableSchema<S>;
@@ -104,6 +107,22 @@ export function createClient(
 ): PqdbClient {
   const http = new HttpClient(projectUrl, apiKey);
   const auth = new AuthClient(http, options?.projectId);
+
+  // Build decryptRow function for realtime if encryption key is provided
+  const decryptRowFn = options?.encryptionKey
+    ? async (row: Record<string, unknown>, schema: TableSchema): Promise<Record<string, unknown>> => {
+        const ctx = await getResolvedCryptoContext();
+        const [decrypted] = await transformSelectResponse([row], schema, ctx.keyPair.secretKey);
+        return decrypted;
+      }
+    : null;
+
+  const realtime = new RealtimeClient({
+    baseUrl: projectUrl,
+    apiKey,
+    token: http.getAccessToken(),
+    decryptRow: decryptRowFn,
+  });
 
   // One-time warning about encryption key backup responsibility
   if (options?.encryptionKey) {
@@ -355,7 +374,7 @@ export function createClient(
     }
   }
 
-  return { auth, defineTable, from, reindex };
+  return { auth, realtime, defineTable, from, reindex };
 }
 
 export type { PqdbClientOptions, PqdbClient as PqdbClientInterface };

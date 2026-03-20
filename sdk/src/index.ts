@@ -8,6 +8,13 @@ export const VERSION = "0.1.0";
 
 export { createClient } from "./client/index.js";
 export type { PqdbClient, PqdbClientOptions, ReindexResult } from "./client/index.js";
+export { RealtimeClient } from "./client/realtime.js";
+export type {
+  RealtimeEvent,
+  RealtimeEventType,
+  RealtimeCallback,
+  Subscription,
+} from "./client/realtime.js";
 export type {
   AuthCredentials,
   AuthTokens,
