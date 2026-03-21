@@ -26,9 +26,14 @@ describe("parseArgs", () => {
     expect(result.transport).toBe("sse");
   });
 
+  it("parses --transport http", () => {
+    const result = parseArgs(["--transport", "http"]);
+    expect(result.transport).toBe("http");
+  });
+
   it("throws on invalid transport", () => {
     expect(() => parseArgs(["--transport", "grpc"])).toThrow(
-      'Invalid transport: grpc. Must be "stdio" or "sse".',
+      'Invalid transport: grpc. Must be "stdio", "sse", or "http".',
     );
   });
 
@@ -165,5 +170,22 @@ describe("buildConfig", () => {
       port: 3001,
     });
     expect(config.devToken).toBeUndefined();
+  });
+
+  it("allows missing PQDB_API_KEY for http transport", () => {
+    delete process.env.PQDB_API_KEY;
+    const config = buildConfig({
+      projectUrl: "http://localhost:8000",
+      transport: "http",
+      port: 3002,
+    });
+    expect(config.apiKey).toBe("");
+  });
+
+  it("still requires PQDB_API_KEY for stdio transport", () => {
+    delete process.env.PQDB_API_KEY;
+    expect(() =>
+      buildConfig({ projectUrl: "http://localhost:8000", transport: "stdio", port: 3001 }),
+    ).toThrow("PQDB_API_KEY environment variable is required.");
   });
 });
