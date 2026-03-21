@@ -201,7 +201,7 @@ export function registerAdminTools(
         const migrations = await devGet<unknown[]>(
           projectUrl,
           devToken!,
-          "/v1/db/migrations",
+          "/v1/projects/migrations",
         );
 
         return successResult({ data: migrations, error: null });

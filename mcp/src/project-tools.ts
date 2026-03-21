@@ -18,31 +18,6 @@ interface ApiResponse {
   error: string | null;
 }
 
-/** Make an authenticated GET request using apikey header. */
-async function apikeyGet<T>(
-  projectUrl: string,
-  apiKey: string,
-  path: string,
-): Promise<T> {
-  const response = await fetch(`${projectUrl}${path}`, {
-    method: "GET",
-    headers: { apikey: apiKey },
-  });
-
-  if (!response.ok) {
-    let detail: string;
-    try {
-      const body = (await response.json()) as { detail?: string };
-      detail = body.detail ?? response.statusText;
-    } catch {
-      detail = response.statusText;
-    }
-    throw new Error(detail);
-  }
-
-  return (await response.json()) as T;
-}
-
 /** Make an authenticated GET request using developer JWT. */
 async function devGet<T>(
   projectUrl: string,
@@ -132,7 +107,7 @@ function requireDevToken(devToken: string | undefined): ReturnType<typeof errorR
 export function registerProjectTools(
   mcpServer: McpServer,
   projectUrl: string,
-  apiKey: string,
+  _apiKey: string,
   devToken: string | undefined,
 ): void {
   // ── pqdb_get_project ────────────────────────────────────────────────
@@ -144,10 +119,13 @@ export function registerProjectTools(
       project_id: z.string().describe("ID of the project to retrieve"),
     },
     async ({ project_id }) => {
+      const authError = requireDevToken(devToken);
+      if (authError) return authError;
+
       try {
-        const project = await apikeyGet<unknown>(
+        const project = await devGet<unknown>(
           projectUrl,
-          apiKey,
+          devToken!,
           `/v1/projects/${encodeURIComponent(project_id)}`,
         );
 
@@ -231,10 +209,13 @@ export function registerProjectTools(
       project_id: z.string().describe("ID of the project to get logs for"),
     },
     async ({ project_id }) => {
+      const authError = requireDevToken(devToken);
+      if (authError) return authError;
+
       try {
-        const logs = await apikeyGet<unknown[]>(
+        const logs = await devGet<unknown[]>(
           projectUrl,
-          apiKey,
+          devToken!,
           `/v1/projects/${encodeURIComponent(project_id)}/logs`,
         );
 
