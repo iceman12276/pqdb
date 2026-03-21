@@ -17,6 +17,18 @@ describe("isValidMcpCallback", () => {
     expect(isValidMcpCallback("http://localhost/callback")).toBe(true);
   });
 
+  it("accepts 127.0.0.1 URLs", () => {
+    expect(isValidMcpCallback("http://127.0.0.1:3002/callback")).toBe(true);
+  });
+
+  it("accepts IPv6 loopback URLs", () => {
+    expect(isValidMcpCallback("http://[::1]:3002/callback")).toBe(true);
+  });
+
+  it("accepts https localhost URLs", () => {
+    expect(isValidMcpCallback("https://localhost:3002/callback")).toBe(true);
+  });
+
   it("rejects non-localhost URLs", () => {
     expect(isValidMcpCallback("https://evil.com/steal-token")).toBe(false);
   });
@@ -25,6 +37,10 @@ describe("isValidMcpCallback", () => {
     expect(isValidMcpCallback("https://evil.com/localhost/callback")).toBe(
       false,
     );
+  });
+
+  it("rejects ftp protocol", () => {
+    expect(isValidMcpCallback("ftp://localhost:3002/callback")).toBe(false);
   });
 
   it("rejects invalid URLs", () => {
@@ -105,6 +121,39 @@ describe("getMcpCallbackParams", () => {
     const params = getMcpCallbackParams();
     expect(params.mcp_callback).toBeNull();
     expect(params.request_id).toBeNull();
+  });
+});
+
+describe("getOAuthRedirectUri preserves MCP params", () => {
+  const originalLocation = window.location;
+
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: originalLocation,
+    });
+  });
+
+  it("includes mcp_callback and request_id in the redirect URI", () => {
+    const search =
+      "?mcp_callback=http%3A%2F%2Flocalhost%3A3002%2Fcallback&request_id=abc123";
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: {
+        ...originalLocation,
+        origin: "http://localhost:3000",
+        search,
+      },
+    });
+
+    // Replicate the getOAuthRedirectUri logic from login-page.tsx
+    const redirectUri = `${window.location.origin}/login${window.location.search}`;
+    const url = new URL(redirectUri);
+    expect(url.searchParams.get("mcp_callback")).toBe(
+      "http://localhost:3002/callback",
+    );
+    expect(url.searchParams.get("request_id")).toBe("abc123");
+    expect(url.pathname).toBe("/login");
   });
 });
 

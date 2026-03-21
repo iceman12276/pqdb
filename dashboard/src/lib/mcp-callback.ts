@@ -24,12 +24,16 @@ export function getMcpCallbackParams(): McpCallbackParams {
 
 /**
  * Validate that a callback URL is safe to redirect to.
- * Only localhost URLs are allowed to prevent open redirect attacks.
+ * Only loopback URLs (localhost, 127.0.0.1, ::1) over http/https are allowed
+ * to prevent open redirect attacks.
  */
+const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
+
 export function isValidMcpCallback(callbackUrl: string): boolean {
   try {
     const url = new URL(callbackUrl);
-    return url.hostname === "localhost";
+    return ALLOWED_PROTOCOLS.has(url.protocol) && ALLOWED_HOSTS.has(url.hostname);
   } catch {
     return false;
   }
