@@ -19,6 +19,7 @@ import { Route as ProjectsProjectIdIndexRouteImport } from './routes/projects/$p
 import { Route as ProjectsProjectIdSqlRouteImport } from './routes/projects/$projectId/sql'
 import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects/$projectId/settings'
 import { Route as ProjectsProjectIdSchemaRouteImport } from './routes/projects/$projectId/schema'
+import { Route as ProjectsProjectIdRealtimeRouteImport } from './routes/projects/$projectId/realtime'
 import { Route as ProjectsProjectIdMcpRouteImport } from './routes/projects/$projectId/mcp'
 import { Route as ProjectsProjectIdLogsRouteImport } from './routes/projects/$projectId/logs'
 import { Route as ProjectsProjectIdKeysRouteImport } from './routes/projects/$projectId.keys'
@@ -77,6 +78,12 @@ const ProjectsProjectIdSchemaRoute = ProjectsProjectIdSchemaRouteImport.update({
   path: '/schema',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdRealtimeRoute =
+  ProjectsProjectIdRealtimeRouteImport.update({
+    id: '/realtime',
+    path: '/realtime',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdMcpRoute = ProjectsProjectIdMcpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
@@ -121,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
@@ -138,6 +146,7 @@ export interface FileRoutesByTo {
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
@@ -157,6 +166,7 @@ export interface FileRoutesById {
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/realtime'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
@@ -194,6 +205,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/realtime'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
@@ -212,6 +224,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/realtime'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
@@ -301,6 +314,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdSchemaRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/realtime': {
+      id: '/projects/$projectId/realtime'
+      path: '/realtime'
+      fullPath: '/projects/$projectId/realtime'
+      preLoaderRoute: typeof ProjectsProjectIdRealtimeRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
     '/projects/$projectId/mcp': {
       id: '/projects/$projectId/mcp'
       path: '/mcp'
@@ -351,6 +371,7 @@ interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdKeysRoute: typeof ProjectsProjectIdKeysRoute
   ProjectsProjectIdLogsRoute: typeof ProjectsProjectIdLogsRoute
   ProjectsProjectIdMcpRoute: typeof ProjectsProjectIdMcpRoute
+  ProjectsProjectIdRealtimeRoute: typeof ProjectsProjectIdRealtimeRoute
   ProjectsProjectIdSchemaRoute: typeof ProjectsProjectIdSchemaRoute
   ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
   ProjectsProjectIdSqlRoute: typeof ProjectsProjectIdSqlRoute
@@ -364,6 +385,7 @@ const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdKeysRoute: ProjectsProjectIdKeysRoute,
   ProjectsProjectIdLogsRoute: ProjectsProjectIdLogsRoute,
   ProjectsProjectIdMcpRoute: ProjectsProjectIdMcpRoute,
+  ProjectsProjectIdRealtimeRoute: ProjectsProjectIdRealtimeRoute,
   ProjectsProjectIdSchemaRoute: ProjectsProjectIdSchemaRoute,
   ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,
   ProjectsProjectIdSqlRoute: ProjectsProjectIdSqlRoute,

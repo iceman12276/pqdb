@@ -3,6 +3,7 @@ import { api } from "~/lib/api-client";
 import { setTokens } from "~/lib/auth-store";
 import { useNavigate } from "~/lib/navigation";
 import { isValidEmail } from "~/lib/validation";
+import { handleMcpRedirect } from "~/lib/mcp-callback";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -56,7 +57,9 @@ export function SignupPage() {
           },
           { persist: true },
         );
-        navigate({ to: "/projects" });
+        if (!handleMcpRedirect(result.data.access_token)) {
+          navigate({ to: "/projects" });
+        }
       }
     } finally {
       setLoading(false);
