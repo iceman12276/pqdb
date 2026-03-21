@@ -103,10 +103,13 @@ async def generate_service_key(
 
     # Check for existing service key — delete old one to prevent accumulation
     existing = await session.execute(
-        select(ApiKey).where(
+        select(ApiKey)
+        .where(
             ApiKey.project_id == project_id,
             ApiKey.role == "service",
-        ).order_by(ApiKey.created_at.desc()).limit(1)
+        )
+        .order_by(ApiKey.created_at.desc())
+        .limit(1)
     )
     existing_key = existing.scalar_one_or_none()
 
