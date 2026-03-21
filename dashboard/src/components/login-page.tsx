@@ -4,6 +4,7 @@ import { setTokens } from "~/lib/auth-store";
 import { useNavigate } from "~/lib/navigation";
 import { isValidEmail } from "~/lib/validation";
 import { startPasskeyAuthentication } from "~/lib/passkey";
+import { handleMcpRedirect } from "~/lib/mcp-callback";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -17,7 +18,9 @@ import {
 } from "~/components/ui/card";
 
 function getOAuthRedirectUri(): string {
-  return `${window.location.origin}/login`;
+  // Preserve query params (mcp_callback, request_id) through the OAuth round-trip
+  const search = window.location.search;
+  return `${window.location.origin}/login${search}`;
 }
 
 export function LoginPage() {
@@ -40,8 +43,10 @@ export function LoginPage() {
           { persist: true },
         );
         // Clear the hash to avoid re-processing
-        window.history.replaceState(null, "", "/login");
-        navigate({ to: "/projects" });
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        if (!handleMcpRedirect(accessToken)) {
+          navigate({ to: "/projects" });
+        }
       }
     }
   }, [navigate]);
@@ -76,7 +81,9 @@ export function LoginPage() {
           },
           { persist: true },
         );
-        navigate({ to: "/projects" });
+        if (!handleMcpRedirect(result.data.access_token)) {
+          navigate({ to: "/projects" });
+        }
       }
     } finally {
       setLoading(false);
@@ -95,7 +102,9 @@ export function LoginPage() {
     try {
       const tokens = await startPasskeyAuthentication();
       setTokens(tokens, { persist: true });
-      navigate({ to: "/projects" });
+      if (!handleMcpRedirect(tokens.access_token)) {
+        navigate({ to: "/projects" });
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Passkey authentication failed";
