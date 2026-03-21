@@ -59,15 +59,37 @@ export function ProjectProvider({
     async function load() {
       try {
         const cachedKey = getCachedServiceKey(projectId);
-        const [proj, key] = await Promise.all([
-          fetchProject(projectId),
-          cachedKey
-            ? Promise.resolve(cachedKey)
-            : fetchServiceKey(projectId).then((info) => {
-                cacheServiceKey(projectId, info.key);
-                return info.key;
-              }),
-        ]);
+        let key: string;
+
+        const proj = await fetchProject(projectId);
+
+        if (cachedKey) {
+          // Verify the cached key still works by trying a lightweight call
+          try {
+            const testRes = await fetch(`/v1/db/introspect`, {
+              headers: { apikey: cachedKey },
+            });
+            if (testRes.ok) {
+              key = cachedKey;
+            } else {
+              // Cached key is stale — fetch a new one
+              sessionStorage.removeItem(SERVICE_KEY_PREFIX + projectId);
+              const info = await fetchServiceKey(projectId);
+              cacheServiceKey(projectId, info.key);
+              key = info.key;
+            }
+          } catch {
+            // Network error — try fetching a new key
+            sessionStorage.removeItem(SERVICE_KEY_PREFIX + projectId);
+            const info = await fetchServiceKey(projectId);
+            cacheServiceKey(projectId, info.key);
+            key = info.key;
+          }
+        } else {
+          const info = await fetchServiceKey(projectId);
+          cacheServiceKey(projectId, info.key);
+          key = info.key;
+        }
         if (!cancelled) {
           setState({
             project: proj,
