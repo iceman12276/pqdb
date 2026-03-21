@@ -130,11 +130,48 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
 
         // Build config from the authenticated developer's JWT + options
         const devJwt = req.auth?.token;
+
+        // Auto-fetch a service API key if we don't have one
+        let apiKey = options.apiKey ?? "";
+        if (!apiKey && devJwt) {
+          try {
+            // Get the developer's projects to find a project ID
+            const projRes = await fetch(`${options.projectUrl}/v1/projects`, {
+              headers: { Authorization: `Bearer ${devJwt}` },
+            });
+            if (projRes.ok) {
+              const projects = (await projRes.json()) as Array<{ id: string }>;
+              if (projects.length > 0) {
+                // Fetch a service key for the first project
+                const keyRes = await fetch(
+                  `${options.projectUrl}/v1/projects/${projects[0].id}/keys/service-key`,
+                  {
+                    method: "POST",
+                    headers: {
+                      Authorization: `Bearer ${devJwt}`,
+                      "Content-Type": "application/json",
+                    },
+                  },
+                );
+                if (keyRes.ok) {
+                  const keyData = (await keyRes.json()) as { key: string };
+                  apiKey = keyData.key;
+                  console.error(
+                    `[pqdb-mcp] Auto-fetched service key for project ${projects[0].id}`,
+                  );
+                }
+              }
+            }
+          } catch {
+            console.error("[pqdb-mcp] Failed to auto-fetch service key");
+          }
+        }
+
         const config: ServerConfig = {
           projectUrl: options.projectUrl,
           transport: "http",
           port: 0, // Not used for HTTP app
-          apiKey: options.apiKey ?? "",
+          apiKey,
           encryptionKey: options.encryptionKey,
           devToken: devJwt,
         };
