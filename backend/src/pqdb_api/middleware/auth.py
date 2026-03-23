@@ -2,48 +2,37 @@
 
 import uuid
 
-import jwt
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from pqdb_api.services.auth import JWT_ALGORITHM
+from pqdb_api.services.auth import InvalidTokenError, TokenExpiredError, decode_token
 
 _bearer_scheme = HTTPBearer()
 
 
-def _get_public_key(request: Request) -> Ed25519PublicKey:
-    """Extract Ed25519 public key from app state."""
-    key = request.app.state.jwt_public_key
-    if isinstance(key, Ed25519PublicKey):
-        return key
-    if isinstance(key, (str, bytes)):
-        pem = key.encode() if isinstance(key, str) else key
-        loaded = load_pem_public_key(pem)
-        if not isinstance(loaded, Ed25519PublicKey):
-            raise HTTPException(status_code=500, detail="Invalid JWT key type")
-        return loaded
-    raise HTTPException(status_code=500, detail="JWT public key not configured")
+def _get_mldsa65_public_key(request: Request) -> bytes:
+    """Extract ML-DSA-65 public key from app state."""
+    key = getattr(request.app.state, "mldsa65_public_key", None)
+    if not isinstance(key, bytes):
+        raise HTTPException(status_code=500, detail="ML-DSA-65 public key not configured")
+    return key
 
 
 async def get_current_developer_id(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
     request: Request = None,  # type: ignore[assignment]
 ) -> uuid.UUID:
-    """Extract and validate JWT from Authorization header.
+    """Extract and validate ML-DSA-65 JWT from Authorization header.
 
     Returns the developer UUID from the token's ``sub`` claim.
     Raises 401 for missing, invalid, or expired tokens.
     """
-    public_key = _get_public_key(request)
+    public_key = _get_mldsa65_public_key(request)
     try:
-        payload = jwt.decode(
-            credentials.credentials, public_key, algorithms=[JWT_ALGORITHM]
-        )
-    except jwt.ExpiredSignatureError:
+        payload = decode_token(credentials.credentials, public_key)
+    except TokenExpiredError:
         raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.PyJWTError:
+    except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
     if payload.get("type") != "access":

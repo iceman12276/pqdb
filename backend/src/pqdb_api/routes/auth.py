@@ -2,12 +2,7 @@
 
 import uuid
 
-import jwt
 import structlog
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
@@ -18,9 +13,11 @@ from pqdb_api.database import get_session
 from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.developer import Developer
 from pqdb_api.services.auth import (
-    JWT_ALGORITHM,
+    InvalidTokenError,
+    TokenExpiredError,
     create_access_token,
     create_refresh_token,
+    decode_token,
     hash_password,
     verify_password,
 )
@@ -58,13 +55,15 @@ class AccessTokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
-def _get_private_key(request: Request) -> Ed25519PrivateKey:
-    key: Ed25519PrivateKey = request.app.state.jwt_private_key
+def _get_private_key(request: Request) -> bytes:
+    """Extract ML-DSA-65 private key from app state."""
+    key: bytes = request.app.state.mldsa65_private_key
     return key
 
 
-def _get_public_key(request: Request) -> Ed25519PublicKey:
-    key: Ed25519PublicKey = request.app.state.jwt_public_key
+def _get_public_key(request: Request) -> bytes:
+    """Extract ML-DSA-65 public key from app state."""
+    key: bytes = request.app.state.mldsa65_public_key
     return key
 
 
@@ -129,10 +128,10 @@ async def refresh(
     public_key = _get_public_key(request)
     private_key = _get_private_key(request)
     try:
-        payload = jwt.decode(body.refresh_token, public_key, algorithms=[JWT_ALGORITHM])
-    except jwt.ExpiredSignatureError:
+        payload = decode_token(body.refresh_token, public_key)
+    except TokenExpiredError:
         raise HTTPException(status_code=401, detail="Refresh token expired")
-    except jwt.PyJWTError:
+    except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     if payload.get("type") != "refresh":

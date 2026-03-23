@@ -3,10 +3,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from cryptography.hazmat.primitives.serialization import (
-    load_pem_private_key,
-    load_pem_public_key,
-)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -34,25 +30,10 @@ from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.routes.realtime_ws import realtime_ws_endpoint
 from pqdb_api.routes.roles import router as roles_router
 from pqdb_api.routes.user_auth import router as user_auth_router
-from pqdb_api.services.auth import generate_ed25519_keypair, generate_mldsa65_keypair
+from pqdb_api.services.auth import generate_mldsa65_keypair
 from pqdb_api.services.provisioner import DatabaseProvisioner
 from pqdb_api.services.rate_limiter import RateLimiter
 from pqdb_api.services.vault import VaultClient
-
-
-def _init_jwt_keys(app: FastAPI, settings: Settings) -> None:
-    """Load or generate Ed25519 key pair for JWT signing."""
-    if settings.jwt_private_key_pem and settings.jwt_public_key_pem:
-        app.state.jwt_private_key = load_pem_private_key(
-            settings.jwt_private_key_pem.encode(), password=None
-        )
-        app.state.jwt_public_key = load_pem_public_key(
-            settings.jwt_public_key_pem.encode()
-        )
-    else:
-        private_key, public_key = generate_ed25519_keypair()
-        app.state.jwt_private_key = private_key
-        app.state.jwt_public_key = public_key
 
 
 @asynccontextmanager
@@ -61,7 +42,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     setup_logging(debug=settings.debug)
     init_engine(settings.database_url)
-    _init_jwt_keys(app, settings)
     mldsa_private, mldsa_public = generate_mldsa65_keypair()
     app.state.mldsa65_private_key = mldsa_private
     app.state.mldsa65_public_key = mldsa_public

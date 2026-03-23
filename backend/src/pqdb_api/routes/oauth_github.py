@@ -14,7 +14,6 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import jwt
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -25,6 +24,12 @@ from pqdb_api.middleware.api_key import (
     ProjectContext,
     get_project_context,
     get_project_session,
+)
+from pqdb_api.services.auth import (
+    InvalidTokenError,
+    TokenExpiredError,
+    _build_mldsa65_token,
+    decode_token,
 )
 from pqdb_api.services.auth_engine import ensure_auth_tables
 from pqdb_api.services.oauth import GitHubOAuthProvider, OAuthUserInfo
@@ -44,8 +49,8 @@ _STATE_TOKEN_EXPIRE_MINUTES = 10
 def _get_user_auth_service(request: Request) -> UserAuthService:
     """Build UserAuthService from app state."""
     return UserAuthService(
-        private_key=request.app.state.jwt_private_key,
-        public_key=request.app.state.jwt_public_key,
+        private_key=request.app.state.mldsa65_private_key,
+        public_key=request.app.state.mldsa65_public_key,
     )
 
 
@@ -56,24 +61,23 @@ def _create_state_token(request: Request, project_id: uuid.UUID) -> str:
         "type": "oauth_state",
         "project_id": str(project_id),
         "provider": "github",
-        "iat": now,
-        "exp": now + timedelta(minutes=_STATE_TOKEN_EXPIRE_MINUTES),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=_STATE_TOKEN_EXPIRE_MINUTES)).timestamp()),
         "jti": str(uuid.uuid4()),
     }
-    return jwt.encode(payload, request.app.state.jwt_private_key, algorithm="EdDSA")
+    return _build_mldsa65_token(payload, request.app.state.mldsa65_private_key)
 
 
 def _validate_state_token(request: Request, state: str) -> dict[str, Any]:
     """Validate and decode the state JWT."""
     try:
-        payload: dict[str, Any] = jwt.decode(
+        payload: dict[str, Any] = decode_token(
             state,
-            request.app.state.jwt_public_key,
-            algorithms=["EdDSA"],
+            request.app.state.mldsa65_public_key,
         )
-    except jwt.ExpiredSignatureError:
+    except TokenExpiredError:
         raise HTTPException(status_code=400, detail="State token expired")
-    except jwt.PyJWTError:
+    except InvalidTokenError:
         raise HTTPException(status_code=400, detail="Invalid state token")
 
     if payload.get("type") != "oauth_state":

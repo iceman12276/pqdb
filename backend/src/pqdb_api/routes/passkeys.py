@@ -17,7 +17,6 @@ from typing import Any
 
 import structlog
 import webauthn
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import delete, select, update
@@ -322,7 +321,7 @@ async def authenticate_passkey(
     await session.commit()
 
     # Issue developer JWT
-    private_key: Ed25519PrivateKey = request.app.state.jwt_private_key
+    private_key: bytes = request.app.state.mldsa65_private_key
     access = create_access_token(cred.developer_id, private_key)
     refresh = create_refresh_token(cred.developer_id, private_key)
 

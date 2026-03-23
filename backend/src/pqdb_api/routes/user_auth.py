@@ -23,13 +23,8 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import jwt
 import pydantic
 import structlog
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
@@ -175,8 +170,8 @@ class UpdatePasswordRequest(BaseModel):
 # ---------------------------------------------------------------------------
 def _get_user_auth_service(request: Request) -> UserAuthService:
     """Build a UserAuthService from app state keys."""
-    private_key: Ed25519PrivateKey = request.app.state.jwt_private_key
-    public_key: Ed25519PublicKey = request.app.state.jwt_public_key
+    private_key: bytes = request.app.state.mldsa65_private_key
+    public_key: bytes = request.app.state.mldsa65_public_key
     return UserAuthService(private_key=private_key, public_key=public_key)
 
 
@@ -502,8 +497,8 @@ async def user_login(
     if has_mfa:
         # Return MFA challenge instead of tokens
         mfa_service = MFAService(
-            private_key=request.app.state.jwt_private_key,
-            public_key=request.app.state.jwt_public_key,
+            private_key=request.app.state.mldsa65_private_key,
+            public_key=request.app.state.mldsa65_public_key,
         )
         mfa_ticket = mfa_service.create_mfa_ticket(
             user_id=user_id, project_id=context.project_id

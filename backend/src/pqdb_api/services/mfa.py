@@ -13,16 +13,11 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import jwt
 import pyotp
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
 
-from pqdb_api.services.auth import JWT_ALGORITHM
+from pqdb_api.services.auth import _build_mldsa65_token, decode_token
 
 MFA_TICKET_EXPIRE_MINUTES = 5
 RECOVERY_CODE_COUNT = 10
@@ -34,14 +29,14 @@ _hasher = PasswordHasher()
 class MFAService:
     """MFA/TOTP operations.
 
-    Uses the same Ed25519 key pair as user auth for signing
+    Uses the same ML-DSA-65 key pair as auth for signing
     MFA challenge tickets.
     """
 
     def __init__(
         self,
-        private_key: Ed25519PrivateKey,
-        public_key: Ed25519PublicKey,
+        private_key: bytes,
+        public_key: bytes,
     ) -> None:
         self._private_key = private_key
         self._public_key = public_key
@@ -103,19 +98,17 @@ class MFAService:
             "sub": str(user_id),
             "project_id": str(project_id),
             "type": "mfa_challenge",
-            "iat": now,
-            "exp": now + timedelta(minutes=MFA_TICKET_EXPIRE_MINUTES),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=MFA_TICKET_EXPIRE_MINUTES)).timestamp()),
         }
-        return jwt.encode(payload, self._private_key, algorithm=JWT_ALGORITHM)
+        return _build_mldsa65_token(payload, self._private_key)
 
     def decode_mfa_ticket(self, ticket: str) -> dict[str, Any]:
         """Decode and validate an MFA challenge ticket.
 
-        Raises jwt.ExpiredSignatureError, jwt.PyJWTError, or ValueError.
+        Raises InvalidTokenError, TokenExpiredError, or ValueError.
         """
-        payload: dict[str, Any] = jwt.decode(
-            ticket, self._public_key, algorithms=[JWT_ALGORITHM]
-        )
+        payload: dict[str, Any] = decode_token(ticket, self._public_key)
         if payload.get("type") != "mfa_challenge":
             raise ValueError("Invalid ticket type: expected mfa_challenge")
         return payload

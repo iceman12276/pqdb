@@ -15,12 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
-import jwt
 import structlog
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import text
@@ -31,7 +26,12 @@ from pqdb_api.middleware.api_key import (
     get_project_context,
     get_project_session,
 )
-from pqdb_api.services.auth import JWT_ALGORITHM
+from pqdb_api.services.auth import (
+    InvalidTokenError,
+    TokenExpiredError,
+    _build_mldsa65_token,
+    decode_token,
+)
 from pqdb_api.services.auth_engine import ensure_auth_tables
 from pqdb_api.services.oauth import GoogleOAuthProvider
 from pqdb_api.services.user_auth import UserAuthService
@@ -55,7 +55,7 @@ STATE_JWT_EXPIRY_MINUTES = 10
 # ---------------------------------------------------------------------------
 def _generate_state_jwt(
     *,
-    private_key: Ed25519PrivateKey,
+    private_key: bytes,
     project_id: uuid.UUID,
     redirect_uri: str,
 ) -> str:
@@ -70,15 +70,15 @@ def _generate_state_jwt(
         "project_id": str(project_id),
         "redirect_uri": redirect_uri,
         "nonce": secrets.token_urlsafe(16),
-        "iat": now,
-        "exp": now + timedelta(minutes=STATE_JWT_EXPIRY_MINUTES),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=STATE_JWT_EXPIRY_MINUTES)).timestamp()),
     }
-    return jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+    return _build_mldsa65_token(payload, private_key)
 
 
 def _validate_state_jwt(
     *,
-    public_key: Ed25519PublicKey,
+    public_key: bytes,
     state: str,
 ) -> dict[str, Any]:
     """Validate and decode a state JWT.
@@ -86,10 +86,8 @@ def _validate_state_jwt(
     Raises ValueError if the token is invalid, expired, or has wrong type.
     """
     try:
-        payload: dict[str, Any] = jwt.decode(
-            state, public_key, algorithms=[JWT_ALGORITHM]
-        )
-    except (jwt.ExpiredSignatureError, jwt.PyJWTError):
+        payload: dict[str, Any] = decode_token(state, public_key)
+    except (TokenExpiredError, InvalidTokenError):
         raise ValueError("State JWT is invalid or expired")
 
     if payload.get("type") != "oauth_state":
@@ -122,7 +120,7 @@ async def google_authorize(
             detail="Google OAuth not configured for this project",
         )
 
-    private_key: Ed25519PrivateKey = request.app.state.jwt_private_key
+    private_key: bytes = request.app.state.mldsa65_private_key
     state = _generate_state_jwt(
         private_key=private_key,
         project_id=context.project_id,
@@ -157,8 +155,8 @@ async def google_callback(
     Validates state JWT, exchanges code for tokens, fetches user info,
     performs account linking (find-or-create), and redirects with tokens.
     """
-    public_key: Ed25519PublicKey = request.app.state.jwt_public_key
-    private_key: Ed25519PrivateKey = request.app.state.jwt_private_key
+    public_key: bytes = request.app.state.mldsa65_public_key
+    private_key: bytes = request.app.state.mldsa65_private_key
 
     # Validate state JWT
     try:
