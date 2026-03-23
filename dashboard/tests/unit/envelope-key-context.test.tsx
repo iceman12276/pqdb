@@ -26,6 +26,7 @@ describe("EnvelopeKeyContext", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetch.mockReset();
+    sessionStorage.clear();
   });
 
   it("provides default state with null wrapping key and empty encryption keys", () => {
