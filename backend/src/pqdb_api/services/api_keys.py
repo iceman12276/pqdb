@@ -2,6 +2,7 @@
 
 import secrets
 import uuid
+from typing import Any
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -17,7 +18,7 @@ _KEY_RANDOM_BYTES = 24  # 24 bytes -> 32 chars in base64url
 _VALID_OPERATIONS = frozenset({"select", "insert", "update", "delete"})
 
 
-def validate_permissions(permissions: dict[str, object]) -> str | None:
+def validate_permissions(permissions: object) -> str | None:
     """Validate a permissions schema.
 
     Returns None if valid, or an error message string if invalid.
@@ -157,9 +158,9 @@ async def list_project_keys(
 async def create_scoped_key(
     project_id: uuid.UUID,
     name: str,
-    permissions: dict[str, object],
+    permissions: dict[str, Any],
     session: AsyncSession,
-) -> dict[str, str | dict[str, object]]:
+) -> dict[str, str | dict[str, Any]]:
     """Create a scoped API key with table-level permissions.
 
     Returns the full key info (one-time display). Key is stored as a hash.
@@ -175,7 +176,7 @@ async def create_scoped_key(
         key_prefix=key_prefix,
         role="scoped",
         name=name,
-        permissions=permissions,  # type: ignore[arg-type]
+        permissions=permissions,
     )
     session.add(api_key)
     return {
@@ -203,7 +204,7 @@ async def delete_project_key(
             ApiKey.id == key_id,
         )
     )
-    return result.rowcount > 0  # type: ignore[union-attr]
+    return bool(result.rowcount)  # type: ignore[attr-defined]
 
 
 async def rotate_project_keys(

@@ -195,9 +195,7 @@ async def create_scoped_api_key(
     if error is not None:
         raise HTTPException(status_code=422, detail=error)
 
-    key_info = await create_scoped_key(
-        project_id, body.name, body.permissions, session
-    )
+    key_info = await create_scoped_key(project_id, body.name, body.permissions, session)
     await session.commit()
 
     logger.info(

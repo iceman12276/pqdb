@@ -6,8 +6,6 @@ and the service layer for creating scoped keys.
 
 import re
 
-import pytest
-
 from pqdb_api.services.api_keys import generate_api_key, validate_permissions
 
 
@@ -70,7 +68,7 @@ class TestValidatePermissions:
         assert error is not None
 
     def test_invalid_empty_tables(self) -> None:
-        perms = {"tables": {}}
+        perms: object = {"tables": {}}
         error = validate_permissions(perms)
         assert error is not None
 
@@ -80,7 +78,7 @@ class TestValidatePermissions:
         assert error is not None
 
     def test_invalid_empty_operations(self) -> None:
-        perms = {"tables": {"users": []}}
+        perms: object = {"tables": {"users": []}}
         error = validate_permissions(perms)
         assert error is not None
 
@@ -97,7 +95,7 @@ class TestValidatePermissions:
         assert "duplicate" in error.lower()
 
     def test_invalid_not_a_dict(self) -> None:
-        error = validate_permissions("not a dict")  # type: ignore[arg-type]
+        error = validate_permissions("not a dict")
         assert error is not None
 
     def test_invalid_extra_top_level_keys(self) -> None:
