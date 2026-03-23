@@ -6,7 +6,7 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,8 +50,15 @@ class ApiKeyCreatedResponse(BaseModel):
 class ScopedKeyRequest(BaseModel):
     """Request body for creating a scoped API key."""
 
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     permissions: dict[str, Any]
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
 
 
 class ScopedKeyCreatedResponse(BaseModel):
@@ -229,7 +236,7 @@ async def delete_key(
 
     deleted = await delete_project_key(project_id, key_id, session)
     if not deleted:
-        raise HTTPException(status_code=404, detail="API key not found")
+        raise HTTPException(status_code=404, detail="Scoped API key not found")
 
     await session.commit()
 

@@ -194,7 +194,10 @@ async def delete_project_key(
     key_id: uuid.UUID,
     session: AsyncSession,
 ) -> bool:
-    """Delete a specific API key from a project.
+    """Delete a scoped API key from a project.
+
+    Only scoped keys can be deleted via this endpoint — anon and service
+    keys are protected to prevent accidentally breaking a project.
 
     Returns True if a key was deleted, False if not found.
     """
@@ -202,6 +205,7 @@ async def delete_project_key(
         delete(ApiKey).where(
             ApiKey.project_id == project_id,
             ApiKey.id == key_id,
+            ApiKey.role == "scoped",
         )
     )
     return bool(result.rowcount)  # type: ignore[attr-defined]

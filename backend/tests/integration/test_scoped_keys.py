@@ -150,6 +150,73 @@ class TestCreateScopedKey:
         assert resp.status_code == 404
 
 
+class TestScopedKeyNameValidation:
+    """Tests that invalid name values return 422."""
+
+    def test_empty_name_returns_422(self, client: TestClient) -> None:
+        token = signup_and_get_token(client, email="name1@test.com")
+        project = create_project(client, token, name="name-proj-1")
+        project_id = project["id"]
+
+        resp = client.post(
+            f"/v1/projects/{project_id}/keys/scoped",
+            json={
+                "name": "",
+                "permissions": {"tables": {"t": ["select"]}},
+            },
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 422
+
+    def test_whitespace_only_name_returns_422(self, client: TestClient) -> None:
+        token = signup_and_get_token(client, email="name2@test.com")
+        project = create_project(client, token, name="name-proj-2")
+        project_id = project["id"]
+
+        resp = client.post(
+            f"/v1/projects/{project_id}/keys/scoped",
+            json={
+                "name": "   ",
+                "permissions": {"tables": {"t": ["select"]}},
+            },
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 422
+
+    def test_too_long_name_returns_422(self, client: TestClient) -> None:
+        token = signup_and_get_token(client, email="name3@test.com")
+        project = create_project(client, token, name="name-proj-3")
+        project_id = project["id"]
+
+        resp = client.post(
+            f"/v1/projects/{project_id}/keys/scoped",
+            json={
+                "name": "x" * 256,
+                "permissions": {"tables": {"t": ["select"]}},
+            },
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 422
+
+    def test_name_with_leading_trailing_whitespace_is_stripped(
+        self, client: TestClient
+    ) -> None:
+        token = signup_and_get_token(client, email="name4@test.com")
+        project = create_project(client, token, name="name-proj-4")
+        project_id = project["id"]
+
+        resp = client.post(
+            f"/v1/projects/{project_id}/keys/scoped",
+            json={
+                "name": "  my-key  ",
+                "permissions": {"tables": {"t": ["select"]}},
+            },
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 201
+        assert resp.json()["name"] == "my-key"
+
+
 class TestScopedKeyPermissionsValidation:
     """Tests that invalid permissions schema returns 422."""
 
@@ -355,6 +422,42 @@ class TestDeleteKey:
         resp = client.delete(
             f"/v1/projects/{project_id}/keys/{key_id}",
             headers=auth_headers(token_b),
+        )
+        assert resp.status_code == 404
+
+    def test_delete_anon_key_returns_404(self, client: TestClient) -> None:
+        """DELETE should only allow deleting scoped keys, not anon keys."""
+        token = signup_and_get_token(client, email="del-anon@test.com")
+        project = create_project(client, token, name="del-anon-proj")
+        project_id = project["id"]
+
+        list_resp = client.get(
+            f"/v1/projects/{project_id}/keys",
+            headers=auth_headers(token),
+        )
+        anon_key = next(k for k in list_resp.json() if k["role"] == "anon")
+
+        resp = client.delete(
+            f"/v1/projects/{project_id}/keys/{anon_key['id']}",
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 404
+
+    def test_delete_service_key_returns_404(self, client: TestClient) -> None:
+        """DELETE should only allow deleting scoped keys, not service keys."""
+        token = signup_and_get_token(client, email="del-svc@test.com")
+        project = create_project(client, token, name="del-svc-proj")
+        project_id = project["id"]
+
+        list_resp = client.get(
+            f"/v1/projects/{project_id}/keys",
+            headers=auth_headers(token),
+        )
+        svc_key = next(k for k in list_resp.json() if k["role"] == "service")
+
+        resp = client.delete(
+            f"/v1/projects/{project_id}/keys/{svc_key['id']}",
+            headers=auth_headers(token),
         )
         assert resp.status_code == 404
 
