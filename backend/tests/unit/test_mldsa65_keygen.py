@@ -7,7 +7,7 @@ try:
 
     HAS_OQS = True
 except (ImportError, SystemExit, RuntimeError):
-    oqs = None  # type: ignore[assignment]
+    oqs = None
     HAS_OQS = False
 
 from pqdb_api.services.auth import generate_mldsa65_keypair
