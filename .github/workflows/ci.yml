@@ -58,8 +58,15 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
-      - name: Install cmake (for liboqs native library)
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - name: Install liboqs native library
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build libssl-dev
+          git clone --depth 1 --branch 0.14.0 https://github.com/open-quantum-safe/liboqs.git /tmp/liboqs
+          cd /tmp/liboqs && mkdir build && cd build
+          cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON ..
+          ninja
+          sudo ninja install
+          sudo ldconfig
 
       - name: Install dependencies
         run: uv sync
@@ -159,8 +166,15 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
-      - name: Install cmake (for liboqs native library)
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - name: Install liboqs native library
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build libssl-dev
+          git clone --depth 1 --branch 0.14.0 https://github.com/open-quantum-safe/liboqs.git /tmp/liboqs
+          cd /tmp/liboqs && mkdir build && cd build
+          cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON ..
+          ninja
+          sudo ninja install
+          sudo ldconfig
 
       - name: Install backend dependencies
         run: cd backend && uv sync
@@ -240,8 +254,15 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
-      - name: Install cmake (for liboqs native library)
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - name: Install liboqs native library
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build libssl-dev
+          git clone --depth 1 --branch 0.14.0 https://github.com/open-quantum-safe/liboqs.git /tmp/liboqs
+          cd /tmp/liboqs && mkdir build && cd build
+          cmake -GNinja -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=ON ..
+          ninja
+          sudo ninja install
+          sudo ldconfig
 
       - name: Install backend dependencies
         run: cd backend && uv sync

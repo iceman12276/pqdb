@@ -1,10 +1,22 @@
 """Unit tests for ML-DSA-65 keypair generation."""
 
-import oqs
+import pytest
+
+try:
+    import oqs
+
+    HAS_OQS = True
+except (ImportError, SystemExit, RuntimeError):
+    oqs = None  # type: ignore[assignment]
+    HAS_OQS = False
 
 from pqdb_api.services.auth import generate_mldsa65_keypair
 
 MLDSA65_ALGORITHM = "ML-DSA-65"
+
+pytestmark = pytest.mark.skipif(
+    not HAS_OQS, reason="liboqs native library not available"
+)
 
 
 class TestMLDSA65KeypairGeneration:
