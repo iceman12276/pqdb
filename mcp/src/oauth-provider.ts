@@ -37,6 +37,7 @@ interface AuthCodeData {
   codeChallenge: string;
   clientId: string;
   scopes: string[];
+  encryptionKey: string | undefined;
 }
 
 /** Stored session for a verified access token. */
@@ -44,6 +45,7 @@ interface SessionData {
   clientId: string;
   scopes: string[];
   expiresAt: number;
+  encryptionKey: string | undefined;
 }
 
 export interface PqdbOAuthProviderOptions {
@@ -176,6 +178,7 @@ export class PqdbOAuthProvider implements OAuthServerProvider {
       clientId: client.client_id,
       scopes: codeData.scopes,
       expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+      encryptionKey: codeData.encryptionKey,
     });
 
     return {
@@ -225,6 +228,14 @@ export class PqdbOAuthProvider implements OAuthServerProvider {
     this.sessions.delete(request.token);
   }
 
+  /**
+   * Get the OAuth-provided encryption key for a session (by access token).
+   * Returns undefined if no key was provided during the OAuth flow.
+   */
+  getSessionEncryptionKey(token: string): string | undefined {
+    return this.sessions.get(token)?.encryptionKey;
+  }
+
   // --- Methods used by the /mcp-auth-complete callback endpoint ---
 
   /**
@@ -250,6 +261,7 @@ export class PqdbOAuthProvider implements OAuthServerProvider {
   async completeAuthorization(
     requestId: string,
     devJwt: string,
+    encryptionKey?: string,
   ): Promise<string | undefined> {
     const pending = this.pendingAuths.get(requestId);
     if (!pending) {
@@ -282,6 +294,7 @@ export class PqdbOAuthProvider implements OAuthServerProvider {
       codeChallenge: pending.codeChallenge,
       clientId: pending.clientId,
       scopes: pending.scopes,
+      encryptionKey,
     });
 
     // Build the redirect URL from the allowlisted base URI
