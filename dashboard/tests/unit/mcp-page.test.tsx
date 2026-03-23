@@ -109,10 +109,10 @@ vi.mock("~/lib/mcp", () => ({
     mcpServers: {
       pqdb: {
         command: "npx",
-        args: ["pqdb-mcp", "--project-url", "http://localhost:8000"],
+        args: ["pqdb-mcp", "--project-url", "https://localhost"],
         env: {
           PQDB_API_KEY: "<your-api-key>",
-          PQDB_PROJECT_URL: "http://localhost:8000",
+          PQDB_PROJECT_URL: "https://localhost",
           PQDB_ENCRYPTION_KEY: "<your-encryption-key>",
         },
       },
