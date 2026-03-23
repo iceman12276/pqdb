@@ -52,9 +52,11 @@ export async function fetchProject(projectId: string): Promise<Project> {
 export async function createProject(
   name: string,
   region?: string,
+  wrappedEncryptionKey?: string,
 ): Promise<ProjectCreateResponse> {
   const body: Record<string, string> = { name };
   if (region) body.region = region;
+  if (wrappedEncryptionKey) body.wrapped_encryption_key = wrappedEncryptionKey;
 
   const result = await api.fetch("/v1/projects", {
     method: "POST",
