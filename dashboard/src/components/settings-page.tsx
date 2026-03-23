@@ -2,6 +2,7 @@ import * as React from "react";
 import { getAccessToken, getTokens } from "~/lib/auth-store";
 import { startPasskeyRegistration } from "~/lib/passkey";
 import { api } from "~/lib/api-client";
+import { ChangePasswordDialog } from "~/components/change-password-dialog";
 import { Button } from "~/components/ui/button";
 import {
   Card,
@@ -45,6 +46,7 @@ export function SettingsPage() {
   const [passkeyName, setPasskeyName] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = React.useState(false);
 
   const fetchPasskeys = React.useCallback(async () => {
     const result = await api.fetch("/v1/auth/passkeys");
@@ -122,6 +124,21 @@ export function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Password Section */}
+          <div>
+            <h3 className="mb-3 text-lg font-medium">Password</h3>
+            <Button
+              variant="outline"
+              onClick={() => setChangePasswordOpen(true)}
+            >
+              Change Password
+            </Button>
+            <ChangePasswordDialog
+              open={changePasswordOpen}
+              onOpenChange={setChangePasswordOpen}
+            />
+          </div>
+
           {/* Passkeys Section */}
           <div>
             <h3 className="mb-3 text-lg font-medium">Passkeys</h3>
