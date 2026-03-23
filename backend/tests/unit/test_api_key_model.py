@@ -20,6 +20,7 @@ class TestApiKeyModel:
             "key_prefix",
             "role",
             "created_at",
+            "permissions",
         }
         assert columns == expected
 
@@ -43,6 +44,60 @@ class TestApiKeyModel:
     def test_role_is_not_nullable(self) -> None:
         col = ApiKey.__table__.columns["role"]
         assert col.nullable is False
+
+    def test_permissions_column_is_nullable(self) -> None:
+        col = ApiKey.__table__.columns["permissions"]
+        assert col.nullable is True
+
+    def test_permissions_column_type_is_jsonb(self) -> None:
+        from sqlalchemy.dialects.postgresql import JSONB
+
+        col = ApiKey.__table__.columns["permissions"]
+        assert isinstance(col.type, JSONB)
+
+    def test_permissions_defaults_to_none(self) -> None:
+        key_id = uuid.uuid4()
+        proj_id = uuid.uuid4()
+        api_key = ApiKey(
+            id=key_id,
+            project_id=proj_id,
+            key_hash="$argon2id$...",
+            key_prefix="pqdb_ano",
+            role="anon",
+        )
+        assert api_key.permissions is None
+
+    def test_permissions_accepts_dict(self) -> None:
+        key_id = uuid.uuid4()
+        proj_id = uuid.uuid4()
+        perms = {
+            "tables": {
+                "users": ["select"],
+                "posts": ["select", "insert", "update", "delete"],
+            }
+        }
+        api_key = ApiKey(
+            id=key_id,
+            project_id=proj_id,
+            key_hash="$argon2id$...",
+            key_prefix="pqdb_svc",
+            role="service_role",
+            permissions=perms,
+        )
+        assert api_key.permissions == perms
+        assert api_key.permissions["tables"]["users"] == ["select"]
+
+    def test_null_permissions_means_full_access(self) -> None:
+        """Null permissions = backward compatible full access."""
+        api_key = ApiKey(
+            id=uuid.uuid4(),
+            project_id=uuid.uuid4(),
+            key_hash="$argon2id$...",
+            key_prefix="pqdb_ano",
+            role="anon",
+        )
+        # Null permissions means no restrictions (full access)
+        assert api_key.permissions is None
 
     def test_can_instantiate(self) -> None:
         key_id = uuid.uuid4()
