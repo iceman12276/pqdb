@@ -11,6 +11,8 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { createProject, type ProjectCreateResponse } from "~/lib/projects";
+import { useEnvelopeKeys, uint8ArrayToBase64 } from "~/lib/envelope-key-context";
+import { generateEncryptionKey, wrapKey } from "~/lib/envelope-crypto";
 
 interface CreateProjectDialogProps {
   open: boolean;
@@ -26,6 +28,7 @@ export function CreateProjectDialog({
   const [name, setName] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const { wrappingKey, addEncryptionKey } = useEnvelopeKeys();
 
   function resetForm() {
     setName("");
@@ -45,7 +48,21 @@ export function CreateProjectDialog({
     setLoading(true);
 
     try {
-      const project = await createProject(name.trim(), "us-east-1");
+      let wrappedEncryptionKey: string | undefined;
+      let encryptionKey: string | undefined;
+
+      if (wrappingKey) {
+        encryptionKey = generateEncryptionKey();
+        const wrappedBlob = await wrapKey(encryptionKey, wrappingKey);
+        wrappedEncryptionKey = uint8ArrayToBase64(wrappedBlob);
+      }
+
+      const project = await createProject(name.trim(), "us-east-1", wrappedEncryptionKey);
+
+      if (wrappingKey && encryptionKey) {
+        addEncryptionKey(project.id, encryptionKey);
+      }
+
       resetForm();
       onCreated(project);
     } catch (err) {

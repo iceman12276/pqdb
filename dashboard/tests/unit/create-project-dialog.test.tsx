@@ -10,7 +10,59 @@ vi.mock("~/lib/projects", () => ({
   createProject: mockCreateProject,
 }));
 
+const { mockUseEnvelopeKeys, mockGenerateEncryptionKey, mockWrapKey } =
+  vi.hoisted(() => ({
+    mockUseEnvelopeKeys: vi.fn(),
+    mockGenerateEncryptionKey: vi.fn(),
+    mockWrapKey: vi.fn(),
+  }));
+
+vi.mock("~/lib/envelope-key-context", () => ({
+  useEnvelopeKeys: mockUseEnvelopeKeys,
+  uint8ArrayToBase64: (bytes: Uint8Array) =>
+    btoa(String.fromCharCode(...bytes)),
+}));
+
+vi.mock("~/lib/envelope-crypto", () => ({
+  generateEncryptionKey: mockGenerateEncryptionKey,
+  wrapKey: mockWrapKey,
+}));
+
 import { CreateProjectDialog } from "~/components/create-project-dialog";
+
+const fakeWrappingKey = {} as CryptoKey;
+
+function setupEnvelopeKeys(overrides: Record<string, unknown> = {}) {
+  const defaults = {
+    wrappingKey: null,
+    encryptionKeys: new Map(),
+    setWrappingKey: vi.fn(),
+    clearKeys: vi.fn(),
+    getEncryptionKey: vi.fn(() => null),
+    addEncryptionKey: vi.fn(),
+    unwrapProjectKeys: vi.fn(),
+  };
+  mockUseEnvelopeKeys.mockReturnValue({ ...defaults, ...overrides });
+  return { ...defaults, ...overrides };
+}
+
+const createdProject = {
+  id: "new-id",
+  name: "New Project",
+  region: "us-east-1",
+  status: "active",
+  database_name: "pqdb_project_new",
+  created_at: "2026-03-18T00:00:00Z",
+  wrapped_encryption_key: null,
+  api_keys: [
+    {
+      id: "k1",
+      role: "anon",
+      key: "pqdb_anon_abc123",
+      key_prefix: "pqdb_anon_abc",
+    },
+  ],
+};
 
 describe("CreateProjectDialog", () => {
   const defaultProps = {
@@ -21,6 +73,7 @@ describe("CreateProjectDialog", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setupEnvelopeKeys();
   });
 
   it("renders the dialog when open", () => {
@@ -50,16 +103,42 @@ describe("CreateProjectDialog", () => {
     expect(mockCreateProject).not.toHaveBeenCalled();
   });
 
-  it("calls createProject with name and region on submit", async () => {
+  it("calls createProject without wrappedEncryptionKey when no wrapping key (OAuth)", async () => {
     const user = userEvent.setup();
+    setupEnvelopeKeys({ wrappingKey: null });
+    mockCreateProject.mockResolvedValueOnce(createdProject);
+
+    render(<CreateProjectDialog {...defaultProps} />);
+
+    await user.type(screen.getByLabelText(/project name/i), "New Project");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(mockCreateProject).toHaveBeenCalledWith(
+        "New Project",
+        "us-east-1",
+        undefined,
+      );
+    });
+    expect(mockGenerateEncryptionKey).not.toHaveBeenCalled();
+    expect(mockWrapKey).not.toHaveBeenCalled();
+  });
+
+  it("generates and wraps encryption key when wrapping key is available", async () => {
+    const user = userEvent.setup();
+    const mockAddEncryptionKey = vi.fn();
+    setupEnvelopeKeys({
+      wrappingKey: fakeWrappingKey,
+      addEncryptionKey: mockAddEncryptionKey,
+    });
+
+    const fakeEncKey = "fake-encryption-key-base64url";
+    const fakeWrappedBlob = new Uint8Array([1, 2, 3, 4, 5]);
+    mockGenerateEncryptionKey.mockReturnValue(fakeEncKey);
+    mockWrapKey.mockResolvedValue(fakeWrappedBlob);
     mockCreateProject.mockResolvedValueOnce({
-      id: "new-id",
-      name: "New Project",
-      region: "us-east-1",
-      status: "active",
-      database_name: "pqdb_project_new",
-      created_at: "2026-03-18T00:00:00Z",
-      api_keys: [],
+      ...createdProject,
+      id: "proj-123",
     });
 
     render(<CreateProjectDialog {...defaultProps} />);
@@ -68,23 +147,67 @@ describe("CreateProjectDialog", () => {
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 
     await waitFor(() => {
-      expect(mockCreateProject).toHaveBeenCalledWith("New Project", "us-east-1");
+      expect(mockGenerateEncryptionKey).toHaveBeenCalledOnce();
+      expect(mockWrapKey).toHaveBeenCalledWith(fakeEncKey, fakeWrappingKey);
     });
+
+    // Verify createProject was called with the base64 wrapped key
+    const wrappedKeyArg = mockCreateProject.mock.calls[0][2];
+    expect(typeof wrappedKeyArg).toBe("string");
+    expect(wrappedKeyArg.length).toBeGreaterThan(0);
+  });
+
+  it("stores encryption key in context after successful project creation", async () => {
+    const user = userEvent.setup();
+    const mockAddEncryptionKey = vi.fn();
+    setupEnvelopeKeys({
+      wrappingKey: fakeWrappingKey,
+      addEncryptionKey: mockAddEncryptionKey,
+    });
+
+    const fakeEncKey = "fake-enc-key";
+    mockGenerateEncryptionKey.mockReturnValue(fakeEncKey);
+    mockWrapKey.mockResolvedValue(new Uint8Array([10, 20, 30]));
+    mockCreateProject.mockResolvedValueOnce({
+      ...createdProject,
+      id: "proj-456",
+    });
+
+    render(<CreateProjectDialog {...defaultProps} />);
+
+    await user.type(screen.getByLabelText(/project name/i), "New Project");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(mockAddEncryptionKey).toHaveBeenCalledWith(
+        "proj-456",
+        fakeEncKey,
+      );
+    });
+  });
+
+  it("does not store encryption key if wrapping key is null", async () => {
+    const user = userEvent.setup();
+    const mockAddEncryptionKey = vi.fn();
+    setupEnvelopeKeys({
+      wrappingKey: null,
+      addEncryptionKey: mockAddEncryptionKey,
+    });
+    mockCreateProject.mockResolvedValueOnce(createdProject);
+
+    render(<CreateProjectDialog {...defaultProps} />);
+
+    await user.type(screen.getByLabelText(/project name/i), "New Project");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(mockCreateProject).toHaveBeenCalled();
+    });
+    expect(mockAddEncryptionKey).not.toHaveBeenCalled();
   });
 
   it("calls onCreated with project data on success", async () => {
     const user = userEvent.setup();
-    const createdProject = {
-      id: "new-id",
-      name: "New Project",
-      region: "us-east-1",
-      status: "active",
-      database_name: "pqdb_project_new",
-      created_at: "2026-03-18T00:00:00Z",
-      api_keys: [
-        { id: "k1", role: "anon", key: "pqdb_anon_abc123", key_prefix: "pqdb_anon_abc" },
-      ],
-    };
     mockCreateProject.mockResolvedValueOnce(createdProject);
 
     render(<CreateProjectDialog {...defaultProps} />);

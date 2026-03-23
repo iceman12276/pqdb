@@ -23,7 +23,7 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-function uint8ArrayToBase64(bytes: Uint8Array): string {
+export function uint8ArrayToBase64(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes));
 }
 
