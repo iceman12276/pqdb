@@ -34,7 +34,7 @@ from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.routes.realtime_ws import realtime_ws_endpoint
 from pqdb_api.routes.roles import router as roles_router
 from pqdb_api.routes.user_auth import router as user_auth_router
-from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.auth import generate_ed25519_keypair, generate_mldsa65_keypair
 from pqdb_api.services.provisioner import DatabaseProvisioner
 from pqdb_api.services.rate_limiter import RateLimiter
 from pqdb_api.services.vault import VaultClient
@@ -62,6 +62,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging(debug=settings.debug)
     init_engine(settings.database_url)
     _init_jwt_keys(app, settings)
+    mldsa_private, mldsa_public = generate_mldsa65_keypair()
+    app.state.mldsa65_private_key = mldsa_private
+    app.state.mldsa65_public_key = mldsa_public
     app.state.provisioner = DatabaseProvisioner(
         superuser_dsn=settings.superuser_dsn,
     )

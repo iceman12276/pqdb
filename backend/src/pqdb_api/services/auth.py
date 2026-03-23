@@ -32,6 +32,22 @@ def generate_ed25519_keypair() -> tuple[Ed25519PrivateKey, Ed25519PublicKey]:
     return private_key, public_key
 
 
+MLDSA65_ALGORITHM = "ML-DSA-65"
+
+
+def generate_mldsa65_keypair() -> tuple[bytes, bytes]:
+    """Generate a new ML-DSA-65 key pair for post-quantum JWT signing.
+
+    Returns (private_key, public_key) as raw bytes.
+    """
+    import oqs  # lazy import: liboqs requires cmake at first build
+
+    signer = oqs.Signature(MLDSA65_ALGORITHM)
+    public_key = signer.generate_keypair()
+    private_key = signer.export_secret_key()
+    return bytes(private_key), bytes(public_key)
+
+
 def private_key_to_pem(key: Ed25519PrivateKey) -> bytes:
     """Serialize Ed25519 private key to PEM bytes."""
     return key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
