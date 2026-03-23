@@ -123,18 +123,18 @@ class TestServiceKeyGeneration:
         )
         assert len(list_resp1.json()) == 2
 
-        # Generate a new service key
+        # Generate a new service key (idempotent — replaces old service key)
         client.post(
             f"/v1/projects/{project_id}/keys/service-key",
             headers=auth_headers(token),
         )
 
-        # Now should have 3 keys
+        # Still 2 keys — idempotent endpoint deletes old service key before creating new
         list_resp2 = client.get(
             f"/v1/projects/{project_id}/keys",
             headers=auth_headers(token),
         )
-        assert len(list_resp2.json()) == 3
+        assert len(list_resp2.json()) == 2
 
     def test_generated_key_is_unique_each_call(self, client: TestClient) -> None:
         token = signup_and_get_token(client, email="svckey_uniq@test.com")

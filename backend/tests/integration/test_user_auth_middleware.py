@@ -249,8 +249,8 @@ class TestGetCurrentUserInvalid:
         assert detail["error"]["code"] == "user_token_invalid"
         assert "expired" in detail["error"]["message"].lower()
 
-    def test_developer_token_rejected(self, client: TestClient) -> None:
-        """Developer tokens (type=access) must be rejected."""
+    def test_developer_token_ignored(self, client: TestClient) -> None:
+        """Developer tokens (type=access) are silently ignored — user context is None."""
         from datetime import UTC, datetime, timedelta
 
         import jwt as pyjwt
@@ -271,9 +271,9 @@ class TestGetCurrentUserInvalid:
             "/v1/diag/user-context",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert resp.status_code == 401
-        detail = resp.json()["detail"]
-        assert detail["error"]["code"] == "user_token_invalid"
+        # Developer tokens return 200 with user=null (not 401)
+        assert resp.status_code == 200
+        assert resp.json()["user"] is None
 
     def test_project_id_mismatch_returns_401(self, client: TestClient) -> None:
         """User JWT from project A cannot access project B."""
