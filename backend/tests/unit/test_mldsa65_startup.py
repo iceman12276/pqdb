@@ -3,7 +3,6 @@
 from unittest.mock import patch
 
 import oqs
-import pytest
 from starlette.testclient import TestClient
 
 from pqdb_api.app import create_app
