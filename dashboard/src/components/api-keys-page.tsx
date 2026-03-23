@@ -108,7 +108,7 @@ export function ApiKeysPage({ projectId }: ApiKeysPageProps) {
 
   const snippet = `import { createClient } from '@pqdb/client'
 
-const client = createClient('http://localhost:8000', '<your-anon-key>')`;
+const client = createClient('https://localhost', '<your-anon-key>')`;
 
   return (
     <div className="space-y-6">
@@ -222,7 +222,7 @@ const client = createClient('http://localhost:8000', '<your-anon-key>')`;
           {(() => {
             const newAnonKey = newKeys.find((k) => k.role === "anon");
             if (!newAnonKey) return null;
-            const newSnippet = `import { createClient } from '@pqdb/client'\n\nconst client = createClient(\n  'http://localhost:8000',\n  '${newAnonKey.key}'\n)`;
+            const newSnippet = `import { createClient } from '@pqdb/client'\n\nconst client = createClient(\n  'https://localhost',\n  '${newAnonKey.key}'\n)`;
             return (
               <>
                 <Separator />

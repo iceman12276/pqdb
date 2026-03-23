@@ -12,7 +12,7 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://postgres:postgres@localhost:5432/pqdb_platform"
     )
     debug: bool = False
-    cors_origins: list[str] = ["*"]
+    cors_origins: list[str] = ["https://localhost", "http://localhost:3000"]
 
     jwt_private_key_pem: str = ""
     jwt_public_key_pem: str = ""
@@ -27,12 +27,12 @@ class Settings(BaseSettings):
     rate_limit_auth: int = 20  # per IP, /v1/auth/signup, login, refresh
 
     # OAuth redirect URI allowlist (comma-separated origins)
-    allowed_redirect_uris_raw: str = "http://localhost:3000"
+    allowed_redirect_uris_raw: str = "https://localhost,http://localhost:3000"
 
     # WebAuthn / Passkey settings
     webauthn_rp_id: str = "localhost"
     webauthn_rp_name: str = "pqdb"
-    webauthn_origin: str = "http://localhost:3000"
+    webauthn_origin: str = "https://localhost"
 
     @property
     def allowed_redirect_uris(self) -> list[str]:

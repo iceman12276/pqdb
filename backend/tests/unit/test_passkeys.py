@@ -113,7 +113,7 @@ class TestWebAuthnConfig:
         settings = Settings(
             database_url="postgresql+asyncpg://x:x@localhost/test",
         )
-        assert settings.webauthn_origin == "http://localhost:3000"
+        assert settings.webauthn_origin == "https://localhost"
 
     def test_custom_rp_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from pqdb_api.config import Settings

@@ -6,21 +6,21 @@
 localhost {
 	tls internal
 
-	# Backend API
+	# Backend API — runs on the host (not in Docker) for hot-reload
 	handle /v1/* {
-		reverse_proxy backend:8000
+		reverse_proxy host.docker.internal:8000
 	}
 
 	handle /health {
-		reverse_proxy backend:8000
+		reverse_proxy host.docker.internal:8000
 	}
 
 	handle /ready {
-		reverse_proxy backend:8000
+		reverse_proxy host.docker.internal:8000
 	}
 
-	# Dashboard (default)
+	# Dashboard (default) — runs on the host for HMR
 	handle {
-		reverse_proxy dashboard:3000
+		reverse_proxy host.docker.internal:3000
 	}
 }
