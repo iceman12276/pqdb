@@ -167,6 +167,38 @@ export function EnvelopeKeyProvider({
     [],
   );
 
+  // Auto-unwrap project keys when wrapping key becomes available
+  React.useEffect(() => {
+    if (!wrappingKey) return;
+
+    let cancelled = false;
+
+    async function fetchAndUnwrap() {
+      const token = getAccessToken();
+      if (!token) return;
+
+      try {
+        const res = await fetch("/v1/projects", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+
+        const projects = await res.json();
+        if (!cancelled) {
+          await unwrapProjectKeys(projects);
+        }
+      } catch {
+        // Network error — skip auto-unwrap
+      }
+    }
+
+    fetchAndUnwrap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wrappingKey, unwrapProjectKeys]);
+
   const value = React.useMemo(
     () => ({
       wrappingKey,
