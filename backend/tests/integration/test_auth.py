@@ -2,6 +2,7 @@
 
 Boots the real FastAPI app with a real Postgres database,
 exercises signup -> login -> authenticated request -> refresh flow.
+All tokens are now ML-DSA-65 signed.
 """
 
 import uuid
@@ -17,7 +18,19 @@ from pqdb_api.database import get_session
 from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.health import router as health_router
-from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.auth import generate_mldsa65_keypair
+
+# Skip the entire module if liboqs is not available
+try:
+    import oqs  # noqa: F401
+
+    HAS_OQS = True
+except (ImportError, SystemExit, RuntimeError):
+    HAS_OQS = False
+
+pytestmark = pytest.mark.skipif(
+    not HAS_OQS, reason="liboqs native library not available"
+)
 
 
 def _create_test_app(test_db_url: str) -> FastAPI:
@@ -26,7 +39,7 @@ def _create_test_app(test_db_url: str) -> FastAPI:
     Creates its own engine inside the lifespan so it runs on
     the TestClient's event loop.
     """
-    private_key, public_key = generate_ed25519_keypair()
+    private_key, public_key = generate_mldsa65_keypair()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -40,8 +53,8 @@ def _create_test_app(test_db_url: str) -> FastAPI:
                 yield session
 
         app.dependency_overrides[get_session] = _override_get_session
-        app.state.jwt_private_key = private_key
-        app.state.jwt_public_key = public_key
+        app.state.mldsa65_private_key = private_key
+        app.state.mldsa65_public_key = public_key
         yield
         await engine.dispose()
 
@@ -107,6 +120,19 @@ class TestSignup:
         assert "access_token" in data
         assert "refresh_token" in data
         assert data["token_type"] == "bearer"
+
+    def test_signup_returns_mldsa65_token(self, client: TestClient) -> None:
+        """Verify token format is the custom ML-DSA-65 JWT (3 dot-separated parts)."""
+        resp = client.post(
+            "/v1/auth/signup",
+            json={"email": "format@example.com", "password": "securepass123"},
+        )
+        assert resp.status_code == 201
+        token = resp.json()["access_token"]
+        parts = token.split(".")
+        assert len(parts) == 3
+        # ML-DSA-65 tokens are ~4600 chars due to large signatures
+        assert len(token) > 4000
 
     def test_signup_duplicate_email_returns_409(self, client: TestClient) -> None:
         payload = {"email": "dup@example.com", "password": "pass123"}
@@ -198,7 +224,7 @@ class TestRefresh:
 
 
 class TestProtectedEndpoint:
-    """Tests for JWT auth middleware on protected endpoints."""
+    """Tests for ML-DSA-65 JWT auth middleware on protected endpoints."""
 
     def test_authenticated_request_succeeds(self, client: TestClient) -> None:
         signup_resp = client.post(

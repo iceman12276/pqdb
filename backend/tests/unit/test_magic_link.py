@@ -15,7 +15,16 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+import pytest
+
+try:
+    import oqs  # noqa: F401
+
+    HAS_OQS = True
+except (ImportError, SystemExit, RuntimeError):
+    HAS_OQS = False
+
+from pqdb_api.services.auth import generate_mldsa65_keypair
 
 from pqdb_api.services.user_auth import UserAuthService
 from pqdb_api.services.webhook import (
@@ -52,10 +61,10 @@ class TestMagicLinkTokenGeneration:
 class TestMagicLinkUserCreation:
     """New users via magic link should have password_hash = NULL."""
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_user_auth_service_creates_tokens_for_passwordless_user(self) -> None:
         """UserAuthService can create tokens regardless of password state."""
-        private_key = Ed25519PrivateKey.generate()
-        public_key = private_key.public_key()
+        private_key, public_key = generate_mldsa65_keypair()
         service = UserAuthService(private_key=private_key, public_key=public_key)
 
         user_id = uuid.uuid4()
@@ -71,10 +80,10 @@ class TestMagicLinkUserCreation:
         assert tokens.access_token
         assert tokens.refresh_token
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_access_token_has_email_verified_true(self) -> None:
         """After magic link verify, email_verified should be True in token."""
-        private_key = Ed25519PrivateKey.generate()
-        public_key = private_key.public_key()
+        private_key, public_key = generate_mldsa65_keypair()
         service = UserAuthService(private_key=private_key, public_key=public_key)
 
         user_id = uuid.uuid4()

@@ -11,9 +11,15 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from pqdb_api.services.auth import generate_ed25519_keypair
+try:
+    import oqs  # noqa: F401
+
+    HAS_OQS = True
+except (ImportError, SystemExit, RuntimeError):
+    HAS_OQS = False
+
+from pqdb_api.services.auth import generate_mldsa65_keypair
 from pqdb_api.services.user_auth import UserAuthService
 from pqdb_api.services.webhook import (
     generate_verification_token,
@@ -23,14 +29,15 @@ from pqdb_api.services.webhook import (
 
 
 @pytest.fixture()
-def ed25519_keys() -> tuple[Ed25519PrivateKey, Any]:
-    private_key, public_key = generate_ed25519_keypair()
-    return private_key, public_key
+def mldsa65_keys() -> tuple[bytes, bytes]:
+    if not HAS_OQS:
+        pytest.skip("liboqs not available")
+    return generate_mldsa65_keypair()
 
 
 @pytest.fixture()
-def user_auth_service(ed25519_keys: tuple[Any, Any]) -> UserAuthService:
-    private_key, public_key = ed25519_keys
+def user_auth_service(mldsa65_keys: tuple[bytes, bytes]) -> UserAuthService:
+    private_key, public_key = mldsa65_keys
     return UserAuthService(private_key=private_key, public_key=public_key)
 
 

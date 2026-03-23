@@ -11,27 +11,32 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
 
-from pqdb_api.services.auth import JWT_ALGORITHM, generate_ed25519_keypair
+try:
+    import oqs  # noqa: F401
+
+    HAS_OQS = True
+except (ImportError, SystemExit, RuntimeError):
+    HAS_OQS = False
+
+from pqdb_api.services.auth import _build_mldsa65_token, decode_token, generate_mldsa65_keypair
 
 
 @pytest.fixture()
-def keypair() -> tuple[Ed25519PrivateKey, Ed25519PublicKey]:
-    return generate_ed25519_keypair()
+def keypair() -> tuple[bytes, bytes]:
+    if not HAS_OQS:
+        pytest.skip("liboqs not available")
+    return generate_mldsa65_keypair()
 
 
 class TestStateJwtGeneration:
     """Test state JWT generation for developer OAuth."""
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_generate_state_jwt_contains_required_fields(
         self,
-        keypair: tuple[Ed25519PrivateKey, Ed25519PublicKey],
+        keypair: tuple[bytes, bytes],
     ) -> None:
         from pqdb_api.routes.developer_oauth import _generate_dev_state_jwt
 
@@ -42,16 +47,17 @@ class TestStateJwtGeneration:
             redirect_uri=redirect_uri,
         )
 
-        payload = jwt.decode(state, public_key, algorithms=[JWT_ALGORITHM])
+        payload = decode_token(state, public_key)
         assert payload["type"] == "dev_oauth_state"
         assert payload["redirect_uri"] == redirect_uri
         assert "nonce" in payload
         assert "exp" in payload
         assert "iat" in payload
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_state_jwt_expires_in_10_minutes(
         self,
-        keypair: tuple[Ed25519PrivateKey, Ed25519PublicKey],
+        keypair: tuple[bytes, bytes],
     ) -> None:
         from pqdb_api.routes.developer_oauth import _generate_dev_state_jwt
 
@@ -60,19 +66,20 @@ class TestStateJwtGeneration:
             private_key=private_key,
             redirect_uri="https://example.com/cb",
         )
-        payload = jwt.decode(state, public_key, algorithms=[JWT_ALGORITHM])
-        exp = datetime.fromtimestamp(payload["exp"], tz=UTC)
-        iat = datetime.fromtimestamp(payload["iat"], tz=UTC)
+        payload = decode_token(state, public_key)
+        exp = payload["exp"]
+        iat = payload["iat"]
         delta = exp - iat
-        assert timedelta(minutes=9) < delta <= timedelta(minutes=10, seconds=5)
+        assert 9 * 60 < delta <= 10 * 60 + 5
 
 
 class TestStateJwtValidation:
     """Test state JWT validation for developer OAuth."""
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_validates_good_state(
         self,
-        keypair: tuple[Ed25519PrivateKey, Ed25519PublicKey],
+        keypair: tuple[bytes, bytes],
     ) -> None:
         from pqdb_api.routes.developer_oauth import (
             _generate_dev_state_jwt,
@@ -88,9 +95,10 @@ class TestStateJwtValidation:
         assert payload["type"] == "dev_oauth_state"
         assert payload["redirect_uri"] == "https://example.com/cb"
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_rejects_expired_state(
         self,
-        keypair: tuple[Ed25519PrivateKey, Ed25519PublicKey],
+        keypair: tuple[bytes, bytes],
     ) -> None:
         from pqdb_api.routes.developer_oauth import _validate_dev_state_jwt
 
@@ -100,16 +108,17 @@ class TestStateJwtValidation:
             "type": "dev_oauth_state",
             "redirect_uri": "https://example.com/cb",
             "nonce": secrets.token_urlsafe(16),
-            "iat": now - timedelta(minutes=20),
-            "exp": now - timedelta(minutes=10),
+            "iat": int((now - timedelta(minutes=20)).timestamp()),
+            "exp": int((now - timedelta(minutes=10)).timestamp()),
         }
-        state = jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+        state = _build_mldsa65_token(payload, private_key)
         with pytest.raises(ValueError, match="invalid or expired"):
             _validate_dev_state_jwt(public_key=public_key, state=state)
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_rejects_wrong_type(
         self,
-        keypair: tuple[Ed25519PrivateKey, Ed25519PublicKey],
+        keypair: tuple[bytes, bytes],
     ) -> None:
         from pqdb_api.routes.developer_oauth import _validate_dev_state_jwt
 
@@ -119,16 +128,17 @@ class TestStateJwtValidation:
             "type": "oauth_state",  # wrong type — not dev_oauth_state
             "redirect_uri": "https://example.com/cb",
             "nonce": secrets.token_urlsafe(16),
-            "iat": now,
-            "exp": now + timedelta(minutes=10),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=10)).timestamp()),
         }
-        state = jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+        state = _build_mldsa65_token(payload, private_key)
         with pytest.raises(ValueError, match="invalid or expired"):
             _validate_dev_state_jwt(public_key=public_key, state=state)
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_rejects_garbage_token(
         self,
-        keypair: tuple[Ed25519PrivateKey, Ed25519PublicKey],
+        keypair: tuple[bytes, bytes],
     ) -> None:
         from pqdb_api.routes.developer_oauth import _validate_dev_state_jwt
 
@@ -136,23 +146,24 @@ class TestStateJwtValidation:
         with pytest.raises(ValueError, match="invalid or expired"):
             _validate_dev_state_jwt(public_key=public_key, state="not-a-jwt")
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_rejects_token_signed_with_different_key(
         self,
-        keypair: tuple[Ed25519PrivateKey, Ed25519PublicKey],
+        keypair: tuple[bytes, bytes],
     ) -> None:
         from pqdb_api.routes.developer_oauth import _validate_dev_state_jwt
 
         _, public_key = keypair
-        other_private, _ = generate_ed25519_keypair()
+        other_private, _ = generate_mldsa65_keypair()
         now = datetime.now(UTC)
         payload: dict[str, Any] = {
             "type": "dev_oauth_state",
             "redirect_uri": "https://example.com/cb",
             "nonce": secrets.token_urlsafe(16),
-            "iat": now,
-            "exp": now + timedelta(minutes=10),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=10)).timestamp()),
         }
-        state = jwt.encode(payload, other_private, algorithm=JWT_ALGORITHM)
+        state = _build_mldsa65_token(payload, other_private)
         with pytest.raises(ValueError, match="invalid or expired"):
             _validate_dev_state_jwt(public_key=public_key, state=state)
 
@@ -202,7 +213,6 @@ class TestRedirectUriValidation:
         from pqdb_api.routes.developer_oauth import _validate_redirect_uri
 
         allowed = ["http://localhost:3000", "https://dashboard.pqdb.io"]
-        # Should not raise
         _validate_redirect_uri("http://localhost:3000/auth/callback", allowed)
 
     def test_validate_redirect_uri_rejects_disallowed_uri(self) -> None:
@@ -216,7 +226,6 @@ class TestRedirectUriValidation:
         from pqdb_api.routes.developer_oauth import _validate_redirect_uri
 
         allowed = ["http://localhost:3000"]
-        # Path variations on allowed origin should be accepted
         _validate_redirect_uri("http://localhost:3000/any/path", allowed)
         _validate_redirect_uri("http://localhost:3000", allowed)
 

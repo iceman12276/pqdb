@@ -10,29 +10,41 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+try:
+    import oqs  # noqa: F401
+
+    HAS_OQS = True
+except (ImportError, SystemExit, RuntimeError):
+    HAS_OQS = False
 
 from pqdb_api.services.auth import (
-    JWT_ALGORITHM,
-    generate_ed25519_keypair,
+    InvalidTokenError,
+    TokenExpiredError,
+    _build_mldsa65_token,
+    decode_token,
+    generate_mldsa65_keypair,
 )
 from pqdb_api.services.user_auth import (
     UserAuthService,
     UserTokenPair,
 )
 
+pytestmark = pytest.mark.skipif(
+    not HAS_OQS, reason="liboqs native library not available"
+)
+
 
 @pytest.fixture()
-def ed25519_keys() -> tuple[Ed25519PrivateKey, Any]:
-    private_key, public_key = generate_ed25519_keypair()
+def mldsa65_keys() -> tuple[bytes, bytes]:
+    private_key, public_key = generate_mldsa65_keypair()
     return private_key, public_key
 
 
 @pytest.fixture()
-def user_auth_service(ed25519_keys: tuple[Any, Any]) -> UserAuthService:
-    private_key, public_key = ed25519_keys
+def user_auth_service(mldsa65_keys: tuple[bytes, bytes]) -> UserAuthService:
+    private_key, public_key = mldsa65_keys
     return UserAuthService(
         private_key=private_key,
         public_key=public_key,
@@ -43,9 +55,9 @@ class TestCreateUserAccessToken:
     """Test user access token creation."""
 
     def test_creates_valid_jwt(
-        self, user_auth_service: UserAuthService, ed25519_keys: tuple[Any, Any]
+        self, user_auth_service: UserAuthService, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        _, public_key = ed25519_keys
+        _, public_key = mldsa65_keys
         user_id = uuid.uuid4()
         project_id = uuid.uuid4()
         token = user_auth_service.create_user_access_token(
@@ -54,7 +66,7 @@ class TestCreateUserAccessToken:
             role="authenticated",
             email_verified=False,
         )
-        payload = jwt.decode(token, public_key, algorithms=[JWT_ALGORITHM])
+        payload = decode_token(token, public_key)
         assert payload["sub"] == str(user_id)
         assert payload["project_id"] == str(project_id)
         assert payload["role"] == "authenticated"
@@ -62,53 +74,51 @@ class TestCreateUserAccessToken:
         assert payload["email_verified"] is False
 
     def test_access_token_expires_in_15_minutes(
-        self, user_auth_service: UserAuthService, ed25519_keys: tuple[Any, Any]
+        self, user_auth_service: UserAuthService, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        _, public_key = ed25519_keys
+        _, public_key = mldsa65_keys
         token = user_auth_service.create_user_access_token(
             user_id=uuid.uuid4(),
             project_id=uuid.uuid4(),
             role="authenticated",
             email_verified=False,
         )
-        payload = jwt.decode(token, public_key, algorithms=[JWT_ALGORITHM])
-        exp = datetime.fromtimestamp(payload["exp"], tz=UTC)
-        iat = datetime.fromtimestamp(payload["iat"], tz=UTC)
-        delta = exp - iat
-        assert abs(delta.total_seconds() - 900) < 2  # 15 minutes = 900s
+        payload = decode_token(token, public_key)
+        exp = payload["exp"]
+        iat = payload["iat"]
+        assert abs(exp - iat - 900) < 2  # 15 minutes = 900s
 
 
 class TestCreateUserRefreshToken:
     """Test user refresh token creation."""
 
     def test_creates_valid_refresh_jwt(
-        self, user_auth_service: UserAuthService, ed25519_keys: tuple[Any, Any]
+        self, user_auth_service: UserAuthService, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        _, public_key = ed25519_keys
+        _, public_key = mldsa65_keys
         user_id = uuid.uuid4()
         project_id = uuid.uuid4()
         token = user_auth_service.create_user_refresh_token(
             user_id=user_id,
             project_id=project_id,
         )
-        payload = jwt.decode(token, public_key, algorithms=[JWT_ALGORITHM])
+        payload = decode_token(token, public_key)
         assert payload["sub"] == str(user_id)
         assert payload["project_id"] == str(project_id)
         assert payload["type"] == "user_refresh"
 
     def test_refresh_token_expires_in_7_days(
-        self, user_auth_service: UserAuthService, ed25519_keys: tuple[Any, Any]
+        self, user_auth_service: UserAuthService, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        _, public_key = ed25519_keys
+        _, public_key = mldsa65_keys
         token = user_auth_service.create_user_refresh_token(
             user_id=uuid.uuid4(),
             project_id=uuid.uuid4(),
         )
-        payload = jwt.decode(token, public_key, algorithms=[JWT_ALGORITHM])
-        exp = datetime.fromtimestamp(payload["exp"], tz=UTC)
-        iat = datetime.fromtimestamp(payload["iat"], tz=UTC)
-        delta = exp - iat
-        assert abs(delta.total_seconds() - 7 * 86400) < 2
+        payload = decode_token(token, public_key)
+        exp = payload["exp"]
+        iat = payload["iat"]
+        assert abs(exp - iat - 7 * 86400) < 2
 
 
 class TestDecodeUserToken:
@@ -141,10 +151,9 @@ class TestDecodeUserToken:
         with pytest.raises(ValueError, match="Invalid token type"):
             user_auth_service.decode_user_token(token, expected_type="user_refresh")
 
-    def test_decode_expired_token_raises(self, ed25519_keys: tuple[Any, Any]) -> None:
-        private_key, public_key = ed25519_keys
+    def test_decode_expired_token_raises(self, mldsa65_keys: tuple[bytes, bytes]) -> None:
+        private_key, public_key = mldsa65_keys
         service = UserAuthService(private_key=private_key, public_key=public_key)
-        # Manually create an expired token
         now = datetime.now(UTC)
         payload: dict[str, Any] = {
             "sub": str(uuid.uuid4()),
@@ -152,35 +161,35 @@ class TestDecodeUserToken:
             "type": "user_access",
             "role": "authenticated",
             "email_verified": False,
-            "iat": now - timedelta(hours=1),
-            "exp": now - timedelta(minutes=30),
+            "iat": int((now - timedelta(hours=1)).timestamp()),
+            "exp": int((now - timedelta(minutes=30)).timestamp()),
         }
-        token = jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
-        with pytest.raises(jwt.ExpiredSignatureError):
+        token = _build_mldsa65_token(payload, private_key)
+        with pytest.raises(TokenExpiredError):
             service.decode_user_token(token, expected_type="user_access")
 
     def test_decode_invalid_token_raises(
         self, user_auth_service: UserAuthService
     ) -> None:
-        with pytest.raises(jwt.PyJWTError):
+        with pytest.raises(InvalidTokenError):
             user_auth_service.decode_user_token(
                 "invalid.token.here", expected_type="user_access"
             )
 
     def test_decode_developer_token_rejected(
-        self, ed25519_keys: tuple[Any, Any]
+        self, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
         """Developer tokens (type=access) must be rejected by user auth."""
-        private_key, public_key = ed25519_keys
+        private_key, public_key = mldsa65_keys
         service = UserAuthService(private_key=private_key, public_key=public_key)
         now = datetime.now(UTC)
         payload: dict[str, Any] = {
             "sub": str(uuid.uuid4()),
             "type": "access",  # developer token type
-            "iat": now,
-            "exp": now + timedelta(minutes=15),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=15)).timestamp()),
         }
-        token = jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+        token = _build_mldsa65_token(payload, private_key)
         with pytest.raises(ValueError, match="Invalid token type"):
             service.decode_user_token(token, expected_type="user_access")
 
@@ -197,7 +206,6 @@ class TestPasswordValidation:
     def test_password_exactly_min_length_passes(
         self, user_auth_service: UserAuthService
     ) -> None:
-        # Should not raise
         user_auth_service.validate_password("12345678", min_length=8)
 
     def test_password_exceeds_min_length_passes(
@@ -222,7 +230,6 @@ class TestPasswordValidation:
         self, user_auth_service: UserAuthService
     ) -> None:
         password_1024 = "a" * 1024
-        # Should not raise
         user_auth_service.validate_password(password_1024, min_length=8)
 
 
