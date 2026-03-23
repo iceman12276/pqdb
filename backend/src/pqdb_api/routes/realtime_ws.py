@@ -140,6 +140,8 @@ def _parse_user_token(
             return None, None
 
         user_ctx = _validate_user_jwt(token, key, expected_project_id=project_id)
+        if user_ctx is None:
+            return None, None
         return user_ctx.user_id, user_ctx.role
     except Exception:
         return None, None
