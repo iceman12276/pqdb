@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,9 @@ class Project(Base):
     status: Mapped[str] = mapped_column(String(50), nullable=False)
     database_name: Mapped[str | None] = mapped_column(
         String(255), nullable=True, default=None
+    )
+    wrapped_encryption_key: Mapped[bytes | None] = mapped_column(
+        LargeBinary, nullable=True, default=None
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
