@@ -4,8 +4,8 @@ import { setTokens } from "~/lib/auth-store";
 import { useNavigate } from "~/lib/navigation";
 import { isValidEmail } from "~/lib/validation";
 import { startPasskeyAuthentication } from "~/lib/passkey";
-import { handleMcpRedirect } from "~/lib/mcp-callback";
-import { deriveWrappingKey } from "~/lib/envelope-crypto";
+import { getMcpCallbackParams, handleMcpRedirect } from "~/lib/mcp-callback";
+import { deriveWrappingKey, unwrapKey } from "~/lib/envelope-crypto";
 import { useEnvelopeKeys } from "~/lib/envelope-key-context";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -95,7 +95,37 @@ export function LoginPage() {
           setWrappingKey(wrappingKeyResult);
         }
 
-        if (!handleMcpRedirect(result.data.access_token)) {
+        // For MCP OAuth flow: unwrap the first project's encryption key
+        // so the MCP server can auto-decrypt without PQDB_ENCRYPTION_KEY
+        let encryptionKey: string | undefined;
+        const mcpParams = getMcpCallbackParams();
+        if (mcpParams.mcp_callback && wrappingKeyResult) {
+          try {
+            const projRes = await fetch("/v1/projects", {
+              headers: { Authorization: `Bearer ${result.data.access_token}` },
+            });
+            if (projRes.ok) {
+              const projects = (await projRes.json()) as Array<{
+                id: string;
+                wrapped_encryption_key: string | null;
+              }>;
+              const projectWithKey = projects.find(
+                (p) => p.wrapped_encryption_key,
+              );
+              if (projectWithKey?.wrapped_encryption_key) {
+                const blob = Uint8Array.from(
+                  atob(projectWithKey.wrapped_encryption_key),
+                  (c) => c.charCodeAt(0),
+                );
+                encryptionKey = await unwrapKey(blob, wrappingKeyResult);
+              }
+            }
+          } catch (err) {
+            console.warn("[pqdb] Failed to unwrap encryption key for MCP:", err);
+          }
+        }
+
+        if (!handleMcpRedirect(result.data.access_token, encryptionKey)) {
           navigate({ to: "/projects" });
         }
       }
