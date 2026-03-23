@@ -27,6 +27,7 @@ from pqdb_api.middleware.api_key import (
     get_project_context,
     get_project_session,
 )
+from pqdb_api.services.auth import InvalidTokenError, TokenExpiredError
 from pqdb_api.services.auth_engine import ensure_auth_tables
 from pqdb_api.services.mfa import MFAService
 from pqdb_api.services.rate_limiter import RateLimiter
@@ -144,9 +145,9 @@ async def _get_current_user_for_mfa(
 
     try:
         payload = service.decode_user_token(token, expected_type="user_access")
-    except jwt.ExpiredSignatureError:
+    except TokenExpiredError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    except (jwt.PyJWTError, ValueError):
+    except (InvalidTokenError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # Verify project_id matches the apikey project
@@ -323,9 +324,9 @@ async def mfa_challenge(
     # Decode MFA ticket
     try:
         ticket_payload = mfa.decode_mfa_ticket(body.ticket)
-    except jwt.ExpiredSignatureError:
+    except TokenExpiredError:
         raise HTTPException(status_code=401, detail="MFA ticket expired")
-    except (jwt.PyJWTError, ValueError):
+    except (InvalidTokenError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid MFA ticket")
 
     user_id = ticket_payload["sub"]

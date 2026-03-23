@@ -15,7 +15,6 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
-import pytest
 
 try:
     import oqs  # noqa: F401
@@ -25,7 +24,6 @@ except (ImportError, SystemExit, RuntimeError):
     HAS_OQS = False
 
 from pqdb_api.services.auth import generate_mldsa65_keypair
-
 from pqdb_api.services.user_auth import UserAuthService
 from pqdb_api.services.webhook import (
     WebhookDispatcher,

@@ -36,7 +36,12 @@ from pqdb_api.middleware.api_key import (
     get_project_context,
     get_project_session,
 )
-from pqdb_api.services.auth import hash_password, verify_password
+from pqdb_api.services.auth import (
+    InvalidTokenError,
+    TokenExpiredError,
+    hash_password,
+    verify_password,
+)
 from pqdb_api.services.auth_engine import ensure_auth_tables, get_auth_settings
 from pqdb_api.services.email_verification import VERIFICATION_TOKEN_EXPIRY_SECONDS
 from pqdb_api.services.mfa import MFAService
@@ -269,9 +274,9 @@ async def _get_current_user(
 
     try:
         payload = service.decode_user_token(token, expected_type="user_access")
-    except jwt.ExpiredSignatureError:
+    except TokenExpiredError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    except (jwt.PyJWTError, ValueError):
+    except (InvalidTokenError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # Verify project_id matches the apikey project
@@ -573,9 +578,9 @@ async def user_logout(
         payload = service.decode_user_token(
             body.refresh_token, expected_type="user_refresh"
         )
-    except jwt.ExpiredSignatureError:
+    except TokenExpiredError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    except (jwt.PyJWTError, ValueError):
+    except (InvalidTokenError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     # Verify project_id matches the apikey project
@@ -636,9 +641,9 @@ async def user_refresh(
         payload = service.decode_user_token(
             body.refresh_token, expected_type="user_refresh"
         )
-    except jwt.ExpiredSignatureError:
+    except TokenExpiredError:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
-    except (jwt.PyJWTError, ValueError):
+    except (InvalidTokenError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
     # Verify project_id matches the apikey project

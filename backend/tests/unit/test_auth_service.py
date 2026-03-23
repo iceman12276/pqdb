@@ -1,7 +1,7 @@
 """Unit tests for the auth service: password hashing and ML-DSA-65 JWT operations."""
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest

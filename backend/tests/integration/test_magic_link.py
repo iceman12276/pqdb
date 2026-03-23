@@ -40,7 +40,7 @@ from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.routes.user_auth import router as user_auth_router
-from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.auth import generate_mldsa65_keypair
 from pqdb_api.services.provisioner import DatabaseProvisioner
 from pqdb_api.services.rate_limiter import RateLimiter
 from pqdb_api.services.vault import VaultClient
@@ -56,7 +56,7 @@ def _make_magic_link_app(
 
     Returns (app, mock_webhook_dispatcher) so tests can inspect webhook calls.
     """
-    private_key, public_key = generate_ed25519_keypair()
+    private_key, public_key = generate_mldsa65_keypair()
 
     mock_provisioner = AsyncMock(spec=DatabaseProvisioner)
     mock_provisioner.superuser_dsn = "postgresql://test:test@localhost/test"
@@ -124,8 +124,8 @@ def _make_magic_link_app(
         app.dependency_overrides[get_session] = _override_get_session
         app.dependency_overrides[get_project_session] = _override_get_project_session
         app.dependency_overrides[get_project_context] = _override_get_project_context
-        app.state.jwt_private_key = private_key
-        app.state.jwt_public_key = public_key
+        app.state.mldsa65_private_key = private_key
+        app.state.mldsa65_public_key = public_key
         app.state.provisioner = mock_provisioner
         app.state.vault_client = mock_vault
         app.state.hmac_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)

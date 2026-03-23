@@ -1,14 +1,16 @@
 """Unit tests for ML-DSA-65 custom JWT token creation and verification.
 
-Tests the custom JWT-like format: base64url(header).base64url(payload).base64url(signature)
-where header = {"alg": "ML-DSA-65", "typ": "JWT"} and signature is ML-DSA-65 over header.payload.
+Tests the custom JWT-like format:
+  base64url(header).base64url(payload).base64url(signature)
+where header = {"alg": "ML-DSA-65", "typ": "JWT"} and
+signature is ML-DSA-65 over header.payload.
 """
 
 import base64
 import json
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
@@ -88,7 +90,9 @@ class TestMLDSA65TokenFormat:
         private_key, _ = mldsa65_keys
         token = create_access_token(uuid.uuid4(), private_key)
         # Allow some variance, but it should be in the 4000-5500 range
-        assert 4000 <= len(token) <= 5500, f"Token length {len(token)} outside expected range"
+        assert 4000 <= len(token) <= 5500, (
+            f"Token length {len(token)} outside expected range"
+        )
 
 
 class TestMLDSA65AccessToken:
@@ -102,9 +106,7 @@ class TestMLDSA65AccessToken:
         assert isinstance(token, str)
         assert len(token) > 0
 
-    def test_access_token_roundtrip(
-        self, mldsa65_keys: tuple[bytes, bytes]
-    ) -> None:
+    def test_access_token_roundtrip(self, mldsa65_keys: tuple[bytes, bytes]) -> None:
         private_key, public_key = mldsa65_keys
         dev_id = uuid.uuid4()
         token = create_access_token(dev_id, private_key)
@@ -134,9 +136,7 @@ class TestMLDSA65RefreshToken:
         assert isinstance(token, str)
         assert len(token) > 0
 
-    def test_refresh_token_roundtrip(
-        self, mldsa65_keys: tuple[bytes, bytes]
-    ) -> None:
+    def test_refresh_token_roundtrip(self, mldsa65_keys: tuple[bytes, bytes]) -> None:
         private_key, public_key = mldsa65_keys
         dev_id = uuid.uuid4()
         token = create_refresh_token(dev_id, private_key)
@@ -201,9 +201,7 @@ class TestMLDSA65TokenVerification:
         payload = json.loads(base64.urlsafe_b64decode(padded))
         payload["sub"] = str(uuid.uuid4())  # Change the subject
         new_payload_b64 = (
-            base64.urlsafe_b64encode(json.dumps(payload).encode())
-            .rstrip(b"=")
-            .decode()
+            base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
         )
         tampered_token = f"{parts[0]}.{new_payload_b64}.{parts[2]}"
         with pytest.raises(InvalidTokenError, match="[Ss]ignature"):
@@ -216,9 +214,13 @@ class TestMLDSA65TokenVerification:
         token = create_access_token(uuid.uuid4(), private_key)
         parts = token.split(".")
         # Replace header with EdDSA algorithm
-        bad_header = base64.urlsafe_b64encode(
-            json.dumps({"alg": "EdDSA", "typ": "JWT"}).encode()
-        ).rstrip(b"=").decode()
+        bad_header = (
+            base64.urlsafe_b64encode(
+                json.dumps({"alg": "EdDSA", "typ": "JWT"}).encode()
+            )
+            .rstrip(b"=")
+            .decode()
+        )
         tampered_token = f"{bad_header}.{parts[1]}.{parts[2]}"
         with pytest.raises(InvalidTokenError, match="[Aa]lgorithm"):
             decode_token(tampered_token, public_key)
@@ -244,8 +246,12 @@ class TestMLDSA65TokenVerification:
 
         header = {"alg": MLDSA65_ALGORITHM, "typ": "JWT"}
         payload = {"sub": str(uuid.uuid4()), "type": "access", "iat": int(time.time())}
-        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).rstrip(b"=").decode()
-        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+        header_b64 = (
+            base64.urlsafe_b64encode(json.dumps(header).encode()).rstrip(b"=").decode()
+        )
+        payload_b64 = (
+            base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+        )
         message = f"{header_b64}.{payload_b64}".encode()
         signer = oqs.Signature(MLDSA65_ALGORITHM, private_key)
         signature = signer.sign(message)

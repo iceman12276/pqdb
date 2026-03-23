@@ -32,8 +32,8 @@ from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.passkeys import _challenge_store
 from pqdb_api.routes.passkeys import router as passkeys_router
 from pqdb_api.services.auth import (
-    JWT_ALGORITHM,
-    generate_ed25519_keypair,
+    decode_token,
+    generate_mldsa65_keypair,
 )
 
 
@@ -51,7 +51,7 @@ def _b64url_decode(data: str) -> bytes:
 # ---------------------------------------------------------------------------
 def _make_passkey_app(test_db_url: str) -> FastAPI:
     """Build a test app with passkey routes backed by real Postgres."""
-    private_key, public_key = generate_ed25519_keypair()
+    private_key, public_key = generate_mldsa65_keypair()
 
     settings = Settings(
         database_url=test_db_url,
@@ -72,8 +72,8 @@ def _make_passkey_app(test_db_url: str) -> FastAPI:
                 yield session
 
         app.dependency_overrides[get_session] = _override_get_session
-        app.state.jwt_private_key = private_key
-        app.state.jwt_public_key = public_key
+        app.state.mldsa65_private_key = private_key
+        app.state.mldsa65_public_key = public_key
         yield
         await engine.dispose()
 
@@ -95,9 +95,7 @@ def _signup_and_get_token(
     )
     assert resp.status_code == 201
     token = resp.json()["access_token"]
-    import jwt as pyjwt
-
-    payload = pyjwt.decode(token, app.state.jwt_public_key, algorithms=[JWT_ALGORITHM])
+    payload = decode_token(token, app.state.mldsa65_public_key)
     return token, payload["sub"]
 
 
@@ -446,12 +444,9 @@ class TestAuthenticate:
                 assert data["token_type"] == "bearer"
 
                 # Verify the JWT was issued for the correct developer
-                import jwt as pyjwt
-
-                payload = pyjwt.decode(
+                payload = decode_token(
                     data["access_token"],
-                    passkey_app.state.jwt_public_key,
-                    algorithms=[JWT_ALGORITHM],
+                    passkey_app.state.mldsa65_public_key,
                 )
                 assert payload["sub"] == dev_id
                 assert payload["type"] == "access"

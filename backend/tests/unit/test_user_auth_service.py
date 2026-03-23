@@ -151,7 +151,9 @@ class TestDecodeUserToken:
         with pytest.raises(ValueError, match="Invalid token type"):
             user_auth_service.decode_user_token(token, expected_type="user_refresh")
 
-    def test_decode_expired_token_raises(self, mldsa65_keys: tuple[bytes, bytes]) -> None:
+    def test_decode_expired_token_raises(
+        self, mldsa65_keys: tuple[bytes, bytes]
+    ) -> None:
         private_key, public_key = mldsa65_keys
         service = UserAuthService(private_key=private_key, public_key=public_key)
         now = datetime.now(UTC)

@@ -20,7 +20,11 @@ try:
 except (ImportError, SystemExit, RuntimeError):
     HAS_OQS = False
 
-from pqdb_api.services.auth import _build_mldsa65_token, decode_token, generate_mldsa65_keypair
+from pqdb_api.services.auth import (
+    _build_mldsa65_token,
+    decode_token,
+    generate_mldsa65_keypair,
+)
 
 
 @pytest.fixture()

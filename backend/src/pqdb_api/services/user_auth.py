@@ -66,7 +66,9 @@ class UserAuthService:
             "type": "user_access",
             "email_verified": email_verified,
             "iat": int(now.timestamp()),
-            "exp": int((now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)).timestamp()),
+            "exp": int(
+                (now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)).timestamp()
+            ),
         }
         return _build_mldsa65_token(payload, self._private_key)
 

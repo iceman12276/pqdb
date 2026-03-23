@@ -31,7 +31,10 @@ def _get_mldsa65_public_key(request: Request) -> bytes:
     """Extract ML-DSA-65 public key from app state."""
     key = getattr(request.app.state, "mldsa65_public_key", None)
     if not isinstance(key, bytes):
-        raise HTTPException(status_code=500, detail="ML-DSA-65 public key not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="ML-DSA-65 public key not configured",
+        )
     return key
 
 

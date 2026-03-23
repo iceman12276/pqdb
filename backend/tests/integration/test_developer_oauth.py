@@ -18,7 +18,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import jwt
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -33,7 +32,11 @@ from pqdb_api.database import get_session
 from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.developer_oauth import router as developer_oauth_router
 from pqdb_api.routes.health import router as health_router
-from pqdb_api.services.auth import JWT_ALGORITHM, generate_ed25519_keypair
+from pqdb_api.services.auth import (
+    _build_mldsa65_token,
+    decode_token,
+    generate_mldsa65_keypair,
+)
 from pqdb_api.services.vault import VaultClient, VaultError
 
 
@@ -52,7 +55,7 @@ def _make_dev_oauth_app(
     allowed_redirect_uris: list[str] | None = None,
 ) -> FastAPI:
     """Build a test app with developer OAuth routes backed by real Postgres."""
-    private_key, public_key = generate_ed25519_keypair()
+    private_key, public_key = generate_mldsa65_keypair()
 
     # In-memory platform OAuth credential store
     platform_oauth_store: dict[str, dict[str, str]] = {}
@@ -100,8 +103,8 @@ def _make_dev_oauth_app(
                 yield session
 
         app.dependency_overrides[get_session] = _override_get_session
-        app.state.jwt_private_key = private_key
-        app.state.jwt_public_key = public_key
+        app.state.mldsa65_private_key = private_key
+        app.state.mldsa65_public_key = public_key
         app.state.vault_client = mock_vault
         yield
         await engine.dispose()
@@ -225,7 +228,7 @@ def _generate_valid_state(app: FastAPI) -> str:
     from pqdb_api.routes.developer_oauth import _generate_dev_state_jwt
 
     return _generate_dev_state_jwt(
-        private_key=app.state.jwt_private_key,
+        private_key=app.state.mldsa65_private_key,
         redirect_uri="https://dashboard.pqdb.io/auth/callback",
     )
 
@@ -358,10 +361,9 @@ class TestAuthorize:
             assert "state" in params
             state = params["state"][0]
             # Verify it's a valid JWT signed by our key
-            payload = jwt.decode(
+            payload = decode_token(
                 state,
-                google_app.state.jwt_public_key,
-                algorithms=[JWT_ALGORITHM],
+                google_app.state.mldsa65_public_key,
             )
             assert payload["type"] == "dev_oauth_state"
 
@@ -431,10 +433,9 @@ class TestGoogleCallback:
 
             # Decode access token to verify it's a developer token
             access_token = params["access_token"][0]
-            payload = jwt.decode(
+            payload = decode_token(
                 access_token,
-                google_app.state.jwt_public_key,
-                algorithms=[JWT_ALGORITHM],
+                google_app.state.mldsa65_public_key,
             )
             assert payload["type"] == "access"
             assert "sub" in payload
@@ -454,10 +455,9 @@ class TestGoogleCallback:
 
             # Get the developer ID from the signup token
             signup_token = signup_resp.json()["access_token"]
-            signup_payload = jwt.decode(
+            signup_payload = decode_token(
                 signup_token,
-                google_app.state.jwt_public_key,
-                algorithms=[JWT_ALGORITHM],
+                google_app.state.mldsa65_public_key,
             )
             original_dev_id = signup_payload["sub"]
 
@@ -478,10 +478,9 @@ class TestGoogleCallback:
             params = parse_qs(fragment)
             access_token = params["access_token"][0]
 
-            payload = jwt.decode(
+            payload = decode_token(
                 access_token,
-                google_app.state.jwt_public_key,
-                algorithms=[JWT_ALGORITHM],
+                google_app.state.mldsa65_public_key,
             )
             # Same developer — account was linked, not created
             assert payload["sub"] == original_dev_id
@@ -503,11 +502,11 @@ class TestGoogleCallback:
                 "type": "dev_oauth_state",
                 "redirect_uri": "https://dashboard.pqdb.io/auth/callback",
                 "nonce": secrets.token_urlsafe(16),
-                "iat": now - timedelta(minutes=20),
-                "exp": now - timedelta(minutes=10),
+                "iat": int((now - timedelta(minutes=20)).timestamp()),
+                "exp": int((now - timedelta(minutes=10)).timestamp()),
             }
-            expired_state = jwt.encode(
-                payload, google_app.state.jwt_private_key, algorithm=JWT_ALGORITHM
+            expired_state = _build_mldsa65_token(
+                payload, google_app.state.mldsa65_private_key
             )
 
             resp = client.get(
@@ -564,7 +563,7 @@ class TestGitHubCallback:
             from pqdb_api.routes.developer_oauth import _generate_dev_state_jwt
 
             state = _generate_dev_state_jwt(
-                private_key=github_app.state.jwt_private_key,
+                private_key=github_app.state.mldsa65_private_key,
                 redirect_uri="https://dashboard.pqdb.io/auth/callback",
             )
 
@@ -620,10 +619,9 @@ class TestFullOAuthLifecycle:
             params = parse_qs(fragment)
             access_token = params["access_token"][0]
 
-            payload = jwt.decode(
+            payload = decode_token(
                 access_token,
-                google_app.state.jwt_public_key,
-                algorithms=[JWT_ALGORITHM],
+                google_app.state.mldsa65_public_key,
             )
             assert payload["type"] == "access"
             assert "sub" in payload
@@ -679,10 +677,9 @@ class TestFullOAuthLifecycle:
             )
             assert resp1.status_code == 302
             params1 = parse_qs(urlparse(resp1.headers["location"]).fragment)
-            payload1 = jwt.decode(
+            payload1 = decode_token(
                 params1["access_token"][0],
-                google_app.state.jwt_public_key,
-                algorithms=[JWT_ALGORITHM],
+                google_app.state.mldsa65_public_key,
             )
 
             # Need fresh mock for second call (side_effect consumed)
@@ -703,10 +700,9 @@ class TestFullOAuthLifecycle:
             )
             assert resp2.status_code == 302
             params2 = parse_qs(urlparse(resp2.headers["location"]).fragment)
-            payload2 = jwt.decode(
+            payload2 = decode_token(
                 params2["access_token"][0],
-                google_app.state.jwt_public_key,
-                algorithms=[JWT_ALGORITHM],
+                google_app.state.mldsa65_public_key,
             )
 
             # Same developer ID both times

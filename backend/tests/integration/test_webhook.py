@@ -32,7 +32,7 @@ from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.auth_settings import router as auth_settings_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.projects import router as projects_router
-from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.auth import generate_mldsa65_keypair
 from pqdb_api.services.auth_engine import ensure_auth_tables
 from pqdb_api.services.provisioner import DatabaseProvisioner
 from pqdb_api.services.rate_limiter import RateLimiter
@@ -54,7 +54,7 @@ def _make_webhook_test_app(test_db_url: str, test_db_name: str) -> FastAPI:
     """Build a test app for webhook-related tests."""
     from pqdb_api.routes.api_keys import router as api_keys_router
 
-    private_key, public_key = generate_ed25519_keypair()
+    private_key, public_key = generate_mldsa65_keypair()
 
     mock_provisioner = AsyncMock(spec=DatabaseProvisioner)
     mock_provisioner.superuser_dsn = "postgresql://test:test@localhost/test"
@@ -98,8 +98,8 @@ def _make_webhook_test_app(test_db_url: str, test_db_name: str) -> FastAPI:
                 yield session
 
         app.dependency_overrides[get_session] = _override_get_session
-        app.state.jwt_private_key = private_key
-        app.state.jwt_public_key = public_key
+        app.state.mldsa65_private_key = private_key
+        app.state.mldsa65_public_key = public_key
         app.state.provisioner = mock_provisioner
         app.state.vault_client = mock_vault
         app.state.hmac_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)

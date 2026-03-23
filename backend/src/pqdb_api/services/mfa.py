@@ -99,7 +99,9 @@ class MFAService:
             "project_id": str(project_id),
             "type": "mfa_challenge",
             "iat": int(now.timestamp()),
-            "exp": int((now + timedelta(minutes=MFA_TICKET_EXPIRE_MINUTES)).timestamp()),
+            "exp": int(
+                (now + timedelta(minutes=MFA_TICKET_EXPIRE_MINUTES)).timestamp()
+            ),
         }
         return _build_mldsa65_token(payload, self._private_key)
 

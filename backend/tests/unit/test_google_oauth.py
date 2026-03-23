@@ -13,7 +13,6 @@ from __future__ import annotations
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -26,7 +25,11 @@ try:
 except (ImportError, SystemExit, RuntimeError):
     HAS_OQS = False
 
-from pqdb_api.services.auth import _build_mldsa65_token, decode_token, generate_mldsa65_keypair
+from pqdb_api.services.auth import (
+    _build_mldsa65_token,
+    decode_token,
+    generate_mldsa65_keypair,
+)
 from pqdb_api.services.oauth import (
     GoogleOAuthProvider,
     OAuthTokens,

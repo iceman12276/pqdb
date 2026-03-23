@@ -168,8 +168,7 @@ def decode_token(
 
     if header.get("alg") != MLDSA65_ALGORITHM:
         raise InvalidTokenError(
-            f"Algorithm mismatch: expected {MLDSA65_ALGORITHM}, "
-            f"got {header.get('alg')}"
+            f"Algorithm mismatch: expected {MLDSA65_ALGORITHM}, got {header.get('alg')}"
         )
 
     # Verify ML-DSA-65 signature

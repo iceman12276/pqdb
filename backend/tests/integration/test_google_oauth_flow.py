@@ -19,7 +19,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
-import jwt
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -38,7 +37,11 @@ from pqdb_api.middleware.api_key import (
 from pqdb_api.routes.google_oauth import router as google_oauth_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.user_auth import router as user_auth_router
-from pqdb_api.services.auth import JWT_ALGORITHM, generate_ed25519_keypair
+from pqdb_api.services.auth import (
+    _build_mldsa65_token,
+    decode_token,
+    generate_mldsa65_keypair,
+)
 from pqdb_api.services.vault import VaultClient, VaultError
 
 
@@ -53,7 +56,7 @@ def _make_google_oauth_app(
 
     Returns (app, project_id) tuple.
     """
-    private_key, public_key = generate_ed25519_keypair()
+    private_key, public_key = generate_mldsa65_keypair()
     project_id = uuid.uuid4()
 
     # Mock vault with in-memory OAuth credential store
@@ -102,8 +105,8 @@ def _make_google_oauth_app(
         app.dependency_overrides[get_session] = _override_get_session
         app.dependency_overrides[get_project_session] = _override_project_session
         app.dependency_overrides[get_project_context] = _override_project_context
-        app.state.jwt_private_key = private_key
-        app.state.jwt_public_key = public_key
+        app.state.mldsa65_private_key = private_key
+        app.state.mldsa65_public_key = public_key
         app.state.vault_client = mock_vault
         yield
         await engine.dispose()
@@ -196,7 +199,7 @@ def _generate_valid_state(app: FastAPI, project_id: uuid.UUID) -> str:
     from pqdb_api.routes.google_oauth import _generate_state_jwt
 
     return _generate_state_jwt(
-        private_key=app.state.jwt_private_key,
+        private_key=app.state.mldsa65_private_key,
         project_id=project_id,
         redirect_uri="https://myapp.com/auth/callback",
     )
@@ -352,10 +355,9 @@ class TestCallback:
             access_token = params["access_token"][0]
 
             # Decode the access token to check user_id
-            payload = jwt.decode(
+            payload = decode_token(
                 access_token,
-                app.state.jwt_public_key,
-                algorithms=[JWT_ALGORITHM],
+                app.state.mldsa65_public_key,
             )
             assert payload["sub"] == original_user_id
 
@@ -381,12 +383,10 @@ class TestCallback:
                 "project_id": str(project_id),
                 "redirect_uri": "https://myapp.com/cb",
                 "nonce": secrets.token_urlsafe(16),
-                "iat": now - timedelta(minutes=20),
-                "exp": now - timedelta(minutes=10),
+                "iat": int((now - timedelta(minutes=20)).timestamp()),
+                "exp": int((now - timedelta(minutes=10)).timestamp()),
             }
-            expired_state = jwt.encode(
-                payload, app.state.jwt_private_key, algorithm=JWT_ALGORITHM
-            )
+            expired_state = _build_mldsa65_token(payload, app.state.mldsa65_private_key)
 
             resp = client.get(
                 "/v1/auth/users/oauth/google/callback",
@@ -479,10 +479,9 @@ class TestFullOAuthLifecycle:
             access_token = token_params["access_token"][0]
 
             # Decode and verify the access token
-            payload = jwt.decode(
+            payload = decode_token(
                 access_token,
-                app.state.jwt_public_key,
-                algorithms=[JWT_ALGORITHM],
+                app.state.mldsa65_public_key,
             )
             assert payload["type"] == "user_access"
             assert payload["role"] == "authenticated"
@@ -522,10 +521,9 @@ class TestFullOAuthLifecycle:
             token_params = parse_qs(fragment)
             access_token = token_params["access_token"][0]
 
-            payload = jwt.decode(
+            payload = decode_token(
                 access_token,
-                app.state.jwt_public_key,
-                algorithms=[JWT_ALGORITHM],
+                app.state.mldsa65_public_key,
             )
             # Same user, now with email_verified = true
             assert payload["sub"] == original_user_id
