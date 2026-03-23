@@ -91,9 +91,7 @@ class TestValidateUserJwt:
         with pytest.raises(ValueError, match="Invalid user token"):
             _validate_user_jwt(token, public_key, expected_project_id=project_id)
 
-    def test_wrong_token_type_returns_none(
-        self, ed25519_keys: tuple[Any, Any]
-    ) -> None:
+    def test_wrong_token_type_returns_none(self, ed25519_keys: tuple[Any, Any]) -> None:
         private_key, public_key = ed25519_keys
         project_id = uuid.uuid4()
         # Developer access token (type=access, not user_access) — should
