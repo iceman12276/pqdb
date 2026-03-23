@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
+import oqs
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -30,6 +31,20 @@ def generate_ed25519_keypair() -> tuple[Ed25519PrivateKey, Ed25519PublicKey]:
     private_key = Ed25519PrivateKey.generate()
     public_key = private_key.public_key()
     return private_key, public_key
+
+
+MLDSA65_ALGORITHM = "ML-DSA-65"
+
+
+def generate_mldsa65_keypair() -> tuple[bytes, bytes]:
+    """Generate a new ML-DSA-65 key pair for post-quantum JWT signing.
+
+    Returns (private_key, public_key) as raw bytes.
+    """
+    signer = oqs.Signature(MLDSA65_ALGORITHM)
+    public_key = signer.generate_keypair()
+    private_key = signer.export_secret_key()
+    return bytes(private_key), bytes(public_key)
 
 
 def private_key_to_pem(key: Ed25519PrivateKey) -> bytes:

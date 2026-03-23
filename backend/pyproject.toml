@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.135.1",
     "httpx>=0.28.1",
     "hvac>=2.4.0",
+    "liboqs-python>=0.14.1",
     "pydantic-settings>=2.13.1",
     "pyjwt[crypto]>=2.12.1",
     "pyotp>=2.9.0",
