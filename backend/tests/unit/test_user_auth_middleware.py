@@ -91,17 +91,18 @@ class TestValidateUserJwt:
         with pytest.raises(ValueError, match="Invalid user token"):
             _validate_user_jwt(token, public_key, expected_project_id=project_id)
 
-    def test_wrong_token_type_raises_value_error(
+    def test_wrong_token_type_returns_none(
         self, ed25519_keys: tuple[Any, Any]
     ) -> None:
         private_key, public_key = ed25519_keys
         project_id = uuid.uuid4()
-        # Developer access token (type=access, not user_access)
+        # Developer access token (type=access, not user_access) — should
+        # return None so the request proceeds without user context
         token = _make_user_token(
             private_key, project_id=project_id, token_type="access"
         )
-        with pytest.raises(ValueError, match="Invalid token type"):
-            _validate_user_jwt(token, public_key, expected_project_id=project_id)
+        result = _validate_user_jwt(token, public_key, expected_project_id=project_id)
+        assert result is None
 
     def test_project_id_mismatch_raises_value_error(
         self, ed25519_keys: tuple[Any, Any]
@@ -161,14 +162,16 @@ class TestValidateUserJwt:
                 expected_project_id=uuid.uuid4(),
             )
 
-    def test_refresh_token_type_rejected(self, ed25519_keys: tuple[Any, Any]) -> None:
+    def test_refresh_token_type_returns_none(
+        self, ed25519_keys: tuple[Any, Any]
+    ) -> None:
         private_key, public_key = ed25519_keys
         project_id = uuid.uuid4()
         token = _make_user_token(
             private_key, project_id=project_id, token_type="user_refresh"
         )
-        with pytest.raises(ValueError, match="Invalid token type"):
-            _validate_user_jwt(token, public_key, expected_project_id=project_id)
+        result = _validate_user_jwt(token, public_key, expected_project_id=project_id)
+        assert result is None
 
 
 class TestUserContext:

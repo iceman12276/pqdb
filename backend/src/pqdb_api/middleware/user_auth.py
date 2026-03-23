@@ -49,11 +49,13 @@ def _validate_user_jwt(
     public_key: Ed25519PublicKey,
     *,
     expected_project_id: uuid.UUID,
-) -> UserContext:
+) -> UserContext | None:
     """Decode and validate a user JWT.
 
-    Returns UserContext on success.
-    Raises ValueError with a descriptive message on any validation failure.
+    Returns UserContext on success, None if the token is not a user token
+    (e.g. a developer access token).
+    Raises ValueError with a descriptive message on validation failure
+    for tokens that ARE user tokens but are invalid/expired.
     """
     try:
         payload: dict[str, Any] = jwt.decode(
@@ -64,11 +66,9 @@ def _validate_user_jwt(
     except jwt.PyJWTError:
         raise ValueError("Invalid user token")
 
-    # Must be a user_access token
+    # Not a user token (e.g. developer JWT with type=access) — ignore
     if payload.get("type") != "user_access":
-        raise ValueError(
-            f"Invalid token type: expected user_access, got {payload.get('type')}"
-        )
+        return None
 
     # Validate sub claim
     sub = payload.get("sub")
