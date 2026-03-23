@@ -27,8 +27,13 @@ function TestConsumer() {
 
 describe("ProjectContext", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     sessionStorage.clear();
+    // Mock global fetch for the introspect validation call in project-context.tsx
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) }),
+    );
   });
 
   it("starts in loading state", () => {

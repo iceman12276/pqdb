@@ -55,12 +55,9 @@ describe("EncryptionContext", () => {
     expect(screen.getByTestId("key")).toHaveTextContent("none");
   });
 
-  it("throws when used outside provider", () => {
-    // Suppress React's console.error for expected error
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(() => render(<TestConsumer />)).toThrow(
-      "useEncryption must be used within an EncryptionProvider",
-    );
-    spy.mockRestore();
+  it("returns defaults when used outside provider", () => {
+    render(<TestConsumer />);
+    expect(screen.getByTestId("status")).toHaveTextContent("locked");
+    expect(screen.getByTestId("key")).toHaveTextContent("none");
   });
 });

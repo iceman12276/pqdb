@@ -59,12 +59,12 @@ describe("SidebarNav", () => {
     }
   });
 
-  it("grays out Realtime item (MCP is now active)", () => {
+  it("all nav items are active (no disabled items)", () => {
     mockUseParams.mockReturnValue({ projectId: "proj-123" });
     render(<SidebarNav />);
 
     const realtimeItem = screen.getByText("Realtime").closest("a");
-    expect(realtimeItem).toHaveAttribute("aria-disabled", "true");
+    expect(realtimeItem).not.toHaveAttribute("aria-disabled", "true");
 
     const mcpItem = screen.getByText("MCP").closest("a");
     expect(mcpItem).not.toHaveAttribute("aria-disabled", "true");
