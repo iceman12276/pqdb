@@ -1,0 +1,26 @@
+{
+	# Use Caddy's internal CA for local dev TLS certificates.
+	# Go 1.24+ negotiates X25519MLKEM768 by default — no explicit PQC config needed.
+}
+
+localhost {
+	tls internal
+
+	# Backend API
+	handle /v1/* {
+		reverse_proxy backend:8000
+	}
+
+	handle /health {
+		reverse_proxy backend:8000
+	}
+
+	handle /ready {
+		reverse_proxy backend:8000
+	}
+
+	# Dashboard (default)
+	handle {
+		reverse_proxy dashboard:3000
+	}
+}
