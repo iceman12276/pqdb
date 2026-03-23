@@ -1,8 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import * as React from "react";
 import { AuthGuard } from "~/components/auth-guard";
 import { TableListPage } from "~/components/table-list-page";
 import { Skeleton } from "~/components/ui/skeleton";
-import { EncryptionProvider } from "~/lib/encryption-context";
+import { EncryptionProvider, useEncryption } from "~/lib/encryption-context";
+import { useEnvelopeKeys } from "~/lib/envelope-key-context";
 import { ProjectProvider, useProjectContext } from "~/lib/project-context";
 
 export const Route = createFileRoute("/projects/$projectId/tables/")({
@@ -54,6 +56,7 @@ function TablesRouteInner({ projectId }: { projectId: string }) {
 
   return (
     <EncryptionProvider>
+      <AutoUnlock projectId={projectId} />
       <TableListPage
         projectId={projectId}
         apiKey={apiKey}
@@ -66,4 +69,18 @@ function TablesRouteInner({ projectId }: { projectId: string }) {
       />
     </EncryptionProvider>
   );
+}
+
+function AutoUnlock({ projectId }: { projectId: string }) {
+  const { getEncryptionKey } = useEnvelopeKeys();
+  const { unlock, isUnlocked } = useEncryption();
+
+  React.useEffect(() => {
+    const key = getEncryptionKey(projectId);
+    if (key && !isUnlocked) {
+      unlock(key);
+    }
+  }, [projectId, getEncryptionKey, unlock, isUnlocked]);
+
+  return null;
 }

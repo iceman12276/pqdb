@@ -4,6 +4,8 @@ import { setTokens } from "~/lib/auth-store";
 import { useNavigate } from "~/lib/navigation";
 import { isValidEmail } from "~/lib/validation";
 import { handleMcpRedirect } from "~/lib/mcp-callback";
+import { deriveWrappingKey } from "~/lib/envelope-crypto";
+import { useEnvelopeKeys } from "~/lib/envelope-key-context";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -18,6 +20,7 @@ import {
 
 export function SignupPage() {
   const navigate = useNavigate();
+  const { setWrappingKey } = useEnvelopeKeys();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
@@ -46,7 +49,12 @@ export function SignupPage() {
 
     setLoading(true);
     try {
-      const result = await api.signup(email, password);
+      // Run PBKDF2 derivation in parallel with signup API call to hide latency
+      const [result, wrappingKeyResult] = await Promise.all([
+        api.signup(email, password),
+        deriveWrappingKey(password, email).catch((err) => { console.warn("[pqdb] Failed to derive wrapping key:", err); return null; }),
+      ]);
+
       if (result.error) {
         setError(result.error.message);
       } else {
@@ -57,6 +65,12 @@ export function SignupPage() {
           },
           { persist: true },
         );
+
+        // Store wrapping key before navigating (password is lost after navigation)
+        if (wrappingKeyResult) {
+          setWrappingKey(wrappingKeyResult);
+        }
+
         if (!handleMcpRedirect(result.data.access_token)) {
           navigate({ to: "/projects" });
         }

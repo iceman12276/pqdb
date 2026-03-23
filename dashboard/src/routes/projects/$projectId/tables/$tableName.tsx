@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import * as React from "react";
 import { ChevronLeft } from "lucide-react";
 import { AuthGuard } from "~/components/auth-guard";
 import { TableDataViewer } from "~/components/table-data-viewer";
 import { Skeleton } from "~/components/ui/skeleton";
-import { EncryptionProvider } from "~/lib/encryption-context";
+import { EncryptionProvider, useEncryption } from "~/lib/encryption-context";
+import { useEnvelopeKeys } from "~/lib/envelope-key-context";
 import { ProjectProvider, useProjectContext } from "~/lib/project-context";
 
 export const Route = createFileRoute(
@@ -62,6 +64,7 @@ function TableDetailRouteInner({
 
   return (
     <EncryptionProvider>
+      <AutoUnlock projectId={projectId} />
       <div className="space-y-4">
         <Link
           to="/projects/$projectId/tables"
@@ -79,4 +82,18 @@ function TableDetailRouteInner({
       </div>
     </EncryptionProvider>
   );
+}
+
+function AutoUnlock({ projectId }: { projectId: string }) {
+  const { getEncryptionKey } = useEnvelopeKeys();
+  const { unlock, isUnlocked } = useEncryption();
+
+  React.useEffect(() => {
+    const key = getEncryptionKey(projectId);
+    if (key && !isUnlocked) {
+      unlock(key);
+    }
+  }, [projectId, getEncryptionKey, unlock, isUnlocked]);
+
+  return null;
 }

@@ -12,6 +12,7 @@ export interface Project {
   status: string;
   database_name: string | null;
   created_at: string;
+  wrapped_encryption_key: string | null;
 }
 
 export interface ApiKeyCreated {
