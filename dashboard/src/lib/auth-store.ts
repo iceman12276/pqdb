@@ -45,6 +45,16 @@ export function setTokens(
   }
 }
 
+type LogoutCallback = () => void;
+const logoutCallbacks: Set<LogoutCallback> = new Set();
+
+export function onLogout(callback: LogoutCallback): () => void {
+  logoutCallbacks.add(callback);
+  return () => {
+    logoutCallbacks.delete(callback);
+  };
+}
+
 const SERVICE_KEY_PREFIX = "pqdb_service_key_";
 
 export function clearTokens(): void {
@@ -62,5 +72,10 @@ export function clearTokens(): void {
     for (const k of keysToRemove) {
       sessionStorage.removeItem(k);
     }
+  }
+
+  // Notify logout listeners (e.g., EnvelopeKeyProvider)
+  for (const cb of logoutCallbacks) {
+    cb();
   }
 }

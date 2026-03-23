@@ -12,7 +12,7 @@ import {
   wrapKey,
   generateEncryptionKey,
 } from "./envelope-crypto";
-import { getAccessToken } from "./auth-store";
+import { getAccessToken, onLogout } from "./auth-store";
 
 function base64ToUint8Array(base64: string): Uint8Array {
   const binary = atob(base64);
@@ -60,6 +60,14 @@ export function EnvelopeKeyProvider({
   const [encryptionKeys, setEncryptionKeys] = React.useState<
     Map<string, string>
   >(new Map());
+
+  // Clear keys on logout
+  React.useEffect(() => {
+    return onLogout(() => {
+      setWrappingKeyState(null);
+      setEncryptionKeys(new Map());
+    });
+  }, []);
 
   // Use a ref to access wrappingKey in callbacks without stale closures
   const wrappingKeyRef = React.useRef<CryptoKey | null>(null);
