@@ -61,6 +61,11 @@ describe("parseArgs", () => {
       port: 5000,
     });
   });
+
+  it("parses https:// project URL", () => {
+    const result = parseArgs(["--project-url", "https://localhost"]);
+    expect(result.projectUrl).toBe("https://localhost");
+  });
 });
 
 describe("buildConfig", () => {
@@ -187,5 +192,26 @@ describe("buildConfig", () => {
     expect(() =>
       buildConfig({ projectUrl: "http://localhost:8000", transport: "stdio", port: 3001 }),
     ).toThrow("PQDB_API_KEY environment variable is required.");
+  });
+
+  it("accepts https:// project URLs", () => {
+    process.env.PQDB_API_KEY = "pqdb_anon_testkey123";
+    const config = buildConfig({
+      projectUrl: "https://localhost",
+      transport: "stdio",
+      port: 3001,
+    });
+    expect(config.projectUrl).toBe("https://localhost");
+  });
+
+  it("accepts https:// project URL from env var", () => {
+    process.env.PQDB_API_KEY = "pqdb_anon_testkey123";
+    process.env.PQDB_PROJECT_URL = "https://localhost";
+    const config = buildConfig({
+      projectUrl: undefined,
+      transport: "stdio",
+      port: 3001,
+    });
+    expect(config.projectUrl).toBe("https://localhost");
   });
 });

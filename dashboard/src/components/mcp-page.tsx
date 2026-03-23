@@ -108,7 +108,7 @@ export function McpPage({ projectId }: { projectId: string }) {
             </Label>
             <pre className="mt-1 rounded-md bg-muted p-3 text-sm font-mono overflow-x-auto">
               PQDB_API_KEY=&lt;key&gt; npx pqdb-mcp --project-url
-              http://localhost:8000
+              https://localhost
             </pre>
           </div>
 
@@ -118,7 +118,7 @@ export function McpPage({ projectId }: { projectId: string }) {
             </Label>
             <pre className="mt-1 rounded-md bg-muted p-3 text-sm font-mono overflow-x-auto">
               PQDB_API_KEY=&lt;key&gt; npx pqdb-mcp --project-url
-              http://localhost:8000 --transport sse --port 3001
+              https://localhost --transport sse --port 3001
             </pre>
           </div>
 

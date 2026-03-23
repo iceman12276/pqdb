@@ -32,7 +32,7 @@ async function main(): Promise<void> {
     );
   } else if (config.transport === "http") {
     // HTTP transport with OAuth authentication
-    const dashboardUrl = process.env.PQDB_DASHBOARD_URL ?? "http://localhost:3000";
+    const dashboardUrl = process.env.PQDB_DASHBOARD_URL ?? "https://localhost";
     const mcpServerUrl = `http://localhost:${config.port}`;
 
     const app = createMcpHttpApp({
