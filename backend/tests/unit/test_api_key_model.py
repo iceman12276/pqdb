@@ -19,6 +19,7 @@ class TestApiKeyModel:
             "key_hash",
             "key_prefix",
             "role",
+            "name",
             "created_at",
             "permissions",
         }
