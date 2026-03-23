@@ -203,28 +203,23 @@ export function EnvelopeKeyProvider({
 
   // Auto-unwrap project keys when wrapping key becomes available
   React.useEffect(() => {
-    console.log("[pqdb] Auto-unwrap effect fired, wrappingKey:", wrappingKey ? "SET" : "NULL");
     if (!wrappingKey) return;
 
     let cancelled = false;
 
     async function fetchAndUnwrap() {
       const token = getAccessToken();
-      console.log("[pqdb] fetchAndUnwrap: token:", token ? "SET" : "NULL");
       if (!token) return;
 
       try {
         const res = await fetch("/v1/projects", {
           headers: { Authorization: `Bearer ${token}` },
         });
-        console.log("[pqdb] fetchAndUnwrap: projects response:", res.status);
         if (!res.ok) return;
 
         const projects = await res.json();
-        console.log("[pqdb] fetchAndUnwrap: projects count:", projects.length, "wrapped keys:", projects.filter((p: any) => p.wrapped_encryption_key).length);
         if (!cancelled) {
           await unwrapProjectKeys(projects);
-          console.log("[pqdb] fetchAndUnwrap: unwrapProjectKeys completed");
         }
       } catch (err) {
         console.warn("[pqdb] fetchAndUnwrap error:", err);
