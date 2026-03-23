@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pqdb_api.database import get_session
 from pqdb_api.middleware.auth import get_current_developer_id
-from pqdb_api.models.api_key import ApiKey
 from pqdb_api.models.project import Project
 from pqdb_api.services.api_keys import (
     create_single_key,
@@ -93,32 +92,14 @@ async def generate_service_key(
     developer_id: uuid.UUID = Depends(get_current_developer_id),
     session: AsyncSession = Depends(get_session),
 ) -> ApiKeyCreatedResponse:
-    """Get or create a service API key for Dashboard/MCP use.
+    """Create a service API key for Dashboard/MCP use.
 
-    Returns an existing service key if one exists, or creates a new one.
-    This is idempotent — calling it multiple times won't accumulate keys.
+    Always creates a new key — multiple consumers (dashboard, MCP server)
+    each need their own key. Deleting old keys would invalidate other
+    active sessions.
     Returns the full key (one-time display). Requires developer JWT.
     """
     await _get_project_for_developer(project_id, developer_id, session)
-
-    # Check for existing service key — delete old one to prevent accumulation
-    existing = await session.execute(
-        select(ApiKey)
-        .where(
-            ApiKey.project_id == project_id,
-            ApiKey.role == "service",
-        )
-        .order_by(ApiKey.created_at.desc())
-        .limit(1)
-    )
-    existing_key = existing.scalar_one_or_none()
-
-    if existing_key:
-        # Return existing key — but we only have the hash, not the plaintext.
-        # We need to create a new one since we can't recover the original.
-        # However, to prevent accumulation, delete the old one first.
-        await session.delete(existing_key)
-        await session.flush()
 
     key_info = await create_single_key(project_id, "service", session)
     await session.commit()
