@@ -1,5 +1,6 @@
 """Project CRUD endpoints: create, list, get, delete, HMAC key, reindex."""
 
+import base64
 import secrets
 import uuid
 from datetime import datetime
@@ -80,6 +81,7 @@ class CreateProjectRequest(BaseModel):
 
     name: str
     region: str = "us-east-1"
+    wrapped_encryption_key: str | None = None
 
 
 class ApiKeyCreatedResponse(BaseModel):
@@ -99,6 +101,7 @@ class ProjectResponse(BaseModel):
     region: str
     status: str
     database_name: str | None = None
+    wrapped_encryption_key: str | None = None
     created_at: datetime
 
 
@@ -109,12 +112,16 @@ class ProjectCreateResponse(ProjectResponse):
 
 
 def _project_response(project: Project) -> ProjectResponse:
+    wrapped_key_b64: str | None = None
+    if project.wrapped_encryption_key is not None:
+        wrapped_key_b64 = base64.b64encode(project.wrapped_encryption_key).decode()
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         region=project.region,
         status=project.status,
         database_name=project.database_name,
+        wrapped_encryption_key=wrapped_key_b64,
         created_at=project.created_at,
     )
 
@@ -127,12 +134,17 @@ async def create_project(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Create a new project and provision an isolated database."""
+    wrapped_key_bytes: bytes | None = None
+    if body.wrapped_encryption_key is not None:
+        wrapped_key_bytes = base64.b64decode(body.wrapped_encryption_key)
+
     project = Project(
         id=uuid.uuid4(),
         developer_id=developer_id,
         name=body.name,
         region=body.region,
         status="provisioning",
+        wrapped_encryption_key=wrapped_key_bytes,
     )
     session.add(project)
     await session.flush()
@@ -177,12 +189,17 @@ async def create_project(
         developer_id=str(developer_id),
         status=project.status,
     )
+    wrapped_key_b64: str | None = None
+    if project.wrapped_encryption_key is not None:
+        wrapped_key_b64 = base64.b64encode(project.wrapped_encryption_key).decode()
+
     return {
         "id": str(project.id),
         "name": project.name,
         "region": project.region,
         "status": project.status,
         "database_name": project.database_name,
+        "wrapped_encryption_key": wrapped_key_b64,
         "created_at": project.created_at,
         "api_keys": [
             {
@@ -249,6 +266,40 @@ async def get_project(
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
+    return _project_response(project)
+
+
+class UpdateEncryptionKeyRequest(BaseModel):
+    """Request body for updating the wrapped encryption key."""
+
+    wrapped_encryption_key: str
+
+
+@router.patch("/{project_id}/encryption-key", response_model=ProjectResponse)
+async def update_encryption_key(
+    project_id: uuid.UUID,
+    body: UpdateEncryptionKeyRequest,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> ProjectResponse:
+    """Update the wrapped encryption key for a project.
+
+    Requires developer JWT (project owner only).
+    Accepts base64-encoded wrapped key, stores as bytea.
+    """
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == developer_id,
+        )
+    )
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    project.wrapped_encryption_key = base64.b64decode(body.wrapped_encryption_key)
+    await session.commit()
+    await session.refresh(project)
     return _project_response(project)
 
 

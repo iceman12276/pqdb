@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pqdb_api.database import get_session
+from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.developer import Developer
 from pqdb_api.services.auth import (
     JWT_ALGORITHM,
@@ -148,3 +149,44 @@ async def refresh(
 
     access = create_access_token(developer_id, private_key)
     return AccessTokenResponse(access_token=access)
+
+
+class ChangePasswordRequest(BaseModel):
+    """Request body for changing password."""
+
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password", response_model=TokenResponse)
+async def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> TokenResponse:
+    """Change the developer's password and return new tokens.
+
+    Verifies the current password, updates the hash, and issues
+    a fresh token pair.
+    """
+    result = await session.execute(
+        select(Developer).where(Developer.id == developer_id)
+    )
+    developer = result.scalar_one_or_none()
+    if developer is None:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if developer.password_hash is None or not verify_password(
+        developer.password_hash, body.current_password
+    ):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    developer.password_hash = hash_password(body.new_password)
+    await session.commit()
+
+    private_key = _get_private_key(request)
+    access = create_access_token(developer_id, private_key)
+    refresh = create_refresh_token(developer_id, private_key)
+    logger.info("developer_password_changed", developer_id=str(developer_id))
+    return TokenResponse(access_token=access, refresh_token=refresh)
