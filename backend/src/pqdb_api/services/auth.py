@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
-import oqs
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -41,6 +40,8 @@ def generate_mldsa65_keypair() -> tuple[bytes, bytes]:
 
     Returns (private_key, public_key) as raw bytes.
     """
+    import oqs  # lazy import: liboqs requires cmake at first build
+
     signer = oqs.Signature(MLDSA65_ALGORITHM)
     public_key = signer.generate_keypair()
     private_key = signer.export_secret_key()

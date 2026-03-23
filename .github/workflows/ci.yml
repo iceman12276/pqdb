@@ -58,6 +58,9 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
+      - name: Install cmake (for liboqs native library)
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
       - name: Install dependencies
         run: uv sync
 
@@ -156,6 +159,9 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
+      - name: Install cmake (for liboqs native library)
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
       - name: Install backend dependencies
         run: cd backend && uv sync
 
@@ -233,6 +239,9 @@ jobs:
 
       - name: Set up Python
         run: uv python install 3.12
+
+      - name: Install cmake (for liboqs native library)
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
 
       - name: Install backend dependencies
         run: cd backend && uv sync
