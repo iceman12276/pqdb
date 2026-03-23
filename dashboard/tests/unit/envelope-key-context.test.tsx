@@ -190,6 +190,35 @@ describe("EnvelopeKeyContext", () => {
     );
   });
 
+  it("unwrapProjectKeys continues on error for individual project", async () => {
+    const fakeWrappingKey = {} as CryptoKey;
+    (envelopeCrypto.unwrapKey as Mock)
+      .mockRejectedValueOnce(new Error("corrupted blob"))
+      .mockResolvedValueOnce("decrypted-key-2");
+
+    const { result } = renderHook(() => useEnvelopeKeys(), {
+      wrapper: EnvelopeKeyProvider,
+    });
+
+    await act(async () => {
+      result.current.setWrappingKey(fakeWrappingKey);
+    });
+
+    const projects = [
+      { id: "proj-bad", wrapped_encryption_key: base64Encode("bad-blob") },
+      { id: "proj-good", wrapped_encryption_key: base64Encode("good-blob") },
+    ];
+
+    await act(async () => {
+      await result.current.unwrapProjectKeys(projects);
+    });
+
+    // The failed project should not be in the map
+    expect(result.current.getEncryptionKey("proj-bad")).toBeNull();
+    // The successful project should be in the map
+    expect(result.current.getEncryptionKey("proj-good")).toBe("decrypted-key-2");
+  });
+
   it("unwrapProjectKeys does nothing without a wrapping key", async () => {
     const { result } = renderHook(() => useEnvelopeKeys(), {
       wrapper: EnvelopeKeyProvider,

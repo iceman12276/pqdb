@@ -76,7 +76,7 @@ export function LoginPage() {
       // Run PBKDF2 derivation in parallel with login API call to hide latency
       const [result, wrappingKeyResult] = await Promise.all([
         api.login(email, password),
-        deriveWrappingKey(password, email).catch(() => null),
+        deriveWrappingKey(password, email).catch((err) => { console.warn("[pqdb] Failed to derive wrapping key:", err); return null; }),
       ]);
 
       if (result.error) {

@@ -118,30 +118,39 @@ export function EnvelopeKeyProvider({
         // Skip projects already in the map
         if (currentKeys.has(project.id)) continue;
 
-        if (project.wrapped_encryption_key) {
-          // Unwrap existing wrapped key
-          const blob = base64ToUint8Array(project.wrapped_encryption_key);
-          const decryptedKey = await unwrapKey(blob, wk);
-          newEntries.push([project.id, decryptedKey]);
-        } else {
-          // Auto-generate a key, wrap it, PATCH to server
-          const encKey = generateEncryptionKey();
-          const wrappedBlob = await wrapKey(encKey, wk);
-          const wrappedBase64 = uint8ArrayToBase64(wrappedBlob);
+        try {
+          if (project.wrapped_encryption_key) {
+            // Unwrap existing wrapped key
+            const blob = base64ToUint8Array(project.wrapped_encryption_key);
+            const decryptedKey = await unwrapKey(blob, wk);
+            newEntries.push([project.id, decryptedKey]);
+          } else {
+            // Auto-generate a key, wrap it, PATCH to server
+            const encKey = generateEncryptionKey();
+            const wrappedBlob = await wrapKey(encKey, wk);
+            const wrappedBase64 = uint8ArrayToBase64(wrappedBlob);
 
-          const token = getAccessToken();
-          await fetch(`/v1/projects/${project.id}/encryption-key`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({
-              wrapped_encryption_key: wrappedBase64,
-            }),
-          });
+            const token = getAccessToken();
+            const response = await fetch(`/v1/projects/${project.id}/encryption-key`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
+              body: JSON.stringify({
+                wrapped_encryption_key: wrappedBase64,
+              }),
+            });
 
-          newEntries.push([project.id, encKey]);
+            if (!response.ok) {
+              console.warn("Failed to store wrapped key for project", project.id, response.status);
+              continue;
+            }
+
+            newEntries.push([project.id, encKey]);
+          }
+        } catch (error) {
+          console.warn("Failed to unwrap key for project", project.id, error);
         }
       }
 
