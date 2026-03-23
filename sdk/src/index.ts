@@ -42,6 +42,16 @@ export { RolesClient } from "./client/roles.js";
 export { PoliciesClient } from "./client/policies.js";
 export { MfaClient } from "./client/mfa.js";
 
+// Crypto exports (for MCP server and other consumers that need direct access)
+export { deriveKeyPair, encrypt, decrypt } from "./crypto/encryption.js";
+export type { KeyPair } from "./crypto/pqc.js";
+export { computeBlindIndex } from "./crypto/blind-index.js";
+export {
+  transformInsertRows,
+  transformSelectResponse,
+  transformFilters,
+} from "./query/crypto-transform.js";
+
 // Query builder exports
 export { column, defineTableSchema, ColumnDef, UuidColumnDef } from "./query/schema.js";
 export type {

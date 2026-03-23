@@ -76,8 +76,8 @@ export function createPqdbMcpServer(config: ServerConfig): PqdbMcpServer {
   // Register schema introspection tools and resources (US-057)
   registerSchemaTools(mcpServer, config.projectUrl, config.apiKey);
 
-  // Register CRUD tools (US-058)
-  registerCrudTools(mcpServer, config.projectUrl, config.apiKey, encryptionEnabled);
+  // Register CRUD tools (US-058) — pass encryption key for ML-KEM crypto
+  registerCrudTools(mcpServer, config.projectUrl, config.apiKey, encryptionEnabled, config.encryptionKey);
 
   // Register auth tools (US-059)
   registerAuthTools(mcpServer, config.projectUrl, config.apiKey);
