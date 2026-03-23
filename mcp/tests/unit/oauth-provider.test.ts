@@ -159,6 +159,37 @@ describe("PqdbOAuthProvider", () => {
     });
   });
 
+  describe("completeAuthorization with encryption key", () => {
+    it("stores encryption key when provided", async () => {
+      const { requestId } = await startAuthorize();
+
+      const redirectUrl = await provider.completeAuthorization(
+        requestId,
+        "dev-jwt",
+        "my-encryption-key",
+      );
+      expect(redirectUrl).toBeDefined();
+
+      // Exchange the code, then verify the session has the encryption key
+      const code = new URL(redirectUrl!).searchParams.get("code")!;
+      await provider.exchangeAuthorizationCode(makeClient(), code);
+
+      const encKey = provider.getSessionEncryptionKey("dev-jwt");
+      expect(encKey).toBe("my-encryption-key");
+    });
+
+    it("stores undefined encryption key when not provided", async () => {
+      const { requestId } = await startAuthorize();
+
+      const redirectUrl = await provider.completeAuthorization(requestId, "dev-jwt-2");
+      const code = new URL(redirectUrl!).searchParams.get("code")!;
+      await provider.exchangeAuthorizationCode(makeClient(), code);
+
+      const encKey = provider.getSessionEncryptionKey("dev-jwt-2");
+      expect(encKey).toBeUndefined();
+    });
+  });
+
   describe("exchangeAuthorizationCode", () => {
     it("returns tokens with the dev JWT as access_token", async () => {
       const { requestId } = await startAuthorize();

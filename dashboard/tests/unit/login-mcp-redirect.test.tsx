@@ -2,11 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { mockLogin, mockNavigate, mockHandleMcpRedirect } = vi.hoisted(
+const { mockLogin, mockNavigate, mockHandleMcpRedirect, mockGetMcpCallbackParams } = vi.hoisted(
   () => ({
     mockLogin: vi.fn(),
     mockNavigate: vi.fn(),
     mockHandleMcpRedirect: vi.fn(),
+    mockGetMcpCallbackParams: vi.fn(),
   }),
 );
 
@@ -24,6 +25,7 @@ vi.mock("~/lib/passkey", () => ({
 
 vi.mock("~/lib/mcp-callback", () => ({
   handleMcpRedirect: mockHandleMcpRedirect,
+  getMcpCallbackParams: mockGetMcpCallbackParams,
 }));
 
 import { LoginPage } from "~/components/login-page";
@@ -31,6 +33,8 @@ import { LoginPage } from "~/components/login-page";
 describe("LoginPage MCP redirect", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: no MCP callback params (no encryption key unwrapping)
+    mockGetMcpCallbackParams.mockReturnValue({ mcp_callback: null, request_id: null });
   });
 
   it("redirects to MCP callback after successful login when handleMcpRedirect returns true", async () => {
@@ -48,7 +52,7 @@ describe("LoginPage MCP redirect", () => {
     await user.click(screen.getByRole("button", { name: /sign in$/i }));
 
     await waitFor(() => {
-      expect(mockHandleMcpRedirect).toHaveBeenCalledWith("jwt-token");
+      expect(mockHandleMcpRedirect).toHaveBeenCalledWith("jwt-token", undefined);
     });
     // Should NOT navigate to /projects when MCP redirect happens
     expect(mockNavigate).not.toHaveBeenCalled();

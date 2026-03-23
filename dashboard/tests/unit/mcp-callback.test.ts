@@ -77,6 +77,27 @@ describe("buildMcpRedirectUrl", () => {
     expect(url.searchParams.get("request_id")).toBe("req1");
     expect(url.searchParams.get("token")).toBe("tok1");
   });
+
+  it("includes encryption_key when provided", () => {
+    const result = buildMcpRedirectUrl(
+      "http://localhost:3002/mcp-auth-complete",
+      "abc123",
+      "jwt-token-here",
+      "my-encryption-key-base64url",
+    );
+    const url = new URL(result);
+    expect(url.searchParams.get("encryption_key")).toBe("my-encryption-key-base64url");
+  });
+
+  it("omits encryption_key when not provided", () => {
+    const result = buildMcpRedirectUrl(
+      "http://localhost:3002/mcp-auth-complete",
+      "abc123",
+      "jwt-token-here",
+    );
+    const url = new URL(result);
+    expect(url.searchParams.has("encryption_key")).toBe(false);
+  });
 });
 
 describe("getMcpCallbackParams", () => {
@@ -196,6 +217,38 @@ describe("handleMcpRedirect", () => {
     );
     expect(window.location.href).toContain("token=my-jwt-token");
     expect(window.location.href).toContain("request_id=abc123");
+  });
+
+  it("includes encryption_key in redirect URL when provided", () => {
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: {
+        ...originalLocation,
+        search:
+          "?mcp_callback=http%3A%2F%2Flocalhost%3A3002%2Fcallback&request_id=abc123",
+        href: "http://localhost:3000/login",
+      },
+    });
+
+    const result = handleMcpRedirect("my-jwt-token", "enc-key-123");
+    expect(result).toBe(true);
+    expect(window.location.href).toContain("encryption_key=enc-key-123");
+  });
+
+  it("omits encryption_key from redirect URL when not provided", () => {
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: {
+        ...originalLocation,
+        search:
+          "?mcp_callback=http%3A%2F%2Flocalhost%3A3002%2Fcallback&request_id=abc123",
+        href: "http://localhost:3000/login",
+      },
+    });
+
+    const result = handleMcpRedirect("my-jwt-token");
+    expect(result).toBe(true);
+    expect(window.location.href).not.toContain("encryption_key");
   });
 
   it("returns false when mcp_callback is missing", () => {

@@ -75,6 +75,7 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
   app.get("/mcp-auth-complete", async (req: Request, res: Response) => {
     const requestId = req.query.request_id as string | undefined;
     const token = req.query.token as string | undefined;
+    const encryptionKey = req.query.encryption_key as string | undefined;
 
     if (!requestId || !token) {
       res.status(400).json({
@@ -87,7 +88,11 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
     // registered allowlist and builds the full redirect URL from server-controlled
     // data (registered redirect_uri + generated auth code + stored state).
     // The returned URL is safe to redirect to (no open redirect risk).
-    const redirectUrl = await provider.completeAuthorization(requestId, token);
+    const redirectUrl = await provider.completeAuthorization(
+      requestId,
+      token,
+      encryptionKey,
+    );
     if (!redirectUrl) {
       res.status(400).json({
         error: "Unknown or expired request_id, or redirect URI not registered",
@@ -131,6 +136,13 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
         // Build config from the authenticated developer's JWT + options
         const devJwt = req.auth?.token;
 
+        // Resolve encryption key: env var takes precedence, then OAuth-provided key
+        const oauthEncryptionKey = devJwt
+          ? provider.getSessionEncryptionKey(devJwt)
+          : undefined;
+        const resolvedEncryptionKey =
+          options.encryptionKey ?? oauthEncryptionKey;
+
         // Auto-fetch a service API key if we don't have one
         let apiKey = options.apiKey ?? "";
         if (!apiKey && devJwt) {
@@ -172,7 +184,7 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
           transport: "http",
           port: 0, // Not used for HTTP app
           apiKey,
-          encryptionKey: options.encryptionKey,
+          encryptionKey: resolvedEncryptionKey,
           devToken: devJwt,
         };
 

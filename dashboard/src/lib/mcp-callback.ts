@@ -46,10 +46,14 @@ export function buildMcpRedirectUrl(
   callbackUrl: string,
   requestId: string,
   token: string,
+  encryptionKey?: string,
 ): string {
   const url = new URL(callbackUrl);
   url.searchParams.set("request_id", requestId);
   url.searchParams.set("token", token);
+  if (encryptionKey) {
+    url.searchParams.set("encryption_key", encryptionKey);
+  }
   return url.toString();
 }
 
@@ -57,8 +61,15 @@ export function buildMcpRedirectUrl(
  * Handle post-login redirect. If MCP callback params are present and valid,
  * redirect to the MCP server. Otherwise, return false so the caller can
  * navigate to /projects.
+ *
+ * @param encryptionKey - Optional unwrapped encryption key to pass to the MCP server.
+ *   Only included when the developer logged in with a password and has a project
+ *   with a wrapped encryption key.
  */
-export function handleMcpRedirect(accessToken: string): boolean {
+export function handleMcpRedirect(
+  accessToken: string,
+  encryptionKey?: string,
+): boolean {
   const { mcp_callback, request_id } = getMcpCallbackParams();
 
   if (!mcp_callback || !request_id) {
@@ -73,6 +84,7 @@ export function handleMcpRedirect(accessToken: string): boolean {
     mcp_callback,
     request_id,
     accessToken,
+    encryptionKey,
   );
   return true;
 }

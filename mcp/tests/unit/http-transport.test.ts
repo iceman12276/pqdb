@@ -129,6 +129,40 @@ describe("MCP HTTP App", () => {
       expect(redirectUrl.searchParams.get("code")).toBeTruthy();
       expect(redirectUrl.searchParams.get("state")).toBe("test-state");
     });
+
+    it("accepts encryption_key in callback and passes it through to session", async () => {
+      // 1. Register client
+      const regRes = await request(app)
+        .post("/register")
+        .send({
+          redirect_uris: ["http://127.0.0.1:9999/callback"],
+        });
+      const clientId = regRes.body.client_id;
+
+      // 2. Start authorize flow
+      const authRes = await request(app).get("/authorize").query({
+        response_type: "code",
+        client_id: clientId,
+        redirect_uri: "http://127.0.0.1:9999/callback",
+        code_challenge: "test-challenge",
+        code_challenge_method: "S256",
+        state: "test-state",
+      });
+
+      const dashboardUrl = new URL(authRes.headers.location);
+      const requestId = dashboardUrl.searchParams.get("request_id")!;
+
+      // 3. Simulate dashboard callback WITH encryption_key
+      const callbackRes = await request(app)
+        .get("/mcp-auth-complete")
+        .query({
+          request_id: requestId,
+          token: "developer-jwt-456",
+          encryption_key: "test-encryption-key-base64url",
+        });
+
+      expect(callbackRes.status).toBe(302);
+    });
   });
 
   describe("/mcp POST (unauthenticated)", () => {
