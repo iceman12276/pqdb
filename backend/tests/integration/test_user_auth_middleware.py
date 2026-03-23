@@ -250,7 +250,7 @@ class TestGetCurrentUserInvalid:
         assert "expired" in detail["error"]["message"].lower()
 
     def test_developer_token_ignored(self, client: TestClient) -> None:
-        """Developer tokens (type=access) are silently ignored — user context is None."""
+        """Developer tokens (type=access) are silently ignored."""
         from datetime import UTC, datetime, timedelta
 
         import jwt as pyjwt
