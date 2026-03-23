@@ -20,6 +20,7 @@ class TestProjectModel:
             "region",
             "status",
             "database_name",
+            "wrapped_encryption_key",
             "created_at",
         }
         assert columns == expected
@@ -91,3 +92,25 @@ class TestProjectModel:
             database_name="pqdb_project_abc123",
         )
         assert project.database_name == "pqdb_project_abc123"
+
+    def test_wrapped_encryption_key_column_is_nullable(self) -> None:
+        col = Project.__table__.columns["wrapped_encryption_key"]
+        assert col.nullable is True
+
+    def test_wrapped_encryption_key_defaults_to_none(self) -> None:
+        project = Project(
+            id=uuid.uuid4(),
+            developer_id=uuid.uuid4(),
+            name="test-project",
+        )
+        assert project.wrapped_encryption_key is None
+
+    def test_can_instantiate_with_wrapped_encryption_key(self) -> None:
+        key_blob = b"\x00\x01\x02\x03" * 64  # 256 bytes
+        project = Project(
+            id=uuid.uuid4(),
+            developer_id=uuid.uuid4(),
+            name="test-project",
+            wrapped_encryption_key=key_blob,
+        )
+        assert project.wrapped_encryption_key == key_blob
