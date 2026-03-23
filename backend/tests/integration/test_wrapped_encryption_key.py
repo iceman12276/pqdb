@@ -187,3 +187,39 @@ class TestPatchWrappedKey:
             headers=auth_headers(token_b),
         )
         assert resp.status_code == 404
+
+
+class TestInvalidBase64Validation:
+    """Tests for invalid base64 handling on wrapped_encryption_key."""
+
+    def test_create_project_invalid_base64_returns_422(
+        self, client: TestClient
+    ) -> None:
+        """POST /v1/projects with malformed base64 returns 422."""
+        token = signup_and_get_token(client)
+        resp = client.post(
+            "/v1/projects",
+            json={
+                "name": "bad-key-project",
+                "wrapped_encryption_key": "not!valid!base64%%",
+            },
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 422
+
+    def test_patch_invalid_base64_returns_422(self, client: TestClient) -> None:
+        """PATCH with malformed base64 returns 422."""
+        token = signup_and_get_token(client)
+        create_resp = client.post(
+            "/v1/projects",
+            json={"name": "patch-bad-key"},
+            headers=auth_headers(token),
+        )
+        project_id = create_resp.json()["id"]
+
+        resp = client.patch(
+            f"/v1/projects/{project_id}/encryption-key",
+            json={"wrapped_encryption_key": "not!valid!base64%%"},
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 422

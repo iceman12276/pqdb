@@ -136,7 +136,13 @@ async def create_project(
     """Create a new project and provision an isolated database."""
     wrapped_key_bytes: bytes | None = None
     if body.wrapped_encryption_key is not None:
-        wrapped_key_bytes = base64.b64decode(body.wrapped_encryption_key)
+        try:
+            wrapped_key_bytes = base64.b64decode(body.wrapped_encryption_key)
+        except Exception:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid base64 encoding for wrapped_encryption_key",
+            )
 
     project = Project(
         id=uuid.uuid4(),
@@ -297,7 +303,14 @@ async def update_encryption_key(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    project.wrapped_encryption_key = base64.b64decode(body.wrapped_encryption_key)
+    try:
+        decoded_key = base64.b64decode(body.wrapped_encryption_key)
+    except Exception:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid base64 encoding for wrapped_encryption_key",
+        )
+    project.wrapped_encryption_key = decoded_key
     await session.commit()
     await session.refresh(project)
     return _project_response(project)
