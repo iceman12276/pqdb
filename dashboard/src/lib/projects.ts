@@ -22,11 +22,26 @@ export interface ApiKeyCreated {
   key_prefix: string;
 }
 
+export interface ApiKeyPermissions {
+  tables: Record<string, string[]>;
+}
+
 export interface ApiKeyInfo {
   id: string;
   role: string;
   key_prefix: string;
   created_at: string;
+  name: string | null;
+  permissions: ApiKeyPermissions | null;
+}
+
+export interface ScopedKeyCreated {
+  id: string;
+  role: string;
+  name: string;
+  key: string;
+  key_prefix: string;
+  permissions: ApiKeyPermissions;
 }
 
 export interface ProjectCreateResponse extends Project {
@@ -98,4 +113,33 @@ export async function rotateProjectKeys(projectId: string): Promise<ApiKeyCreate
     throw new Error("Failed to rotate API keys");
   }
   return result.data as ApiKeyCreated[];
+}
+
+export async function createScopedKey(
+  projectId: string,
+  name: string,
+  permissions: ApiKeyPermissions,
+): Promise<ScopedKeyCreated> {
+  const result = await api.fetch(`/v1/projects/${projectId}/keys/scoped`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, permissions }),
+  });
+  if (!result.ok) {
+    const errorData = result.data as { detail?: string } | null;
+    throw new Error(errorData?.detail ?? "Failed to create scoped key");
+  }
+  return result.data as ScopedKeyCreated;
+}
+
+export async function deleteProjectKey(
+  projectId: string,
+  keyId: string,
+): Promise<void> {
+  const result = await api.fetch(`/v1/projects/${projectId}/keys/${keyId}`, {
+    method: "DELETE",
+  });
+  if (!result.ok) {
+    throw new Error("Failed to delete API key");
+  }
 }
