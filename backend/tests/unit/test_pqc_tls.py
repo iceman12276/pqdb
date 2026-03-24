@@ -23,27 +23,19 @@ class TestVerifyPqcTlsScript:
     """Validate the PQC TLS verification script."""
 
     def test_script_exists(self) -> None:
-        assert VERIFY_SCRIPT.exists(), (
-            "infra/scripts/verify-pqc-tls.sh must exist"
-        )
+        assert VERIFY_SCRIPT.exists(), "infra/scripts/verify-pqc-tls.sh must exist"
 
     def test_script_is_executable(self) -> None:
         mode = os.stat(VERIFY_SCRIPT).st_mode
-        assert mode & stat.S_IXUSR, (
-            "verify-pqc-tls.sh must be executable (chmod +x)"
-        )
+        assert mode & stat.S_IXUSR, "verify-pqc-tls.sh must be executable (chmod +x)"
 
     def test_script_has_shebang(self) -> None:
         content = VERIFY_SCRIPT.read_text()
-        assert content.startswith("#!/"), (
-            "verify-pqc-tls.sh must have a shebang line"
-        )
+        assert content.startswith("#!/"), "verify-pqc-tls.sh must have a shebang line"
 
     def test_script_uses_bash(self) -> None:
         first_line = VERIFY_SCRIPT.read_text().splitlines()[0]
-        assert "bash" in first_line, (
-            "verify-pqc-tls.sh must use bash"
-        )
+        assert "bash" in first_line, "verify-pqc-tls.sh must use bash"
 
     def test_script_checks_for_x25519mlkem768(self) -> None:
         content = VERIFY_SCRIPT.read_text()
@@ -75,12 +67,8 @@ class TestVerifyPqcTlsScript:
 
     def test_script_defaults_to_localhost_443(self) -> None:
         content = VERIFY_SCRIPT.read_text()
-        assert "localhost" in content, (
-            "verify-pqc-tls.sh must default to localhost"
-        )
-        assert "443" in content, (
-            "verify-pqc-tls.sh must default to port 443"
-        )
+        assert "localhost" in content, "verify-pqc-tls.sh must default to localhost"
+        assert "443" in content, "verify-pqc-tls.sh must default to port 443"
 
     def test_script_has_meaningful_exit_codes(self) -> None:
         """Script should use different exit codes for different outcomes."""
@@ -131,18 +119,14 @@ class TestCaddyPqcTlsConfig:
         """Caddyfile should note Go 1.24+ PQC key exchange support."""
         caddyfile = INFRA_DIR / "Caddyfile"
         content = caddyfile.read_text()
-        assert "Go 1.24" in content, (
-            "Caddyfile should mention Go 1.24+ for PQC context"
-        )
+        assert "Go 1.24" in content, "Caddyfile should mention Go 1.24+ for PQC context"
 
 
 class TestPqcTlsDocumentation:
     """Validate PQC TLS compatibility documentation."""
 
     def test_doc_exists(self) -> None:
-        assert PQC_TLS_DOC.exists(), (
-            "docs/pqc-tls-compatibility.md must exist"
-        )
+        assert PQC_TLS_DOC.exists(), "docs/pqc-tls-compatibility.md must exist"
 
     def test_doc_documents_chrome_support(self) -> None:
         content = PQC_TLS_DOC.read_text()
@@ -195,6 +179,4 @@ class TestPqcTlsDocumentation:
 
     def test_doc_references_verification_script(self) -> None:
         content = PQC_TLS_DOC.read_text()
-        assert "verify-pqc-tls" in content, (
-            "Doc must reference the verification script"
-        )
+        assert "verify-pqc-tls" in content, "Doc must reference the verification script"
