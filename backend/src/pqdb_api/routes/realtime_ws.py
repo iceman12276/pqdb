@@ -126,17 +126,8 @@ def _parse_user_token(
     try:
         from pqdb_api.middleware.user_auth import _validate_user_jwt
 
-        key = websocket.app.state.jwt_public_key
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
-        if isinstance(key, (str, bytes)):
-            pem = key.encode() if isinstance(key, str) else key
-            loaded = load_pem_public_key(pem)
-            if not isinstance(loaded, Ed25519PublicKey):
-                return None, None
-            key = loaded
-        elif not isinstance(key, Ed25519PublicKey):
+        key = getattr(websocket.app.state, "mldsa65_public_key", None)
+        if not isinstance(key, bytes):
             return None, None
 
         user_ctx = _validate_user_jwt(token, key, expected_project_id=project_id)

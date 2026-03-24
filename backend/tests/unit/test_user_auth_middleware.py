@@ -10,22 +10,31 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+try:
+    import oqs  # noqa: F401
+
+    HAS_OQS = True
+except (ImportError, SystemExit, RuntimeError):
+    HAS_OQS = False
 
 from pqdb_api.middleware.user_auth import UserContext, _validate_user_jwt
-from pqdb_api.services.auth import JWT_ALGORITHM, generate_ed25519_keypair
+from pqdb_api.services.auth import _build_mldsa65_token, generate_mldsa65_keypair
+
+pytestmark = pytest.mark.skipif(
+    not HAS_OQS, reason="liboqs native library not available"
+)
 
 
 @pytest.fixture()
-def ed25519_keys() -> tuple[Ed25519PrivateKey, Any]:
-    private_key, public_key = generate_ed25519_keypair()
+def mldsa65_keys() -> tuple[bytes, bytes]:
+    private_key, public_key = generate_mldsa65_keypair()
     return private_key, public_key
 
 
 def _make_user_token(
-    private_key: Ed25519PrivateKey,
+    private_key: bytes,
     *,
     user_id: uuid.UUID | None = None,
     project_id: uuid.UUID | None = None,
@@ -36,25 +45,27 @@ def _make_user_token(
 ) -> str:
     """Helper to create a user JWT for testing."""
     now = datetime.now(UTC)
+    iat = now - timedelta(minutes=5) if expired else now
+    exp = now - timedelta(minutes=1) if expired else now + timedelta(minutes=15)
     payload: dict[str, Any] = {
         "sub": str(user_id or uuid.uuid4()),
         "project_id": str(project_id or uuid.uuid4()),
         "role": role,
         "type": token_type,
         "email_verified": email_verified,
-        "iat": now - timedelta(minutes=5) if expired else now,
-        "exp": now - timedelta(minutes=1) if expired else now + timedelta(minutes=15),
+        "iat": int(iat.timestamp()),
+        "exp": int(exp.timestamp()),
     }
-    return jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+    return _build_mldsa65_token(payload, private_key)
 
 
 class TestValidateUserJwt:
     """Test the _validate_user_jwt helper."""
 
     def test_valid_token_returns_user_context(
-        self, ed25519_keys: tuple[Any, Any]
+        self, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        private_key, public_key = ed25519_keys
+        private_key, public_key = mldsa65_keys
         user_id = uuid.uuid4()
         project_id = uuid.uuid4()
         token = _make_user_token(
@@ -72,27 +83,29 @@ class TestValidateUserJwt:
         assert ctx.email_verified is True
 
     def test_expired_token_raises_value_error(
-        self, ed25519_keys: tuple[Any, Any]
+        self, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        private_key, public_key = ed25519_keys
+        private_key, public_key = mldsa65_keys
         project_id = uuid.uuid4()
         token = _make_user_token(private_key, project_id=project_id, expired=True)
         with pytest.raises(ValueError, match="expired"):
             _validate_user_jwt(token, public_key, expected_project_id=project_id)
 
     def test_invalid_signature_raises_value_error(
-        self, ed25519_keys: tuple[Any, Any]
+        self, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
         # Sign with a different key
-        other_priv, _ = generate_ed25519_keypair()
-        _, public_key = ed25519_keys
+        other_priv, _ = generate_mldsa65_keypair()
+        _, public_key = mldsa65_keys
         project_id = uuid.uuid4()
         token = _make_user_token(other_priv, project_id=project_id)
         with pytest.raises(ValueError, match="Invalid user token"):
             _validate_user_jwt(token, public_key, expected_project_id=project_id)
 
-    def test_wrong_token_type_returns_none(self, ed25519_keys: tuple[Any, Any]) -> None:
-        private_key, public_key = ed25519_keys
+    def test_wrong_token_type_returns_none(
+        self, mldsa65_keys: tuple[bytes, bytes]
+    ) -> None:
+        private_key, public_key = mldsa65_keys
         project_id = uuid.uuid4()
         # Developer access token (type=access, not user_access) — should
         # return None so the request proceeds without user context
@@ -103,9 +116,9 @@ class TestValidateUserJwt:
         assert result is None
 
     def test_project_id_mismatch_raises_value_error(
-        self, ed25519_keys: tuple[Any, Any]
+        self, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        private_key, public_key = ed25519_keys
+        private_key, public_key = mldsa65_keys
         token_project = uuid.uuid4()
         api_key_project = uuid.uuid4()
         token = _make_user_token(private_key, project_id=token_project)
@@ -113,9 +126,9 @@ class TestValidateUserJwt:
             _validate_user_jwt(token, public_key, expected_project_id=api_key_project)
 
     def test_missing_sub_raises_value_error(
-        self, ed25519_keys: tuple[Any, Any]
+        self, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        private_key, public_key = ed25519_keys
+        private_key, public_key = mldsa65_keys
         project_id = uuid.uuid4()
         now = datetime.now(UTC)
         payload: dict[str, Any] = {
@@ -123,17 +136,17 @@ class TestValidateUserJwt:
             "type": "user_access",
             "role": "authenticated",
             "email_verified": False,
-            "iat": now,
-            "exp": now + timedelta(minutes=15),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=15)).timestamp()),
         }
-        token = jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+        token = _build_mldsa65_token(payload, private_key)
         with pytest.raises(ValueError, match="Missing sub"):
             _validate_user_jwt(token, public_key, expected_project_id=project_id)
 
     def test_malformed_sub_raises_value_error(
-        self, ed25519_keys: tuple[Any, Any]
+        self, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        private_key, public_key = ed25519_keys
+        private_key, public_key = mldsa65_keys
         project_id = uuid.uuid4()
         now = datetime.now(UTC)
         payload: dict[str, Any] = {
@@ -142,17 +155,17 @@ class TestValidateUserJwt:
             "type": "user_access",
             "role": "authenticated",
             "email_verified": False,
-            "iat": now,
-            "exp": now + timedelta(minutes=15),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=15)).timestamp()),
         }
-        token = jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+        token = _build_mldsa65_token(payload, private_key)
         with pytest.raises(ValueError, match="Invalid user_id"):
             _validate_user_jwt(token, public_key, expected_project_id=project_id)
 
     def test_garbage_token_raises_value_error(
-        self, ed25519_keys: tuple[Any, Any]
+        self, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        _, public_key = ed25519_keys
+        _, public_key = mldsa65_keys
         with pytest.raises(ValueError, match="Invalid user token"):
             _validate_user_jwt(
                 "garbage.token.here",
@@ -161,9 +174,9 @@ class TestValidateUserJwt:
             )
 
     def test_refresh_token_type_returns_none(
-        self, ed25519_keys: tuple[Any, Any]
+        self, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        private_key, public_key = ed25519_keys
+        private_key, public_key = mldsa65_keys
         project_id = uuid.uuid4()
         token = _make_user_token(
             private_key, project_id=project_id, token_type="user_refresh"

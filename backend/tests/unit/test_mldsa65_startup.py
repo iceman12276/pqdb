@@ -2,12 +2,23 @@
 
 from unittest.mock import patch
 
-import oqs
-from starlette.testclient import TestClient
+import pytest
+
+try:
+    import oqs
+
+    HAS_OQS = True
+except (ImportError, SystemExit, RuntimeError):
+    oqs = None
+    HAS_OQS = False
 
 from pqdb_api.app import create_app
 from pqdb_api.config import Settings
 from pqdb_api.services.auth import MLDSA65_ALGORITHM
+
+pytestmark = pytest.mark.skipif(
+    not HAS_OQS, reason="liboqs native library not available"
+)
 
 
 def test_mldsa65_keys_stored_in_app_state() -> None:
@@ -21,6 +32,8 @@ def test_mldsa65_keys_stored_in_app_state() -> None:
         patch("pqdb_api.app.DatabaseProvisioner"),
         patch("pqdb_api.app.VaultClient"),
     ):
+        from starlette.testclient import TestClient
+
         with TestClient(app) as client:
             resp = client.get("/health")
             assert resp.status_code == 200
@@ -44,6 +57,8 @@ def test_mldsa65_startup_keys_are_valid() -> None:
         patch("pqdb_api.app.DatabaseProvisioner"),
         patch("pqdb_api.app.VaultClient"),
     ):
+        from starlette.testclient import TestClient
+
         with TestClient(app) as client:
             client.get("/health")
 
@@ -55,8 +70,8 @@ def test_mldsa65_startup_keys_are_valid() -> None:
             assert verifier.verify(message, signature, app.state.mldsa65_public_key)
 
 
-def test_ed25519_keys_still_present_after_startup() -> None:
-    """Verify Ed25519 keys are preserved for backward compatibility."""
+def test_no_ed25519_keys_after_startup() -> None:
+    """Verify Ed25519 keys are no longer generated (clean ML-DSA-65 cutover)."""
     settings = Settings()
     app = create_app(settings)
 
@@ -66,8 +81,10 @@ def test_ed25519_keys_still_present_after_startup() -> None:
         patch("pqdb_api.app.DatabaseProvisioner"),
         patch("pqdb_api.app.VaultClient"),
     ):
+        from starlette.testclient import TestClient
+
         with TestClient(app) as client:
             client.get("/health")
 
-            assert hasattr(app.state, "jwt_private_key")
-            assert hasattr(app.state, "jwt_public_key")
+            assert not hasattr(app.state, "jwt_private_key")
+            assert not hasattr(app.state, "jwt_public_key")

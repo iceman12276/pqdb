@@ -10,27 +10,38 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import jwt
 import pyotp
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+try:
+    import oqs  # noqa: F401
+
+    HAS_OQS = True
+except (ImportError, SystemExit, RuntimeError):
+    HAS_OQS = False
 
 from pqdb_api.services.auth import (
-    JWT_ALGORITHM,
-    generate_ed25519_keypair,
+    TokenExpiredError,
+    _build_mldsa65_token,
+    decode_token,
+    generate_mldsa65_keypair,
 )
 from pqdb_api.services.mfa import MFAService
 
+pytestmark = pytest.mark.skipif(
+    not HAS_OQS, reason="liboqs native library not available"
+)
+
 
 @pytest.fixture()
-def ed25519_keys() -> tuple[Ed25519PrivateKey, Any]:
-    private_key, public_key = generate_ed25519_keypair()
+def mldsa65_keys() -> tuple[bytes, bytes]:
+    private_key, public_key = generate_mldsa65_keypair()
     return private_key, public_key
 
 
 @pytest.fixture()
-def mfa_service(ed25519_keys: tuple[Any, Any]) -> MFAService:
-    private_key, public_key = ed25519_keys
+def mfa_service(mldsa65_keys: tuple[bytes, bytes]) -> MFAService:
+    private_key, public_key = mldsa65_keys
     return MFAService(private_key=private_key, public_key=public_key)
 
 
@@ -39,8 +50,7 @@ class TestGenerateTOTPSecret:
 
     def test_generates_base32_encoded_secret(self, mfa_service: MFAService) -> None:
         secret = mfa_service.generate_totp_secret()
-        # pyotp uses base32 encoding, should be valid base32
-        assert len(secret) == 32  # 20 bytes -> 32 base32 chars
+        assert len(secret) == 32
 
     def test_generates_unique_secrets(self, mfa_service: MFAService) -> None:
         s1 = mfa_service.generate_totp_secret()
@@ -76,22 +86,18 @@ class TestVerifyTOTP:
         assert mfa_service.verify_totp(secret, "000000") is False
 
     def test_previous_step_code_accepted(self, mfa_service: MFAService) -> None:
-        """±1 step tolerance: code from 30 seconds ago should be accepted."""
         secret = mfa_service.generate_totp_secret()
         totp = pyotp.TOTP(secret)
-        # Generate code for previous time step
         prev_code = totp.at(datetime.now(UTC) - timedelta(seconds=30))
         assert mfa_service.verify_totp(secret, prev_code) is True
 
     def test_next_step_code_accepted(self, mfa_service: MFAService) -> None:
-        """±1 step tolerance: code from 30 seconds in future should be accepted."""
         secret = mfa_service.generate_totp_secret()
         totp = pyotp.TOTP(secret)
         next_code = totp.at(datetime.now(UTC) + timedelta(seconds=30))
         assert mfa_service.verify_totp(secret, next_code) is True
 
     def test_old_code_rejected(self, mfa_service: MFAService) -> None:
-        """Code from >1 step ago should be rejected."""
         secret = mfa_service.generate_totp_secret()
         totp = pyotp.TOTP(secret)
         old_code = totp.at(datetime.now(UTC) - timedelta(seconds=90))
@@ -132,29 +138,28 @@ class TestMFATicketJWT:
     """Test MFA challenge ticket JWT creation and validation."""
 
     def test_create_mfa_ticket(
-        self, mfa_service: MFAService, ed25519_keys: tuple[Any, Any]
+        self, mfa_service: MFAService, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        _, public_key = ed25519_keys
+        _, public_key = mldsa65_keys
         user_id = uuid.uuid4()
         project_id = uuid.uuid4()
         ticket = mfa_service.create_mfa_ticket(user_id=user_id, project_id=project_id)
-        payload = jwt.decode(ticket, public_key, algorithms=[JWT_ALGORITHM])
+        payload = decode_token(ticket, public_key)
         assert payload["sub"] == str(user_id)
         assert payload["project_id"] == str(project_id)
         assert payload["type"] == "mfa_challenge"
 
     def test_mfa_ticket_expires_in_5_minutes(
-        self, mfa_service: MFAService, ed25519_keys: tuple[Any, Any]
+        self, mfa_service: MFAService, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        _, public_key = ed25519_keys
+        _, public_key = mldsa65_keys
         ticket = mfa_service.create_mfa_ticket(
             user_id=uuid.uuid4(), project_id=uuid.uuid4()
         )
-        payload = jwt.decode(ticket, public_key, algorithms=[JWT_ALGORITHM])
-        exp = datetime.fromtimestamp(payload["exp"], tz=UTC)
-        iat = datetime.fromtimestamp(payload["iat"], tz=UTC)
-        delta = exp - iat
-        assert abs(delta.total_seconds() - 300) < 2  # 5 min = 300s
+        payload = decode_token(ticket, public_key)
+        exp = payload["exp"]
+        iat = payload["iat"]
+        assert abs(exp - iat - 300) < 2  # 5 min = 300s
 
     def test_decode_mfa_ticket(self, mfa_service: MFAService) -> None:
         user_id = uuid.uuid4()
@@ -165,32 +170,32 @@ class TestMFATicketJWT:
         assert payload["type"] == "mfa_challenge"
 
     def test_decode_mfa_ticket_wrong_type_raises(
-        self, mfa_service: MFAService, ed25519_keys: tuple[Any, Any]
+        self, mfa_service: MFAService, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
         """Non-mfa_challenge tokens should be rejected."""
-        private_key, _ = ed25519_keys
+        private_key, _ = mldsa65_keys
         now = datetime.now(UTC)
         payload: dict[str, Any] = {
             "sub": str(uuid.uuid4()),
             "type": "user_access",
-            "iat": now,
-            "exp": now + timedelta(minutes=5),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
         }
-        token = jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+        token = _build_mldsa65_token(payload, private_key)
         with pytest.raises(ValueError, match="Invalid ticket type"):
             mfa_service.decode_mfa_ticket(token)
 
     def test_decode_expired_ticket_raises(
-        self, mfa_service: MFAService, ed25519_keys: tuple[Any, Any]
+        self, mfa_service: MFAService, mldsa65_keys: tuple[bytes, bytes]
     ) -> None:
-        private_key, _ = ed25519_keys
+        private_key, _ = mldsa65_keys
         now = datetime.now(UTC)
         payload: dict[str, Any] = {
             "sub": str(uuid.uuid4()),
             "type": "mfa_challenge",
-            "iat": now - timedelta(minutes=10),
-            "exp": now - timedelta(minutes=5),
+            "iat": int((now - timedelta(minutes=10)).timestamp()),
+            "exp": int((now - timedelta(minutes=5)).timestamp()),
         }
-        token = jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
-        with pytest.raises(jwt.ExpiredSignatureError):
+        token = _build_mldsa65_token(payload, private_key)
+        with pytest.raises(TokenExpiredError):
             mfa_service.decode_mfa_ticket(token)

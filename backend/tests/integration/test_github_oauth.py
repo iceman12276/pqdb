@@ -13,10 +13,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import (
@@ -29,12 +25,16 @@ from pqdb_api.database import get_session
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.oauth_github import router as oauth_github_router
 from pqdb_api.routes.user_auth import router as user_auth_router
-from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.auth import (
+    _build_mldsa65_token,
+    decode_token,
+    generate_mldsa65_keypair,
+)
 from pqdb_api.services.oauth import GitHubOAuthProvider, OAuthTokens, OAuthUserInfo
 from pqdb_api.services.rate_limiter import RateLimiter
 from pqdb_api.services.vault import VaultClient
 
-_AppTuple = tuple[FastAPI, uuid.UUID, Ed25519PrivateKey, Ed25519PublicKey]
+_AppTuple = tuple[FastAPI, uuid.UUID, bytes, bytes]
 
 
 def _make_github_oauth_app(
@@ -53,7 +53,7 @@ def _make_github_oauth_app(
         get_project_session,
     )
 
-    private_key, public_key = generate_ed25519_keypair()
+    private_key, public_key = generate_mldsa65_keypair()
     project_id = uuid.uuid4()
 
     # Mock vault with in-memory OAuth credential store
@@ -109,8 +109,8 @@ def _make_github_oauth_app(
         app.dependency_overrides[get_session] = _override_get_session
         app.dependency_overrides[get_project_session] = _override_project_session
         app.dependency_overrides[get_project_context] = _override_project_context
-        app.state.jwt_private_key = private_key
-        app.state.jwt_public_key = public_key
+        app.state.mldsa65_private_key = private_key
+        app.state.mldsa65_public_key = public_key
         app.state.vault_client = mock_vault
         app.state.settings = settings
         app.state.hmac_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
@@ -145,7 +145,7 @@ def project_id(github_app: _AppTuple) -> uuid.UUID:
 @pytest.fixture()
 def jwt_keys(
     github_app: _AppTuple,
-) -> tuple[Ed25519PrivateKey, Ed25519PublicKey]:
+) -> tuple[bytes, bytes]:
     return github_app[2], github_app[3]
 
 
@@ -208,23 +208,21 @@ class TestGitHubCallback:
         self,
         client: TestClient,
         project_id: uuid.UUID,
-        jwt_keys: tuple[Ed25519PrivateKey, Ed25519PublicKey],
+        jwt_keys: tuple[bytes, bytes],
     ) -> str:
         """Generate a valid state JWT for testing."""
         from datetime import UTC, datetime, timedelta
-
-        import jwt as pyjwt
 
         now = datetime.now(UTC)
         payload = {
             "type": "oauth_state",
             "project_id": str(project_id),
             "provider": "github",
-            "iat": now,
-            "exp": now + timedelta(minutes=10),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=10)).timestamp()),
             "jti": str(uuid.uuid4()),
         }
-        return pyjwt.encode(payload, jwt_keys[0], algorithm="EdDSA")
+        return _build_mldsa65_token(payload, jwt_keys[0])
 
     def test_callback_missing_code_returns_400(self, client: TestClient) -> None:
         resp = client.get(
@@ -255,7 +253,7 @@ class TestGitHubCallback:
         self,
         client: TestClient,
         project_id: uuid.UUID,
-        jwt_keys: tuple[Ed25519PrivateKey, Ed25519PublicKey],
+        jwt_keys: tuple[bytes, bytes],
     ) -> None:
         """Full flow: callback creates a new user and returns JWT tokens."""
         state = self._get_valid_state(client, project_id, jwt_keys)
@@ -302,7 +300,7 @@ class TestGitHubCallback:
         self,
         client: TestClient,
         project_id: uuid.UUID,
-        jwt_keys: tuple[Ed25519PrivateKey, Ed25519PublicKey],
+        jwt_keys: tuple[bytes, bytes],
     ) -> None:
         """When a user with the same email exists, link the OAuth identity."""
         # First, create a user via signup
@@ -352,22 +350,16 @@ class TestGitHubCallback:
         assert "access_token=" in location
 
         # Decode the access token to verify it's the same user
-        import jwt as pyjwt
-
         fragment = location.split("#")[1]
         params = dict(p.split("=") for p in fragment.split("&"))
-        payload = pyjwt.decode(
-            params["access_token"],
-            jwt_keys[1],
-            algorithms=["EdDSA"],
-        )
+        payload = decode_token(params["access_token"], jwt_keys[1])
         assert payload["sub"] == original_user_id
 
     def test_callback_returns_same_user_on_repeat_login(
         self,
         client: TestClient,
         project_id: uuid.UUID,
-        jwt_keys: tuple[Ed25519PrivateKey, Ed25519PublicKey],
+        jwt_keys: tuple[bytes, bytes],
     ) -> None:
         """Second OAuth login for same provider_uid returns same user."""
         mock_tokens = OAuthTokens(
@@ -406,15 +398,9 @@ class TestGitHubCallback:
                 )
             assert resp.status_code == 302
             location = resp.headers["location"]
-            import jwt as pyjwt
-
             fragment = location.split("#")[1]
             params = dict(p.split("=") for p in fragment.split("&"))
-            payload = pyjwt.decode(
-                params["access_token"],
-                jwt_keys[1],
-                algorithms=["EdDSA"],
-            )
+            payload = decode_token(params["access_token"], jwt_keys[1])
             user_ids.append(payload["sub"])
 
         # Same user both times

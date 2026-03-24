@@ -34,7 +34,7 @@ from pqdb_api.middleware.api_key import (
 from pqdb_api.middleware.user_auth import UserContext, get_current_user
 from pqdb_api.routes.db import router as db_router
 from pqdb_api.routes.health import router as health_router
-from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.auth import generate_mldsa65_keypair
 
 
 def _make_rls_app(
@@ -50,7 +50,7 @@ def _make_rls_app(
     without needing real API key / JWT infrastructure.
     """
     _project_id = project_id or uuid.uuid4()
-    _private_key, _public_key = generate_ed25519_keypair()
+    _private_key, _public_key = generate_mldsa65_keypair()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -83,7 +83,7 @@ def _make_rls_app(
         app.dependency_overrides[get_project_session] = _override_project_session
         app.dependency_overrides[get_project_context] = _override_project_context
         app.dependency_overrides[get_current_user] = _override_current_user
-        app.state.jwt_public_key = _public_key
+        app.state.mldsa65_public_key = _public_key
         yield
         await engine.dispose()
 

@@ -35,7 +35,7 @@ from pqdb_api.middleware.api_key import (
 from pqdb_api.middleware.user_auth import UserContext, get_current_user
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.user_auth import router as user_auth_router
-from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.auth import _build_mldsa65_token, generate_mldsa65_keypair
 from pqdb_api.services.provisioner import DatabaseProvisioner
 from pqdb_api.services.rate_limiter import RateLimiter
 from pqdb_api.services.vault import VaultClient
@@ -47,7 +47,7 @@ def _make_middleware_test_app(
     fake_project_id: uuid.UUID | None = None,
 ) -> tuple[FastAPI, uuid.UUID]:
     """Build a test app with a diagnostic endpoint that exposes UserContext."""
-    private_key, public_key = generate_ed25519_keypair()
+    private_key, public_key = generate_mldsa65_keypair()
     project_id = fake_project_id or uuid.uuid4()
 
     fake_context = ProjectContext(
@@ -112,8 +112,8 @@ def _make_middleware_test_app(
         app.dependency_overrides[get_session] = _override_get_session
         app.dependency_overrides[get_project_session] = _override_get_project_session
         app.dependency_overrides[get_project_context] = _override_get_project_context
-        app.state.jwt_private_key = private_key
-        app.state.jwt_public_key = public_key
+        app.state.mldsa65_private_key = private_key
+        app.state.mldsa65_public_key = public_key
         app.state.provisioner = mock_provisioner
         app.state.vault_client = mock_vault
         app.state.hmac_rate_limiter = RateLimiter(max_requests=100, window_seconds=60)
@@ -222,12 +222,8 @@ class TestGetCurrentUserInvalid:
         """Create an expired token manually and verify rejection."""
         from datetime import UTC, datetime, timedelta
 
-        import jwt as pyjwt
-
-        from pqdb_api.services.auth import JWT_ALGORITHM
-
         # Get the app's private key from the test client
-        private_key = client.app.state.jwt_private_key  # type: ignore[attr-defined]
+        private_key = client.app.state.mldsa65_private_key  # type: ignore[attr-defined]
         now = datetime.now(UTC)
         payload: dict[str, Any] = {
             "sub": str(uuid.uuid4()),
@@ -235,10 +231,10 @@ class TestGetCurrentUserInvalid:
             "type": "user_access",
             "role": "authenticated",
             "email_verified": False,
-            "iat": now - timedelta(hours=1),
-            "exp": now - timedelta(minutes=30),
+            "iat": int((now - timedelta(hours=1)).timestamp()),
+            "exp": int((now - timedelta(minutes=30)).timestamp()),
         }
-        token = pyjwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+        token = _build_mldsa65_token(payload, private_key)
 
         resp = client.get(
             "/v1/diag/user-context",
@@ -253,19 +249,15 @@ class TestGetCurrentUserInvalid:
         """Developer tokens (type=access) are silently ignored."""
         from datetime import UTC, datetime, timedelta
 
-        import jwt as pyjwt
-
-        from pqdb_api.services.auth import JWT_ALGORITHM
-
-        private_key = client.app.state.jwt_private_key  # type: ignore[attr-defined]
+        private_key = client.app.state.mldsa65_private_key  # type: ignore[attr-defined]
         now = datetime.now(UTC)
         payload: dict[str, Any] = {
             "sub": str(uuid.uuid4()),
             "type": "access",  # developer token
-            "iat": now,
-            "exp": now + timedelta(minutes=15),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=15)).timestamp()),
         }
-        token = pyjwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+        token = _build_mldsa65_token(payload, private_key)
 
         resp = client.get(
             "/v1/diag/user-context",
@@ -279,11 +271,7 @@ class TestGetCurrentUserInvalid:
         """User JWT from project A cannot access project B."""
         from datetime import UTC, datetime, timedelta
 
-        import jwt as pyjwt
-
-        from pqdb_api.services.auth import JWT_ALGORITHM
-
-        private_key = client.app.state.jwt_private_key  # type: ignore[attr-defined]
+        private_key = client.app.state.mldsa65_private_key  # type: ignore[attr-defined]
         now = datetime.now(UTC)
         different_project = uuid.uuid4()
         payload: dict[str, Any] = {
@@ -292,10 +280,10 @@ class TestGetCurrentUserInvalid:
             "type": "user_access",
             "role": "authenticated",
             "email_verified": False,
-            "iat": now,
-            "exp": now + timedelta(minutes=15),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=15)).timestamp()),
         }
-        token = pyjwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+        token = _build_mldsa65_token(payload, private_key)
 
         resp = client.get(
             "/v1/diag/user-context",

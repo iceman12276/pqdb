@@ -13,15 +13,23 @@ from __future__ import annotations
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
-import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from pqdb_api.services.auth import JWT_ALGORITHM, generate_ed25519_keypair
+try:
+    import oqs  # noqa: F401
+
+    HAS_OQS = True
+except (ImportError, SystemExit, RuntimeError):
+    HAS_OQS = False
+
+from pqdb_api.services.auth import (
+    _build_mldsa65_token,
+    decode_token,
+    generate_mldsa65_keypair,
+)
 from pqdb_api.services.oauth import (
     GoogleOAuthProvider,
     OAuthTokens,
@@ -33,8 +41,10 @@ from pqdb_api.services.oauth import (
 # Fixtures
 # ---------------------------------------------------------------------------
 @pytest.fixture()
-def keypair() -> tuple[Ed25519PrivateKey, Any]:
-    return generate_ed25519_keypair()
+def keypair() -> tuple[bytes, bytes]:
+    if not HAS_OQS:
+        pytest.skip("liboqs not available")
+    return generate_mldsa65_keypair()
 
 
 @pytest.fixture()
@@ -84,8 +94,9 @@ class TestGetAuthorizationUrl:
 class TestStateJwt:
     """Test state JWT generation and validation for CSRF protection."""
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_generate_state_jwt_contains_redirect_and_nonce(
-        self, keypair: tuple[Ed25519PrivateKey, Any]
+        self, keypair: tuple[bytes, bytes]
     ) -> None:
         from pqdb_api.routes.google_oauth import _generate_state_jwt
 
@@ -99,15 +110,16 @@ class TestStateJwt:
             redirect_uri=redirect_uri,
         )
 
-        payload = jwt.decode(token, public_key, algorithms=[JWT_ALGORITHM])
+        payload = decode_token(token, public_key)
         assert payload["redirect_uri"] == redirect_uri
         assert payload["project_id"] == str(project_id)
         assert "nonce" in payload
-        assert len(payload["nonce"]) > 10  # Should be a random string
+        assert len(payload["nonce"]) > 10
         assert payload["type"] == "oauth_state"
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_state_jwt_expires_in_10_minutes(
-        self, keypair: tuple[Ed25519PrivateKey, Any]
+        self, keypair: tuple[bytes, bytes]
     ) -> None:
         from pqdb_api.routes.google_oauth import _generate_state_jwt
 
@@ -117,14 +129,15 @@ class TestStateJwt:
             project_id=uuid.uuid4(),
             redirect_uri="https://example.com/cb",
         )
-        payload = jwt.decode(token, public_key, algorithms=[JWT_ALGORITHM])
-        exp = datetime.fromtimestamp(payload["exp"], tz=UTC)
-        iat = datetime.fromtimestamp(payload["iat"], tz=UTC)
+        payload = decode_token(token, public_key)
+        exp = payload["exp"]
+        iat = payload["iat"]
         delta = exp - iat
-        assert timedelta(minutes=9) < delta <= timedelta(minutes=10)
+        assert 9 * 60 < delta <= 10 * 60
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_validate_state_jwt_succeeds_with_valid_token(
-        self, keypair: tuple[Ed25519PrivateKey, Any]
+        self, keypair: tuple[bytes, bytes]
     ) -> None:
         from pqdb_api.routes.google_oauth import (
             _generate_state_jwt,
@@ -144,29 +157,30 @@ class TestStateJwt:
         assert payload["redirect_uri"] == redirect_uri
         assert payload["project_id"] == str(project_id)
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_validate_state_jwt_rejects_expired_token(
-        self, keypair: tuple[Ed25519PrivateKey, Any]
+        self, keypair: tuple[bytes, bytes]
     ) -> None:
         from pqdb_api.routes.google_oauth import _validate_state_jwt
 
         private_key, public_key = keypair
-        # Create a manually expired token
         now = datetime.now(UTC)
         payload = {
             "type": "oauth_state",
             "project_id": str(uuid.uuid4()),
             "redirect_uri": "https://example.com/cb",
             "nonce": secrets.token_urlsafe(16),
-            "iat": now - timedelta(minutes=20),
-            "exp": now - timedelta(minutes=10),
+            "iat": int((now - timedelta(minutes=20)).timestamp()),
+            "exp": int((now - timedelta(minutes=10)).timestamp()),
         }
-        token = jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+        token = _build_mldsa65_token(payload, private_key)
 
         with pytest.raises(ValueError, match="invalid or expired"):
             _validate_state_jwt(public_key=public_key, state=token)
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_validate_state_jwt_rejects_wrong_type(
-        self, keypair: tuple[Ed25519PrivateKey, Any]
+        self, keypair: tuple[bytes, bytes]
     ) -> None:
         from pqdb_api.routes.google_oauth import _validate_state_jwt
 
@@ -177,32 +191,32 @@ class TestStateJwt:
             "project_id": str(uuid.uuid4()),
             "redirect_uri": "https://example.com/cb",
             "nonce": secrets.token_urlsafe(16),
-            "iat": now,
-            "exp": now + timedelta(minutes=10),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=10)).timestamp()),
         }
-        token = jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+        token = _build_mldsa65_token(payload, private_key)
 
         with pytest.raises(ValueError, match="invalid or expired"):
             _validate_state_jwt(public_key=public_key, state=token)
 
+    @pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
     def test_validate_state_jwt_rejects_tampered_token(
-        self, keypair: tuple[Ed25519PrivateKey, Any]
+        self, keypair: tuple[bytes, bytes]
     ) -> None:
         from pqdb_api.routes.google_oauth import _validate_state_jwt
 
         _, public_key = keypair
-        # Use a different key to sign
-        other_private, _ = generate_ed25519_keypair()
+        other_private, _ = generate_mldsa65_keypair()
         now = datetime.now(UTC)
         payload = {
             "type": "oauth_state",
             "project_id": str(uuid.uuid4()),
             "redirect_uri": "https://example.com/cb",
             "nonce": secrets.token_urlsafe(16),
-            "iat": now,
-            "exp": now + timedelta(minutes=10),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=10)).timestamp()),
         }
-        token = jwt.encode(payload, other_private, algorithm=JWT_ALGORITHM)
+        token = _build_mldsa65_token(payload, other_private)
 
         with pytest.raises(ValueError, match="invalid or expired"):
             _validate_state_jwt(public_key=public_key, state=token)

@@ -16,12 +16,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import jwt
 import structlog
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -32,6 +27,7 @@ from pqdb_api.middleware.api_key import (
     get_project_context,
     get_project_session,
 )
+from pqdb_api.services.auth import InvalidTokenError, TokenExpiredError
 from pqdb_api.services.auth_engine import ensure_auth_tables
 from pqdb_api.services.mfa import MFAService
 from pqdb_api.services.rate_limiter import RateLimiter
@@ -119,15 +115,15 @@ class MFAEnrollResponse(BaseModel):
 # ---------------------------------------------------------------------------
 def _get_mfa_service(request: Request) -> MFAService:
     """Build an MFAService from app state keys."""
-    private_key: Ed25519PrivateKey = request.app.state.jwt_private_key
-    public_key: Ed25519PublicKey = request.app.state.jwt_public_key
+    private_key: bytes = request.app.state.mldsa65_private_key
+    public_key: bytes = request.app.state.mldsa65_public_key
     return MFAService(private_key=private_key, public_key=public_key)
 
 
 def _get_user_auth_service(request: Request) -> UserAuthService:
     """Build a UserAuthService from app state keys."""
-    private_key: Ed25519PrivateKey = request.app.state.jwt_private_key
-    public_key: Ed25519PublicKey = request.app.state.jwt_public_key
+    private_key: bytes = request.app.state.mldsa65_private_key
+    public_key: bytes = request.app.state.mldsa65_public_key
     return UserAuthService(private_key=private_key, public_key=public_key)
 
 
@@ -149,9 +145,9 @@ async def _get_current_user_for_mfa(
 
     try:
         payload = service.decode_user_token(token, expected_type="user_access")
-    except jwt.ExpiredSignatureError:
+    except TokenExpiredError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    except (jwt.PyJWTError, ValueError):
+    except (InvalidTokenError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # Verify project_id matches the apikey project
@@ -328,9 +324,9 @@ async def mfa_challenge(
     # Decode MFA ticket
     try:
         ticket_payload = mfa.decode_mfa_ticket(body.ticket)
-    except jwt.ExpiredSignatureError:
+    except TokenExpiredError:
         raise HTTPException(status_code=401, detail="MFA ticket expired")
-    except (jwt.PyJWTError, ValueError):
+    except (InvalidTokenError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid MFA ticket")
 
     user_id = ticket_payload["sub"]

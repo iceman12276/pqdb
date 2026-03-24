@@ -34,7 +34,7 @@ from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.db import router as db_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.projects import router as projects_router
-from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.auth import generate_mldsa65_keypair
 from pqdb_api.services.provisioner import DatabaseProvisioner, make_database_name
 from pqdb_api.services.rate_limiter import RateLimiter
 from pqdb_api.services.vault import VaultClient
@@ -295,7 +295,7 @@ def _make_platform_app(
     Creates its own engine inside the lifespan so it runs on
     the TestClient's event loop (avoids "attached to different loop" errors).
     """
-    private_key, public_key = generate_ed25519_keypair()
+    private_key, public_key = generate_mldsa65_keypair()
 
     # Mock provisioner
     mock_provisioner = AsyncMock(spec=DatabaseProvisioner)
@@ -419,8 +419,8 @@ def _make_platform_app(
                 yield session
 
         app.dependency_overrides[get_session] = _override_get_session
-        app.state.jwt_private_key = private_key
-        app.state.jwt_public_key = public_key
+        app.state.mldsa65_private_key = private_key
+        app.state.mldsa65_public_key = public_key
         app.state.provisioner = mock_provisioner
         app.state.vault_client = mock_vault
         app.state.hmac_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)

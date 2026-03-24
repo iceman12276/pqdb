@@ -24,7 +24,7 @@ from starlette.testclient import TestClient
 
 from pqdb_api.database import get_session
 from pqdb_api.routes.health import router as health_router
-from pqdb_api.services.auth import generate_ed25519_keypair
+from pqdb_api.services.auth import generate_mldsa65_keypair
 from pqdb_api.services.rate_limiter import RateLimiter
 
 # ---------------------------------------------------------------------------
@@ -78,9 +78,9 @@ def _make_ws_test_app(test_db_url: str) -> FastAPI:
 
         app.dependency_overrides[get_session] = _override_get_session
 
-        private_key, public_key = generate_ed25519_keypair()
-        app.state.jwt_private_key = private_key
-        app.state.jwt_public_key = public_key
+        private_key, public_key = generate_mldsa65_keypair()
+        app.state.mldsa65_private_key = private_key
+        app.state.mldsa65_public_key = public_key
         app.state.hmac_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
         yield
         await engine.dispose()

@@ -11,13 +11,10 @@ import dataclasses
 import uuid
 from typing import Any
 
-import jwt
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from fastapi import Depends, HTTPException, Request
 
 from pqdb_api.middleware.api_key import ProjectContext, get_project_context
-from pqdb_api.services.auth import JWT_ALGORITHM
+from pqdb_api.services.auth import InvalidTokenError, TokenExpiredError, decode_token
 
 
 @dataclasses.dataclass(frozen=True)
@@ -30,23 +27,20 @@ class UserContext:
     email_verified: bool
 
 
-def _get_public_key(request: Request) -> Ed25519PublicKey:
-    """Extract Ed25519 public key from app state."""
-    key = request.app.state.jwt_public_key
-    if isinstance(key, Ed25519PublicKey):
-        return key
-    if isinstance(key, (str, bytes)):
-        pem = key.encode() if isinstance(key, str) else key
-        loaded = load_pem_public_key(pem)
-        if not isinstance(loaded, Ed25519PublicKey):
-            raise HTTPException(status_code=500, detail="Invalid JWT key type")
-        return loaded
-    raise HTTPException(status_code=500, detail="JWT public key not configured")
+def _get_mldsa65_public_key(request: Request) -> bytes:
+    """Extract ML-DSA-65 public key from app state."""
+    key = getattr(request.app.state, "mldsa65_public_key", None)
+    if not isinstance(key, bytes):
+        raise HTTPException(
+            status_code=500,
+            detail="ML-DSA-65 public key not configured",
+        )
+    return key
 
 
 def _validate_user_jwt(
     token: str,
-    public_key: Ed25519PublicKey,
+    public_key: bytes,
     *,
     expected_project_id: uuid.UUID,
 ) -> UserContext | None:
@@ -58,12 +52,10 @@ def _validate_user_jwt(
     for tokens that ARE user tokens but are invalid/expired.
     """
     try:
-        payload: dict[str, Any] = jwt.decode(
-            token, public_key, algorithms=[JWT_ALGORITHM]
-        )
-    except jwt.ExpiredSignatureError:
+        payload: dict[str, Any] = decode_token(token, public_key)
+    except TokenExpiredError:
         raise ValueError("User token expired")
-    except jwt.PyJWTError:
+    except InvalidTokenError:
         raise ValueError("Invalid user token")
 
     # Not a user token (e.g. developer JWT with type=access) — ignore
@@ -111,7 +103,7 @@ async def get_current_user(
         return None
 
     token = auth_header[7:]  # Strip "Bearer "
-    public_key = _get_public_key(request)
+    public_key = _get_mldsa65_public_key(request)
 
     try:
         user_ctx = _validate_user_jwt(

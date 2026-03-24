@@ -2,7 +2,7 @@
 
 Handles user signup, login, JWT creation with type:user_access,
 refresh token hashing/verification, and password validation.
-Reuses the same Ed25519 key pair as developer auth but uses
+Reuses the same ML-DSA-65 key pair as developer auth but uses
 distinct JWT type fields (user_access / user_refresh).
 """
 
@@ -13,15 +13,10 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
 
-from pqdb_api.services.auth import JWT_ALGORITHM
+from pqdb_api.services.auth import _build_mldsa65_token, decode_token
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7
@@ -41,15 +36,15 @@ class UserTokenPair:
 class UserAuthService:
     """End-user authentication operations.
 
-    Uses the same Ed25519 key pair as developer auth but produces
+    Uses the same ML-DSA-65 key pair as developer auth but produces
     JWTs with type=user_access and type=user_refresh to distinguish
     from developer tokens.
     """
 
     def __init__(
         self,
-        private_key: Ed25519PrivateKey,
-        public_key: Ed25519PublicKey,
+        private_key: bytes,
+        public_key: bytes,
     ) -> None:
         self._private_key = private_key
         self._public_key = public_key
@@ -70,10 +65,12 @@ class UserAuthService:
             "role": role,
             "type": "user_access",
             "email_verified": email_verified,
-            "iat": now,
-            "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+            "iat": int(now.timestamp()),
+            "exp": int(
+                (now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)).timestamp()
+            ),
         }
-        return jwt.encode(payload, self._private_key, algorithm=JWT_ALGORITHM)
+        return _build_mldsa65_token(payload, self._private_key)
 
     def create_user_refresh_token(
         self,
@@ -88,10 +85,10 @@ class UserAuthService:
             "project_id": str(project_id),
             "type": "user_refresh",
             "jti": str(uuid.uuid4()),
-            "iat": now,
-            "exp": now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)).timestamp()),
         }
-        return jwt.encode(payload, self._private_key, algorithm=JWT_ALGORITHM)
+        return _build_mldsa65_token(payload, self._private_key)
 
     def decode_user_token(
         self,
@@ -101,11 +98,9 @@ class UserAuthService:
     ) -> dict[str, Any]:
         """Decode and validate a user JWT token.
 
-        Raises jwt.ExpiredSignatureError, jwt.PyJWTError, or ValueError.
+        Raises InvalidTokenError, TokenExpiredError, or ValueError.
         """
-        payload: dict[str, Any] = jwt.decode(
-            token, self._public_key, algorithms=[JWT_ALGORITHM]
-        )
+        payload: dict[str, Any] = decode_token(token, self._public_key)
         if payload.get("type") != expected_type:
             raise ValueError(f"Invalid token type: expected {expected_type}")
         return payload

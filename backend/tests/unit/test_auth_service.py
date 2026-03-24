@@ -1,21 +1,27 @@
-"""Unit tests for the auth service: password hashing and JWT operations."""
+"""Unit tests for the auth service: password hashing and ML-DSA-65 JWT operations."""
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import patch
 
-import jwt
 import pytest
 
+try:
+    import oqs  # noqa: F401
+
+    HAS_OQS = True
+except (ImportError, SystemExit, RuntimeError):
+    HAS_OQS = False
+
 from pqdb_api.services.auth import (
-    JWT_ALGORITHM,
+    MLDSA65_ALGORITHM,
+    InvalidTokenError,
+    TokenExpiredError,
     create_access_token,
     create_refresh_token,
     decode_token,
-    generate_ed25519_keypair,
+    generate_mldsa65_keypair,
     hash_password,
-    private_key_to_pem,
-    public_key_to_pem,
     verify_password,
 )
 
@@ -46,30 +52,12 @@ class TestPasswordHashing:
         assert h1 != h2
 
 
-class TestEd25519KeyPair:
-    """Tests for Ed25519 key generation and serialization."""
-
-    def test_generate_keypair(self) -> None:
-        private_key, public_key = generate_ed25519_keypair()
-        assert private_key is not None
-        assert public_key is not None
-
-    def test_private_key_to_pem(self) -> None:
-        private_key, _ = generate_ed25519_keypair()
-        pem = private_key_to_pem(private_key)
-        assert pem.startswith(b"-----BEGIN PRIVATE KEY-----")
-
-    def test_public_key_to_pem(self) -> None:
-        _, public_key = generate_ed25519_keypair()
-        pem = public_key_to_pem(public_key)
-        assert pem.startswith(b"-----BEGIN PUBLIC KEY-----")
-
-
-class TestJWTTokens:
-    """Tests for JWT token creation and validation."""
+@pytest.mark.skipif(not HAS_OQS, reason="liboqs not available")
+class TestMLDSA65Tokens:
+    """Tests for ML-DSA-65 token creation and validation."""
 
     def setup_method(self) -> None:
-        self.private_key, self.public_key = generate_ed25519_keypair()
+        self.private_key, self.public_key = generate_mldsa65_keypair()
         self.developer_id = uuid.uuid4()
 
     def test_create_access_token_is_string(self) -> None:
@@ -88,10 +76,9 @@ class TestJWTTokens:
     def test_access_token_expires_in_15_minutes(self) -> None:
         token = create_access_token(self.developer_id, self.private_key)
         payload = decode_token(token, self.public_key)
-        exp = datetime.fromtimestamp(payload["exp"], tz=UTC)
-        iat = datetime.fromtimestamp(payload["iat"], tz=UTC)
-        delta = exp - iat
-        assert delta == timedelta(minutes=15)
+        exp = payload["exp"]
+        iat = payload["iat"]
+        assert exp - iat == 15 * 60
 
     def test_create_refresh_token_is_string(self) -> None:
         token = create_refresh_token(self.developer_id, self.private_key)
@@ -107,15 +94,14 @@ class TestJWTTokens:
     def test_refresh_token_expires_in_7_days(self) -> None:
         token = create_refresh_token(self.developer_id, self.private_key)
         payload = decode_token(token, self.public_key)
-        exp = datetime.fromtimestamp(payload["exp"], tz=UTC)
-        iat = datetime.fromtimestamp(payload["iat"], tz=UTC)
-        delta = exp - iat
-        assert delta == timedelta(days=7)
+        exp = payload["exp"]
+        iat = payload["iat"]
+        assert exp - iat == 7 * 24 * 60 * 60
 
     def test_decode_token_with_wrong_key_raises(self) -> None:
         token = create_access_token(self.developer_id, self.private_key)
-        _, other_public = generate_ed25519_keypair()
-        with pytest.raises(jwt.PyJWTError):
+        _, other_public = generate_mldsa65_keypair()
+        with pytest.raises(InvalidTokenError):
             decode_token(token, other_public)
 
     def test_decode_expired_token_raises(self) -> None:
@@ -123,14 +109,14 @@ class TestJWTTokens:
             mock_dt.now.return_value = datetime(2020, 1, 1, tzinfo=UTC)
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             token = create_access_token(self.developer_id, self.private_key)
-        with pytest.raises(jwt.ExpiredSignatureError):
+        with pytest.raises(TokenExpiredError):
             decode_token(token, self.public_key)
 
     def test_decode_tampered_token_raises(self) -> None:
         token = create_access_token(self.developer_id, self.private_key)
         tampered = token[:-5] + "XXXXX"
-        with pytest.raises(jwt.PyJWTError):
+        with pytest.raises(InvalidTokenError):
             decode_token(tampered, self.public_key)
 
-    def test_algorithm_is_eddsa(self) -> None:
-        assert JWT_ALGORITHM == "EdDSA"
+    def test_algorithm_is_mldsa65(self) -> None:
+        assert MLDSA65_ALGORITHM == "ML-DSA-65"

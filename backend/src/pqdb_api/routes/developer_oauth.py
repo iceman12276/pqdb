@@ -16,12 +16,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
-import jwt
 import structlog
-from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-    Ed25519PrivateKey,
-    Ed25519PublicKey,
-)
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select
@@ -32,9 +27,12 @@ from pqdb_api.database import get_session
 from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.developer import Developer, DeveloperOAuthIdentity
 from pqdb_api.services.auth import (
-    JWT_ALGORITHM,
+    InvalidTokenError,
+    TokenExpiredError,
+    _build_mldsa65_token,
     create_access_token,
     create_refresh_token,
+    decode_token,
 )
 from pqdb_api.services.oauth import (
     GitHubOAuthProvider,
@@ -59,7 +57,7 @@ SUPPORTED_PROVIDERS = ("google", "github")
 # ---------------------------------------------------------------------------
 def _generate_dev_state_jwt(
     *,
-    private_key: Ed25519PrivateKey,
+    private_key: bytes,
     redirect_uri: str,
 ) -> str:
     """Generate a signed state JWT for developer OAuth CSRF protection.
@@ -72,15 +70,15 @@ def _generate_dev_state_jwt(
         "type": "dev_oauth_state",
         "redirect_uri": redirect_uri,
         "nonce": secrets.token_urlsafe(16),
-        "iat": now,
-        "exp": now + timedelta(minutes=STATE_JWT_EXPIRY_MINUTES),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=STATE_JWT_EXPIRY_MINUTES)).timestamp()),
     }
-    return jwt.encode(payload, private_key, algorithm=JWT_ALGORITHM)
+    return _build_mldsa65_token(payload, private_key)
 
 
 def _validate_dev_state_jwt(
     *,
-    public_key: Ed25519PublicKey,
+    public_key: bytes,
     state: str,
 ) -> dict[str, Any]:
     """Validate and decode a developer OAuth state JWT.
@@ -88,10 +86,8 @@ def _validate_dev_state_jwt(
     Raises ValueError if the token is invalid, expired, or has wrong type.
     """
     try:
-        payload: dict[str, Any] = jwt.decode(
-            state, public_key, algorithms=[JWT_ALGORITHM]
-        )
-    except (jwt.ExpiredSignatureError, jwt.PyJWTError):
+        payload: dict[str, Any] = decode_token(state, public_key)
+    except (TokenExpiredError, InvalidTokenError):
         raise ValueError("State JWT is invalid or expired")
 
     if payload.get("type") != "dev_oauth_state":
@@ -185,7 +181,7 @@ async def developer_oauth_authorize(
             detail=f"OAuth provider '{provider}' is not configured",
         )
 
-    private_key: Ed25519PrivateKey = request.app.state.jwt_private_key
+    private_key: bytes = request.app.state.mldsa65_private_key
     state = _generate_dev_state_jwt(
         private_key=private_key,
         redirect_uri=redirect_uri,
@@ -223,8 +219,8 @@ async def developer_oauth_callback(
     if provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
 
-    public_key: Ed25519PublicKey = request.app.state.jwt_public_key
-    private_key: Ed25519PrivateKey = request.app.state.jwt_private_key
+    public_key: bytes = request.app.state.mldsa65_public_key
+    private_key: bytes = request.app.state.mldsa65_private_key
 
     # Validate state JWT
     try:
