@@ -187,7 +187,9 @@ class TestPqcTlsDocumentation:
     def test_doc_explains_defense_in_depth(self) -> None:
         """Doc should explain that PQC TLS is one layer of defense."""
         content = PQC_TLS_DOC.read_text().lower()
-        assert "defense in depth" in content or "application layer" in content.lower(), (
+        has_defense = "defense in depth" in content
+        has_app_layer = "application layer" in content
+        assert has_defense or has_app_layer, (
             "Doc must explain defense-in-depth security model"
         )
 
