@@ -82,9 +82,7 @@ def check_scoped_permissions(
 
     tables = permissions.get("tables", {})
     if table_name not in tables:
-        raise PermissionError(
-            f"API key is not allowed to access table '{table_name}'"
-        )
+        raise PermissionError(f"API key is not allowed to access table '{table_name}'")
 
     allowed_ops = tables[table_name]
     if operation not in allowed_ops:

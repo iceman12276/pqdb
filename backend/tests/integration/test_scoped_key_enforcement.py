@@ -11,7 +11,6 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -140,9 +139,7 @@ class TestScopedKeySelectAllowed:
         token = signup_and_get_token(client, email="sel-ok@test.com")
         project = create_project(client, token, name="sel-ok-proj")
         project_id = project["id"]
-        svc_key = next(
-            k["key"] for k in project["api_keys"] if k["role"] == "service"
-        )
+        svc_key = next(k["key"] for k in project["api_keys"] if k["role"] == "service")
 
         # Create table via service key
         client.post(
@@ -180,9 +177,7 @@ class TestScopedKeySelectDenied:
         token = signup_and_get_token(client, email="sel-deny@test.com")
         project = create_project(client, token, name="sel-deny-proj")
         project_id = project["id"]
-        svc_key = next(
-            k["key"] for k in project["api_keys"] if k["role"] == "service"
-        )
+        svc_key = next(k["key"] for k in project["api_keys"] if k["role"] == "service")
 
         # Create two tables
         for tbl in ("notes", "secrets"):
@@ -231,9 +226,7 @@ class TestScopedKeyOperationDenied:
         token = signup_and_get_token(client, email="op-deny1@test.com")
         project = create_project(client, token, name="op-deny-proj-1")
         project_id = project["id"]
-        svc_key = next(
-            k["key"] for k in project["api_keys"] if k["role"] == "service"
-        )
+        svc_key = next(k["key"] for k in project["api_keys"] if k["role"] == "service")
 
         client.post(
             "/v1/db/tables",
@@ -267,9 +260,7 @@ class TestScopedKeyOperationDenied:
         token = signup_and_get_token(client, email="op-deny2@test.com")
         project = create_project(client, token, name="op-deny-proj-2")
         project_id = project["id"]
-        svc_key = next(
-            k["key"] for k in project["api_keys"] if k["role"] == "service"
-        )
+        svc_key = next(k["key"] for k in project["api_keys"] if k["role"] == "service")
 
         client.post(
             "/v1/db/tables",
@@ -303,9 +294,7 @@ class TestScopedKeyOperationDenied:
         token = signup_and_get_token(client, email="op-deny3@test.com")
         project = create_project(client, token, name="op-deny-proj-3")
         project_id = project["id"]
-        svc_key = next(
-            k["key"] for k in project["api_keys"] if k["role"] == "service"
-        )
+        svc_key = next(k["key"] for k in project["api_keys"] if k["role"] == "service")
 
         client.post(
             "/v1/db/tables",
@@ -343,9 +332,7 @@ class TestScopedKeyInsertAllowed:
         token = signup_and_get_token(client, email="ins-ok@test.com")
         project = create_project(client, token, name="ins-ok-proj")
         project_id = project["id"]
-        svc_key = next(
-            k["key"] for k in project["api_keys"] if k["role"] == "service"
-        )
+        svc_key = next(k["key"] for k in project["api_keys"] if k["role"] == "service")
 
         client.post(
             "/v1/db/tables",
@@ -381,9 +368,7 @@ class TestServiceKeyBypassesPermissions:
     def test_service_key_full_access(self, client: TestClient) -> None:
         token = signup_and_get_token(client, email="svc-bypass@test.com")
         project = create_project(client, token, name="svc-bypass-proj")
-        svc_key = next(
-            k["key"] for k in project["api_keys"] if k["role"] == "service"
-        )
+        svc_key = next(k["key"] for k in project["api_keys"] if k["role"] == "service")
 
         client.post(
             "/v1/db/tables",
@@ -420,12 +405,8 @@ class TestLegacyKeyBackwardCompatibility:
     ) -> None:
         token = signup_and_get_token(client, email="legacy@test.com")
         project = create_project(client, token, name="legacy-proj")
-        anon_key = next(
-            k["key"] for k in project["api_keys"] if k["role"] == "anon"
-        )
-        svc_key = next(
-            k["key"] for k in project["api_keys"] if k["role"] == "service"
-        )
+        anon_key = next(k["key"] for k in project["api_keys"] if k["role"] == "anon")
+        svc_key = next(k["key"] for k in project["api_keys"] if k["role"] == "service")
 
         # Create table via service key
         client.post(
