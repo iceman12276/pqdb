@@ -72,11 +72,20 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
 
   // --- Dashboard callback endpoint ---
   // After the developer logs in on the Dashboard, it redirects here with the JWT.
-  app.get("/mcp-auth-complete", async (req: Request, res: Response) => {
-    const requestId = req.query.request_id as string | undefined;
-    const token = req.query.token as string | undefined;
-    const encryptionKey = req.query.encryption_key as string | undefined;
-
+  //
+  // POST-based exchange (primary): Dashboard POSTs token in JSON body and receives
+  // the redirect URL in the response. Required for ML-DSA-65 tokens (~4.6KB)
+  // which are too large for URL query parameters.
+  //
+  // GET-based exchange (legacy): Token passed in query params. Kept for backward
+  // compatibility with smaller tokens.
+  async function handleAuthComplete(
+    requestId: string | undefined,
+    token: string | undefined,
+    encryptionKey: string | undefined,
+    res: Response,
+    method: "GET" | "POST",
+  ): Promise<void> {
     if (!requestId || !token) {
       res.status(400).json({
         error: "Missing required parameters: request_id and token",
@@ -84,10 +93,6 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
       return;
     }
 
-    // completeAuthorization validates the redirect_uri against the client's
-    // registered allowlist and builds the full redirect URL from server-controlled
-    // data (registered redirect_uri + generated auth code + stored state).
-    // The returned URL is safe to redirect to (no open redirect risk).
     const redirectUrl = await provider.completeAuthorization(
       requestId,
       token,
@@ -100,7 +105,27 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
       return;
     }
 
-    performSafeRedirect(res, redirectUrl);
+    if (method === "POST") {
+      // POST: return the redirect URL in JSON body (Dashboard handles redirect)
+      res.json({ redirect_url: redirectUrl });
+    } else {
+      // GET: redirect directly (legacy flow)
+      performSafeRedirect(res, redirectUrl);
+    }
+  }
+
+  app.post("/mcp-auth-complete", async (req: Request, res: Response) => {
+    const requestId = req.body?.request_id as string | undefined;
+    const token = req.body?.token as string | undefined;
+    const encryptionKey = req.body?.encryption_key as string | undefined;
+    await handleAuthComplete(requestId, token, encryptionKey, res, "POST");
+  });
+
+  app.get("/mcp-auth-complete", async (req: Request, res: Response) => {
+    const requestId = req.query.request_id as string | undefined;
+    const token = req.query.token as string | undefined;
+    const encryptionKey = req.query.encryption_key as string | undefined;
+    await handleAuthComplete(requestId, token, encryptionKey, res, "GET");
   });
 
   // --- Bearer auth middleware for MCP endpoints ---

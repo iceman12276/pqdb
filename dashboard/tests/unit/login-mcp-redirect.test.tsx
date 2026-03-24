@@ -43,7 +43,8 @@ describe("LoginPage MCP redirect", () => {
       data: { access_token: "jwt-token", refresh_token: "rt" },
       error: null,
     });
-    mockHandleMcpRedirect.mockReturnValue(true);
+    // handleMcpRedirect is now async — return a resolved promise
+    mockHandleMcpRedirect.mockResolvedValue(true);
 
     render(<LoginPage />);
 
@@ -64,7 +65,8 @@ describe("LoginPage MCP redirect", () => {
       data: { access_token: "jwt-token", refresh_token: "rt" },
       error: null,
     });
-    mockHandleMcpRedirect.mockReturnValue(false);
+    // handleMcpRedirect is now async
+    mockHandleMcpRedirect.mockResolvedValue(false);
 
     render(<LoginPage />);
 

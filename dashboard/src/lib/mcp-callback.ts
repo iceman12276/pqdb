@@ -40,7 +40,8 @@ export function isValidMcpCallback(callbackUrl: string): boolean {
 }
 
 /**
- * Build the redirect URL for the MCP server callback.
+ * Build the redirect URL for the MCP server callback (legacy GET-based).
+ * @deprecated Use postMcpToken for ML-DSA-65 tokens which are too large for URL params.
  */
 export function buildMcpRedirectUrl(
   callbackUrl: string,
@@ -58,18 +59,62 @@ export function buildMcpRedirectUrl(
 }
 
 /**
+ * POST the token to the MCP server's callback endpoint.
+ *
+ * ML-DSA-65 tokens are ~4.6KB — too large for URL query params (browsers
+ * enforce ~2KB limits, servers often cap at 8KB total URL length).
+ * POST-based exchange sends the token in the request body instead.
+ *
+ * Returns the redirect URL from the MCP server response, or null on failure.
+ */
+export async function postMcpToken(
+  callbackUrl: string,
+  requestId: string,
+  token: string,
+  encryptionKey?: string,
+): Promise<string | null> {
+  try {
+    const body: Record<string, string> = {
+      request_id: requestId,
+      token,
+    };
+    if (encryptionKey) {
+      body.encryption_key = encryptionKey;
+    }
+
+    const response = await fetch(callbackUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = (await response.json()) as { redirect_url: string };
+    return data.redirect_url ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Handle post-login redirect. If MCP callback params are present and valid,
- * redirect to the MCP server. Otherwise, return false so the caller can
- * navigate to /projects.
+ * POST the token to the MCP server and redirect to the returned URL.
+ * Otherwise, return false so the caller can navigate to /projects.
+ *
+ * Uses POST-based token exchange because ML-DSA-65 tokens (~4.6KB) are
+ * too large for URL query parameters.
  *
  * @param encryptionKey - Optional unwrapped encryption key to pass to the MCP server.
  *   Only included when the developer logged in with a password and has a project
  *   with a wrapped encryption key.
  */
-export function handleMcpRedirect(
+export async function handleMcpRedirect(
   accessToken: string,
   encryptionKey?: string,
-): boolean {
+): Promise<boolean> {
   const { mcp_callback, request_id } = getMcpCallbackParams();
 
   if (!mcp_callback || !request_id) {
@@ -80,11 +125,17 @@ export function handleMcpRedirect(
     return false;
   }
 
-  window.location.href = buildMcpRedirectUrl(
+  const redirectUrl = await postMcpToken(
     mcp_callback,
     request_id,
     accessToken,
     encryptionKey,
   );
+
+  if (!redirectUrl) {
+    return false;
+  }
+
+  window.location.href = redirectUrl;
   return true;
 }

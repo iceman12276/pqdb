@@ -281,6 +281,34 @@ describe("AuthClient token auto-refresh", () => {
   });
 });
 
+describe("Large ML-DSA-65 token handling", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("sends large tokens (~4.6KB) in Authorization header without truncation", async () => {
+    const largeToken = "header." + "a".repeat(4600) + ".signature";
+    const largeMockTokens = {
+      access_token: largeToken,
+      refresh_token: "refresh-token",
+      token_type: "bearer",
+    };
+
+    const fetchMock = mockFetchOk(largeMockTokens);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createClient("http://localhost:3000", "pqdb_anon_key");
+    // Sign in stores the large token
+    await client.auth.signIn({ email: "user@test.com", password: "pass123" });
+
+    // Next request should attach the full large token
+    await client.auth.signIn({ email: "user@test.com", password: "pass123" });
+
+    const [, secondInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    const headers = secondInit.headers as Record<string, string>;
+    expect(headers["Authorization"]).toBe(`Bearer ${largeToken}`);
+    expect(headers["Authorization"].length).toBe(`Bearer ${largeToken}`.length);
+  });
+});
+
 describe("HTTP error handling", () => {
   afterEach(() => vi.restoreAllMocks());
 
