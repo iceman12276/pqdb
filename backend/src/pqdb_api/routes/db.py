@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pqdb_api.middleware.api_key import (
     ProjectContext,
+    check_scoped_permissions,
     get_project_context,
     get_project_session,
 )
@@ -312,6 +313,24 @@ async def _check_email_verification(
         )
 
 
+def _enforce_scoped_permissions(
+    context: ProjectContext, table_name: str, operation: str
+) -> None:
+    """Enforce scoped API key permissions for a CRUD operation.
+
+    Service keys always have full access. Legacy keys (null permissions)
+    have full access for backward compatibility.
+
+    Raises HTTPException 403 if the scoped key lacks permission.
+    """
+    if context.key_role == "service":
+        return
+    try:
+        check_scoped_permissions(context.permissions, table_name, operation)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
 def _parse_filter_op(op_str: str) -> FilterOp:
     """Convert string filter op to FilterOp enum."""
     return FilterOp(op_str)
@@ -560,6 +579,9 @@ async def insert_rows(
     """
     columns_meta = await _get_column_meta(session, table_name)
 
+    # Scoped key permission enforcement (US-086)
+    _enforce_scoped_permissions(context, table_name, "insert")
+
     # Email verification enforcement (US-032)
     await _check_email_verification(session, columns_meta, context, user)
 
@@ -630,6 +652,9 @@ async def select_rows(
     RLS: anon role only sees rows where owner column matches user_id.
     """
     columns_meta = await _get_column_meta(session, table_name)
+
+    # Scoped key permission enforcement (US-086)
+    _enforce_scoped_permissions(context, table_name, "select")
 
     # Email verification enforcement (US-032)
     await _check_email_verification(session, columns_meta, context, user)
@@ -710,6 +735,9 @@ async def update_rows(
     RLS: anon role can only update own rows (WHERE owner_col = user_id).
     """
     columns_meta = await _get_column_meta(session, table_name)
+
+    # Scoped key permission enforcement (US-086)
+    _enforce_scoped_permissions(context, table_name, "update")
 
     # Email verification enforcement (US-032)
     await _check_email_verification(session, columns_meta, context, user)
@@ -804,6 +832,9 @@ async def delete_rows(
     RLS: anon role can only delete own rows (WHERE owner_col = user_id).
     """
     columns_meta = await _get_column_meta(session, table_name)
+
+    # Scoped key permission enforcement (US-086)
+    _enforce_scoped_permissions(context, table_name, "delete")
 
     # Email verification enforcement (US-032)
     await _check_email_verification(session, columns_meta, context, user)
