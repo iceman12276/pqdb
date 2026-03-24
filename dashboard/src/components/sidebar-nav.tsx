@@ -7,6 +7,7 @@ import {
   Radio,
   ScrollText,
   Bot,
+  KeyRound,
   Settings,
 } from "lucide-react";
 import { Link, useParams } from "@tanstack/react-router";
@@ -29,6 +30,7 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Realtime", icon: Radio, path: "/realtime" },
   { label: "Logs", icon: ScrollText, path: "/logs" },
   { label: "MCP", icon: Bot, path: "/mcp" },
+  { label: "API Keys", icon: KeyRound, path: "/keys" },
   { label: "Project Settings", icon: Settings, path: "/settings" },
 ];
 
