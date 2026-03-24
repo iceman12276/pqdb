@@ -26,6 +26,14 @@ class TestParseApiKeyFormat:
         assert prefix == key[:8]
         assert role == "service"
 
+    def test_parse_scoped_key_extracts_prefix(self) -> None:
+        from pqdb_api.middleware.api_key import _parse_api_key
+
+        key = generate_api_key("scoped")
+        prefix, role = _parse_api_key(key)
+        assert prefix == key[:8]
+        assert role == "scoped"
+
     def test_parse_invalid_key_missing_prefix_raises(self) -> None:
         from pqdb_api.middleware.api_key import _parse_api_key
 
@@ -60,6 +68,73 @@ class TestProjectContext:
         assert ctx.project_id == pid
         assert ctx.key_role == "anon"
         assert ctx.database_name == "pqdb_project_abc123"
+        assert ctx.permissions is None
+
+    def test_project_context_with_permissions(self) -> None:
+        from pqdb_api.middleware.api_key import ProjectContext
+
+        pid = uuid.uuid4()
+        perms = {"tables": {"users": ["select", "insert"]}}
+        ctx = ProjectContext(
+            project_id=pid,
+            key_role="scoped",
+            database_name="pqdb_project_abc123",
+            permissions=perms,
+        )
+        assert ctx.permissions == perms
+        assert ctx.key_role == "scoped"
+
+
+class TestCheckScopedPermissions:
+    """Test the check_scoped_permissions function."""
+
+    def test_null_permissions_allows_everything(self) -> None:
+        from pqdb_api.middleware.api_key import check_scoped_permissions
+
+        # None permissions = legacy key, full access
+        check_scoped_permissions(None, "users", "select")
+        check_scoped_permissions(None, "users", "insert")
+        check_scoped_permissions(None, "any_table", "delete")
+
+    def test_allowed_table_and_operation_passes(self) -> None:
+        from pqdb_api.middleware.api_key import check_scoped_permissions
+
+        perms = {"tables": {"users": ["select", "insert"]}}
+        check_scoped_permissions(perms, "users", "select")
+        check_scoped_permissions(perms, "users", "insert")
+
+    def test_disallowed_table_raises(self) -> None:
+        from pqdb_api.middleware.api_key import check_scoped_permissions
+
+        perms = {"tables": {"users": ["select"]}}
+        with pytest.raises(PermissionError, match="not allowed.*posts"):
+            check_scoped_permissions(perms, "posts", "select")
+
+    def test_disallowed_operation_raises(self) -> None:
+        from pqdb_api.middleware.api_key import check_scoped_permissions
+
+        perms = {"tables": {"users": ["select"]}}
+        with pytest.raises(PermissionError, match="not allowed.*insert.*users"):
+            check_scoped_permissions(perms, "users", "insert")
+
+    def test_multiple_tables_independent(self) -> None:
+        from pqdb_api.middleware.api_key import check_scoped_permissions
+
+        perms = {"tables": {"users": ["select"], "posts": ["insert", "delete"]}}
+        check_scoped_permissions(perms, "users", "select")
+        check_scoped_permissions(perms, "posts", "insert")
+        check_scoped_permissions(perms, "posts", "delete")
+        with pytest.raises(PermissionError):
+            check_scoped_permissions(perms, "users", "delete")
+        with pytest.raises(PermissionError):
+            check_scoped_permissions(perms, "posts", "select")
+
+    def test_all_crud_operations(self) -> None:
+        from pqdb_api.middleware.api_key import check_scoped_permissions
+
+        perms = {"tables": {"t": ["select", "insert", "update", "delete"]}}
+        for op in ("select", "insert", "update", "delete"):
+            check_scoped_permissions(perms, "t", op)
 
 
 class TestBuildProjectDatabaseUrl:

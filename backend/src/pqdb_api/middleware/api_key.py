@@ -30,7 +30,7 @@ from pqdb_api.services.api_keys import verify_api_key
 logger = structlog.get_logger()
 
 _API_KEY_PREFIX = "pqdb_"
-_VALID_ROLES = {"anon", "service"}
+_VALID_ROLES = {"anon", "service", "scoped"}
 
 
 def _parse_api_key(key: str) -> tuple[str, str]:
@@ -59,6 +59,38 @@ class ProjectContext:
     project_id: uuid.UUID
     key_role: str
     database_name: str
+    permissions: dict[str, Any] | None = None
+
+
+def check_scoped_permissions(
+    permissions: dict[str, Any] | None,
+    table_name: str,
+    operation: str,
+) -> None:
+    """Check if a scoped key's permissions allow a table/operation.
+
+    Args:
+        permissions: The permissions dict from the API key, or None for full access.
+        table_name: The table being accessed.
+        operation: The CRUD operation (select, insert, update, delete).
+
+    Raises:
+        PermissionError: If the operation is not allowed.
+    """
+    if permissions is None:
+        return
+
+    tables = permissions.get("tables", {})
+    if table_name not in tables:
+        raise PermissionError(
+            f"API key is not allowed to access table '{table_name}'"
+        )
+
+    allowed_ops = tables[table_name]
+    if operation not in allowed_ops:
+        raise PermissionError(
+            f"API key is not allowed to perform '{operation}' on table '{table_name}'"
+        )
 
 
 def _build_project_database_url(platform_url: str, database_name: str) -> str:
@@ -137,6 +169,7 @@ async def get_project_context(
         project_id=matched_key.project_id,
         key_role=matched_key.role,
         database_name=project.database_name,
+        permissions=matched_key.permissions,
     )
 
     # Store on request.state for audit middleware to pick up
