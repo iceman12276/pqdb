@@ -9,7 +9,7 @@ try:
 
     HAS_OQS = True
 except (ImportError, SystemExit, RuntimeError):
-    oqs = None  # type: ignore[assignment]
+    oqs = None
     HAS_OQS = False
 
 from pqdb_api.app import create_app
