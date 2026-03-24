@@ -70,7 +70,7 @@ describe("MCP HTTP App", () => {
     });
   });
 
-  describe("/mcp-auth-complete", () => {
+  describe("/mcp-auth-complete (GET — legacy)", () => {
     it("returns 400 when request_id is missing", async () => {
       const res = await request(app)
         .get("/mcp-auth-complete")
@@ -116,7 +116,7 @@ describe("MCP HTTP App", () => {
       const requestId = dashboardUrl.searchParams.get("request_id")!;
       expect(requestId).toBeTruthy();
 
-      // 3. Simulate dashboard callback
+      // 3. Simulate dashboard callback (GET)
       const callbackRes = await request(app)
         .get("/mcp-auth-complete")
         .query({ request_id: requestId, token: "developer-jwt-123" });
@@ -162,6 +162,138 @@ describe("MCP HTTP App", () => {
         });
 
       expect(callbackRes.status).toBe(302);
+    });
+  });
+
+  describe("/mcp-auth-complete (POST — ML-DSA-65 compatible)", () => {
+    it("returns 400 when request_id is missing from body", async () => {
+      const res = await request(app)
+        .post("/mcp-auth-complete")
+        .send({ token: "some-jwt" });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when token is missing from body", async () => {
+      const res = await request(app)
+        .post("/mcp-auth-complete")
+        .send({ request_id: "some-id" });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 for unknown request_id", async () => {
+      const res = await request(app)
+        .post("/mcp-auth-complete")
+        .send({ request_id: "unknown-id", token: "jwt" });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns redirect_url in JSON body after valid flow", async () => {
+      // 1. Register client
+      const regRes = await request(app)
+        .post("/register")
+        .send({
+          redirect_uris: ["http://127.0.0.1:9999/callback"],
+        });
+      const clientId = regRes.body.client_id;
+
+      // 2. Start authorize flow
+      const authRes = await request(app).get("/authorize").query({
+        response_type: "code",
+        client_id: clientId,
+        redirect_uri: "http://127.0.0.1:9999/callback",
+        code_challenge: "test-challenge",
+        code_challenge_method: "S256",
+        state: "test-state",
+      });
+
+      const dashboardUrl = new URL(authRes.headers.location);
+      const requestId = dashboardUrl.searchParams.get("request_id")!;
+
+      // 3. POST token in body (ML-DSA-65 compatible)
+      const callbackRes = await request(app)
+        .post("/mcp-auth-complete")
+        .send({ request_id: requestId, token: "developer-jwt-123" });
+
+      // POST returns JSON with redirect_url (no 302 redirect)
+      expect(callbackRes.status).toBe(200);
+      expect(callbackRes.body.redirect_url).toBeDefined();
+
+      const redirectUrl = new URL(callbackRes.body.redirect_url);
+      expect(redirectUrl.origin).toBe("http://127.0.0.1:9999");
+      expect(redirectUrl.pathname).toBe("/callback");
+      expect(redirectUrl.searchParams.get("code")).toBeTruthy();
+      expect(redirectUrl.searchParams.get("state")).toBe("test-state");
+    });
+
+    it("handles large ML-DSA-65 tokens (~4.6KB) in POST body", async () => {
+      const largeToken = "header." + "a".repeat(4600) + ".signature";
+
+      // 1. Register client
+      const regRes = await request(app)
+        .post("/register")
+        .send({
+          redirect_uris: ["http://127.0.0.1:9999/callback"],
+        });
+      const clientId = regRes.body.client_id;
+
+      // 2. Start authorize flow
+      const authRes = await request(app).get("/authorize").query({
+        response_type: "code",
+        client_id: clientId,
+        redirect_uri: "http://127.0.0.1:9999/callback",
+        code_challenge: "test-challenge",
+        code_challenge_method: "S256",
+        state: "test-state",
+      });
+
+      const dashboardUrl = new URL(authRes.headers.location);
+      const requestId = dashboardUrl.searchParams.get("request_id")!;
+
+      // 3. POST large token
+      const callbackRes = await request(app)
+        .post("/mcp-auth-complete")
+        .send({ request_id: requestId, token: largeToken });
+
+      expect(callbackRes.status).toBe(200);
+      expect(callbackRes.body.redirect_url).toBeDefined();
+
+      const redirectUrl = new URL(callbackRes.body.redirect_url);
+      expect(redirectUrl.searchParams.get("code")).toBeTruthy();
+    });
+
+    it("accepts encryption_key in POST body", async () => {
+      // 1. Register client
+      const regRes = await request(app)
+        .post("/register")
+        .send({
+          redirect_uris: ["http://127.0.0.1:9999/callback"],
+        });
+      const clientId = regRes.body.client_id;
+
+      // 2. Start authorize flow
+      const authRes = await request(app).get("/authorize").query({
+        response_type: "code",
+        client_id: clientId,
+        redirect_uri: "http://127.0.0.1:9999/callback",
+        code_challenge: "test-challenge",
+        code_challenge_method: "S256",
+        state: "test-state",
+      });
+
+      const dashboardUrl = new URL(authRes.headers.location);
+      const requestId = dashboardUrl.searchParams.get("request_id")!;
+
+      // 3. POST with encryption_key
+      const callbackRes = await request(app)
+        .post("/mcp-auth-complete")
+        .send({
+          request_id: requestId,
+          token: "developer-jwt-456",
+          encryption_key: "test-encryption-key-base64url",
+        });
+
+      expect(callbackRes.status).toBe(200);
+      expect(callbackRes.body.redirect_url).toBeDefined();
     });
   });
 

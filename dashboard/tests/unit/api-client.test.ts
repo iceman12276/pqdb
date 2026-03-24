@@ -252,6 +252,23 @@ describe("api-client", () => {
       });
     });
 
+    it("sends large ML-DSA-65 tokens (~4.6KB) in Authorization header without truncation", async () => {
+      const largeToken = "header." + "a".repeat(4600) + ".signature";
+      setTokens({ access_token: largeToken, refresh_token: "rt" });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ projects: [] }),
+      });
+
+      await api.fetch("/v1/projects");
+
+      const callHeaders = mockFetch.mock.calls[0][1]?.headers ?? {};
+      expect(callHeaders.Authorization).toBe(`Bearer ${largeToken}`);
+      expect(callHeaders.Authorization.length).toBe(`Bearer ${largeToken}`.length);
+    });
+
     it("clears tokens and does not retry when refresh fails", async () => {
       setTokens({ access_token: "expired-at", refresh_token: "expired-rt" });
 

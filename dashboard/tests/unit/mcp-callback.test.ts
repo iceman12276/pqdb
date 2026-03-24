@@ -4,6 +4,7 @@ import {
   buildMcpRedirectUrl,
   getMcpCallbackParams,
   handleMcpRedirect,
+  postMcpToken,
 } from "~/lib/mcp-callback";
 
 describe("isValidMcpCallback", () => {
@@ -52,7 +53,7 @@ describe("isValidMcpCallback", () => {
   });
 });
 
-describe("buildMcpRedirectUrl", () => {
+describe("buildMcpRedirectUrl (legacy)", () => {
   it("appends request_id and token as query params", () => {
     const result = buildMcpRedirectUrl(
       "http://localhost:3002/mcp-auth-complete",
@@ -104,7 +105,6 @@ describe("getMcpCallbackParams", () => {
   const originalLocation = window.location;
 
   beforeEach(() => {
-    // Use Object.defineProperty to mock window.location.search
     Object.defineProperty(window, "location", {
       writable: true,
       value: { ...originalLocation },
@@ -167,7 +167,6 @@ describe("getOAuthRedirectUri preserves MCP params", () => {
       },
     });
 
-    // Replicate the getOAuthRedirectUri logic from login-page.tsx
     const redirectUri = `${window.location.origin}/login${window.location.search}`;
     const url = new URL(redirectUri);
     expect(url.searchParams.get("mcp_callback")).toBe(
@@ -178,8 +177,105 @@ describe("getOAuthRedirectUri preserves MCP params", () => {
   });
 });
 
+describe("postMcpToken", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("POSTs token in JSON body and returns redirect_url from response", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ redirect_url: "http://127.0.0.1:9999/callback?code=abc&state=xyz" }),
+    });
+    globalThis.fetch = mockFetch;
+
+    const result = await postMcpToken(
+      "http://localhost:3002/mcp-auth-complete",
+      "req-123",
+      "large-jwt-token",
+    );
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3002/mcp-auth-complete",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request_id: "req-123", token: "large-jwt-token" }),
+      },
+    );
+    expect(result).toBe("http://127.0.0.1:9999/callback?code=abc&state=xyz");
+  });
+
+  it("includes encryption_key in POST body when provided", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ redirect_url: "http://127.0.0.1:9999/callback?code=abc" }),
+    });
+    globalThis.fetch = mockFetch;
+
+    await postMcpToken(
+      "http://localhost:3002/mcp-auth-complete",
+      "req-123",
+      "jwt-token",
+      "enc-key-base64",
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.encryption_key).toBe("enc-key-base64");
+  });
+
+  it("returns null when server responds with error", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "Unknown request_id" }),
+    });
+
+    const result = await postMcpToken(
+      "http://localhost:3002/mcp-auth-complete",
+      "bad-id",
+      "token",
+    );
+    expect(result).toBeNull();
+  });
+
+  it("returns null on network error", async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
+
+    const result = await postMcpToken(
+      "http://localhost:3002/mcp-auth-complete",
+      "req-123",
+      "token",
+    );
+    expect(result).toBeNull();
+  });
+
+  it("handles large ML-DSA-65 tokens (~4.6KB) in POST body", async () => {
+    const largeToken = "header." + "a".repeat(4600) + ".signature";
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ redirect_url: "http://127.0.0.1:9999/callback?code=abc" }),
+    });
+    globalThis.fetch = mockFetch;
+
+    const result = await postMcpToken(
+      "http://localhost:3002/mcp-auth-complete",
+      "req-123",
+      largeToken,
+    );
+
+    expect(result).toBe("http://127.0.0.1:9999/callback?code=abc");
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.token).toBe(largeToken);
+    expect(body.token.length).toBe(largeToken.length);
+  });
+});
+
 describe("handleMcpRedirect", () => {
   const originalLocation = window.location;
+  const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     Object.defineProperty(window, "location", {
@@ -197,61 +293,77 @@ describe("handleMcpRedirect", () => {
       writable: true,
       value: originalLocation,
     });
+    globalThis.fetch = originalFetch;
   });
 
-  it("redirects to MCP callback when params are valid", () => {
+  it("POSTs token to MCP callback and redirects to returned URL", async () => {
     Object.defineProperty(window, "location", {
       writable: true,
       value: {
         ...originalLocation,
         search:
-          "?mcp_callback=http%3A%2F%2Flocalhost%3A3002%2Fcallback&request_id=abc123",
+          "?mcp_callback=http%3A%2F%2Flocalhost%3A3002%2Fmcp-auth-complete&request_id=abc123",
         href: "http://localhost:3000/login",
       },
     });
 
-    const result = handleMcpRedirect("my-jwt-token");
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ redirect_url: "http://127.0.0.1:9999/callback?code=auth-code&state=test" }),
+    });
+
+    const result = await handleMcpRedirect("my-jwt-token");
     expect(result).toBe(true);
-    expect(window.location.href).toContain(
-      "http://localhost:3002/callback",
+    expect(window.location.href).toBe(
+      "http://127.0.0.1:9999/callback?code=auth-code&state=test",
     );
-    expect(window.location.href).toContain("token=my-jwt-token");
-    expect(window.location.href).toContain("request_id=abc123");
   });
 
-  it("includes encryption_key in redirect URL when provided", () => {
+  it("includes encryption_key in POST body when provided", async () => {
     Object.defineProperty(window, "location", {
       writable: true,
       value: {
         ...originalLocation,
         search:
-          "?mcp_callback=http%3A%2F%2Flocalhost%3A3002%2Fcallback&request_id=abc123",
+          "?mcp_callback=http%3A%2F%2Flocalhost%3A3002%2Fmcp-auth-complete&request_id=abc123",
         href: "http://localhost:3000/login",
       },
     });
 
-    const result = handleMcpRedirect("my-jwt-token", "enc-key-123");
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ redirect_url: "http://127.0.0.1:9999/callback?code=abc" }),
+    });
+    globalThis.fetch = mockFetch;
+
+    const result = await handleMcpRedirect("my-jwt-token", "enc-key-123");
     expect(result).toBe(true);
-    expect(window.location.href).toContain("encryption_key=enc-key-123");
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.encryption_key).toBe("enc-key-123");
   });
 
-  it("omits encryption_key from redirect URL when not provided", () => {
+  it("returns false when POST fails", async () => {
     Object.defineProperty(window, "location", {
       writable: true,
       value: {
         ...originalLocation,
         search:
-          "?mcp_callback=http%3A%2F%2Flocalhost%3A3002%2Fcallback&request_id=abc123",
+          "?mcp_callback=http%3A%2F%2Flocalhost%3A3002%2Fmcp-auth-complete&request_id=abc123",
         href: "http://localhost:3000/login",
       },
     });
 
-    const result = handleMcpRedirect("my-jwt-token");
-    expect(result).toBe(true);
-    expect(window.location.href).not.toContain("encryption_key");
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "Bad request" }),
+    });
+
+    const result = await handleMcpRedirect("my-jwt-token");
+    expect(result).toBe(false);
   });
 
-  it("returns false when mcp_callback is missing", () => {
+  it("returns false when mcp_callback is missing", async () => {
     Object.defineProperty(window, "location", {
       writable: true,
       value: {
@@ -261,11 +373,11 @@ describe("handleMcpRedirect", () => {
       },
     });
 
-    const result = handleMcpRedirect("my-jwt-token");
+    const result = await handleMcpRedirect("my-jwt-token");
     expect(result).toBe(false);
   });
 
-  it("returns false when request_id is missing", () => {
+  it("returns false when request_id is missing", async () => {
     Object.defineProperty(window, "location", {
       writable: true,
       value: {
@@ -275,11 +387,11 @@ describe("handleMcpRedirect", () => {
       },
     });
 
-    const result = handleMcpRedirect("my-jwt-token");
+    const result = await handleMcpRedirect("my-jwt-token");
     expect(result).toBe(false);
   });
 
-  it("returns false when mcp_callback is non-localhost", () => {
+  it("returns false when mcp_callback is non-localhost", async () => {
     Object.defineProperty(window, "location", {
       writable: true,
       value: {
@@ -290,7 +402,7 @@ describe("handleMcpRedirect", () => {
       },
     });
 
-    const result = handleMcpRedirect("my-jwt-token");
+    const result = await handleMcpRedirect("my-jwt-token");
     expect(result).toBe(false);
   });
 });

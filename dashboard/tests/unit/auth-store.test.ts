@@ -60,6 +60,31 @@ describe("auth-store", () => {
     expect(sessionStorage.getItem("pqdb-tokens")).toBeNull();
   });
 
+  it("stores and retrieves large ML-DSA-65 tokens (~4.6KB) without truncation", () => {
+    // ML-DSA-65 tokens are ~4.6KB. Verify sessionStorage handles them correctly.
+    const largeToken = "header." + "a".repeat(4600) + ".signature";
+    const largeRefresh = "header." + "b".repeat(4600) + ".signature";
+    setTokens(
+      { access_token: largeToken, refresh_token: largeRefresh },
+      { persist: true },
+    );
+
+    // Verify in-memory retrieval
+    expect(getAccessToken()).toBe(largeToken);
+    expect(getTokens()?.refresh_token).toBe(largeRefresh);
+
+    // Verify sessionStorage round-trip (simulate page reload by clearing memory)
+    clearTokens();
+    sessionStorage.setItem(
+      "pqdb-tokens",
+      JSON.stringify({ access_token: largeToken, refresh_token: largeRefresh }),
+    );
+    const restored = getTokens();
+    expect(restored?.access_token).toBe(largeToken);
+    expect(restored?.access_token.length).toBe(largeToken.length);
+    expect(restored?.refresh_token).toBe(largeRefresh);
+  });
+
   it("clears service key cache entries from sessionStorage on logout", () => {
     sessionStorage.setItem("pqdb_service_key_proj1", "key1");
     sessionStorage.setItem("pqdb_service_key_proj2", "key2");
