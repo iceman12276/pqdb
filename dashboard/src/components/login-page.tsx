@@ -47,9 +47,11 @@ export function LoginPage() {
         );
         // Clear the hash to avoid re-processing
         window.history.replaceState(null, "", window.location.pathname + window.location.search);
-        if (!handleMcpRedirect(accessToken)) {
-          navigate({ to: "/projects" });
-        }
+        void handleMcpRedirect(accessToken).then((redirected) => {
+          if (!redirected) {
+            navigate({ to: "/projects" });
+          }
+        });
       }
     }
   }, [navigate]);
@@ -125,7 +127,7 @@ export function LoginPage() {
           }
         }
 
-        if (!handleMcpRedirect(result.data.access_token, encryptionKey)) {
+        if (!(await handleMcpRedirect(result.data.access_token, encryptionKey))) {
           navigate({ to: "/projects" });
         }
       }
@@ -146,7 +148,7 @@ export function LoginPage() {
     try {
       const tokens = await startPasskeyAuthentication();
       setTokens(tokens, { persist: true });
-      if (!handleMcpRedirect(tokens.access_token)) {
+      if (!(await handleMcpRedirect(tokens.access_token))) {
         navigate({ to: "/projects" });
       }
     } catch (err) {

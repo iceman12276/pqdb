@@ -71,7 +71,7 @@ export function SignupPage() {
           setWrappingKey(wrappingKeyResult);
         }
 
-        if (!handleMcpRedirect(result.data.access_token)) {
+        if (!(await handleMcpRedirect(result.data.access_token))) {
           navigate({ to: "/projects" });
         }
       }
