@@ -263,7 +263,10 @@ class TestSettingsAllowedRedirectUris:
         settings = Settings(
             database_url="postgresql+asyncpg://x:x@localhost/test",
         )
-        assert settings.allowed_redirect_uris == ["http://localhost:3000"]
+        assert settings.allowed_redirect_uris == [
+            "https://localhost",
+            "http://localhost:3000",
+        ]
 
     def test_custom_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from pqdb_api.config import Settings

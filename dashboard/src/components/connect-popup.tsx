@@ -42,7 +42,7 @@ export function ConnectPopup({ projectId, projectName }: ConnectPopupProps) {
   const snippet = `import { createClient } from '@pqdb/client'
 
 const client = createClient({
-  url: 'http://localhost:8000',
+  url: 'https://localhost',
   apiKey: '${anonKey?.key_prefix ?? "your-anon-key"}...',
 })`;
 

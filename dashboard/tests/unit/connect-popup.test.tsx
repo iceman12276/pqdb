@@ -68,7 +68,7 @@ describe("ConnectPopup", () => {
     });
     // Verify the snippet uses the API server URL, not window.location.origin
     const snippet = screen.getByText(/createClient/).closest("pre");
-    expect(snippet?.textContent).toContain("http://localhost:8000");
+    expect(snippet?.textContent).toContain("https://localhost");
   });
 
   it("shows loading state while fetching keys", () => {

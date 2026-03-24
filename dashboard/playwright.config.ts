@@ -32,6 +32,7 @@ export default defineConfig({
         DATABASE_URL: process.env.DATABASE_URL ?? "postgresql+asyncpg://postgres:postgres@localhost:5432/pqdb_platform",
         VAULT_ADDR: process.env.VAULT_ADDR ?? "http://localhost:8200",
         VAULT_TOKEN: process.env.VAULT_TOKEN ?? "dev-root-token",
+        PQDB_WEBAUTHN_ORIGIN: process.env.PQDB_WEBAUTHN_ORIGIN ?? "http://localhost:3000",
       },
     },
     {

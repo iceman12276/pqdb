@@ -100,7 +100,7 @@ describe("ApiKeysPage", () => {
 
     const snippet = screen.getByTestId("sdk-snippet");
     expect(snippet.textContent).toContain("createClient");
-    expect(snippet.textContent).toContain("http://localhost:8000");
+    expect(snippet.textContent).toContain("https://localhost");
     expect(snippet.textContent).toContain("<your-anon-key>");
     // Must NOT contain the masked key prefix
     expect(snippet.textContent).not.toContain("pqdb_anon_abc123");

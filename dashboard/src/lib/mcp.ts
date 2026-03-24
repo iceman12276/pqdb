@@ -146,11 +146,11 @@ export function buildMcpConfigSnippet(projectId: string): object {
         args: [
           "pqdb-mcp",
           "--project-url",
-          "http://localhost:8000",
+          "https://localhost",
         ],
         env: {
           PQDB_API_KEY: "<your-api-key>",
-          PQDB_PROJECT_URL: "http://localhost:8000",
+          PQDB_PROJECT_URL: "https://localhost",
           PQDB_ENCRYPTION_KEY: "<your-encryption-key>",
         },
       },
