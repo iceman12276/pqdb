@@ -86,25 +86,19 @@ export async function postMcpToken(
       body.refresh_token = refreshToken;
     }
 
-    console.log("[pqdb-mcp] POSTing token to", callbackUrl, { request_id: requestId, tokenLen: token.length });
     const response = await fetch(callbackUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
-    console.log("[pqdb-mcp] POST response:", response.status, response.statusText);
     if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      console.error("[pqdb-mcp] POST failed:", text);
       return null;
     }
 
     const data = (await response.json()) as { redirect_url: string };
-    console.log("[pqdb-mcp] redirect_url:", data.redirect_url);
     return data.redirect_url ?? null;
-  } catch (err) {
-    console.error("[pqdb-mcp] POST exception:", err);
+  } catch {
     return null;
   }
 }
@@ -127,10 +121,8 @@ export async function handleMcpRedirect(
   refreshToken?: string,
 ): Promise<boolean> {
   const { mcp_callback, request_id } = getMcpCallbackParams();
-  console.log("[pqdb-mcp] handleMcpRedirect called", { mcp_callback, request_id, url: window.location.href });
 
   if (!mcp_callback || !request_id) {
-    console.log("[pqdb-mcp] No MCP params found, skipping redirect");
     return false;
   }
 
