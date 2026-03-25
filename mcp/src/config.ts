@@ -17,6 +17,8 @@ export interface ServerConfig {
   encryptionKey: string | undefined;
   /** Optional developer JWT for project management endpoints. */
   devToken: string | undefined;
+  /** Optional project ID resolved during OAuth (for JWT auth on /v1/db/* endpoints). */
+  projectId: string | undefined;
 }
 
 export interface ParsedArgs {
@@ -79,5 +81,6 @@ export function buildConfig(args: ParsedArgs): ServerConfig {
     apiKey,
     encryptionKey: process.env.PQDB_ENCRYPTION_KEY || undefined,
     devToken: process.env.PQDB_DEV_TOKEN || undefined,
+    projectId: undefined,
   };
 }

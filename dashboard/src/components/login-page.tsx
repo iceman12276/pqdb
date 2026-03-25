@@ -127,7 +127,7 @@ export function LoginPage() {
           }
         }
 
-        if (!(await handleMcpRedirect(result.data.access_token, encryptionKey))) {
+        if (!(await handleMcpRedirect(result.data.access_token, encryptionKey, result.data.refresh_token))) {
           navigate({ to: "/projects" });
         }
       }

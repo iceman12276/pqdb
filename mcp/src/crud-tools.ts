@@ -49,6 +49,23 @@ interface IntrospectTable {
   columns: IntrospectColumn[];
 }
 
+/** Module-level auth config — set by registerCrudTools. */
+let _devToken: string | undefined;
+let _projectId: string | undefined;
+
+function buildAuthHeaders(apiKey: string): Record<string, string> {
+  if (apiKey) {
+    return { apikey: apiKey };
+  }
+  if (_devToken && _projectId) {
+    return {
+      Authorization: `Bearer ${_devToken}`,
+      "x-project-id": _projectId,
+    };
+  }
+  return {};
+}
+
 /** Make an authenticated POST request to the pqdb API. */
 async function pqdbPost<T>(
   projectUrl: string,
@@ -59,7 +76,7 @@ async function pqdbPost<T>(
   const response = await fetch(`${projectUrl}${path}`, {
     method: "POST",
     headers: {
-      apikey: apiKey,
+      ...buildAuthHeaders(apiKey),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -86,7 +103,7 @@ async function pqdbGet<T>(
   path: string,
 ): Promise<T> {
   const response = await fetch(`${projectUrl}${path}`, {
-    headers: { apikey: apiKey },
+    headers: buildAuthHeaders(apiKey),
   });
 
   if (!response.ok) {
@@ -155,7 +172,11 @@ export function registerCrudTools(
   apiKey: string,
   encryptionEnabled: boolean,
   encryptionKey?: string,
+  devToken?: string,
+  projectId?: string,
 ): void {
+  _devToken = devToken;
+  _projectId = projectId;
   // Lazy crypto state — derived on first encrypted operation
   let cryptoState: CryptoState | null = null;
 

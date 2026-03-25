@@ -15,6 +15,23 @@ interface ApiResponse {
   error: string | null;
 }
 
+/** Module-level auth config — set by registerAdminTools. */
+let _devToken: string | undefined;
+let _projectId: string | undefined;
+
+function buildAuthHeaders(apiKey: string): Record<string, string> {
+  if (apiKey) {
+    return { apikey: apiKey };
+  }
+  if (_devToken && _projectId) {
+    return {
+      Authorization: `Bearer ${_devToken}`,
+      "x-project-id": _projectId,
+    };
+  }
+  return {};
+}
+
 /** Make an authenticated GET request using apikey header. */
 async function apikeyGet<T>(
   projectUrl: string,
@@ -23,7 +40,7 @@ async function apikeyGet<T>(
 ): Promise<T> {
   const response = await fetch(`${projectUrl}${path}`, {
     method: "GET",
-    headers: { apikey: apiKey },
+    headers: buildAuthHeaders(apiKey),
   });
 
   if (!response.ok) {
@@ -50,7 +67,7 @@ async function apikeyPost<T>(
   const response = await fetch(`${projectUrl}${path}`, {
     method: "POST",
     headers: {
-      apikey: apiKey,
+      ...buildAuthHeaders(apiKey),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -131,7 +148,10 @@ export function registerAdminTools(
   projectUrl: string,
   apiKey: string,
   devToken: string | undefined,
+  projectId?: string,
 ): void {
+  _devToken = devToken;
+  _projectId = projectId;
   // ── pqdb_execute_sql ────────────────────────────────────────────────
 
   mcpServer.tool(

@@ -233,6 +233,23 @@ export function translateNaturalLanguage(
   };
 }
 
+/** Module-level auth config — set by registerNlQueryTool. */
+let _devToken: string | undefined;
+let _projectId: string | undefined;
+
+function buildAuthHeaders(apiKey: string): Record<string, string> {
+  if (apiKey) {
+    return { apikey: apiKey };
+  }
+  if (_devToken && _projectId) {
+    return {
+      Authorization: `Bearer ${_devToken}`,
+      "x-project-id": _projectId,
+    };
+  }
+  return {};
+}
+
 /** Make an authenticated GET request to the pqdb API. */
 async function pqdbFetch<T>(
   projectUrl: string,
@@ -241,7 +258,7 @@ async function pqdbFetch<T>(
 ): Promise<T> {
   const response = await fetch(`${projectUrl}${path}`, {
     method: "GET",
-    headers: { apikey: apiKey },
+    headers: buildAuthHeaders(apiKey),
   });
 
   if (!response.ok) {
@@ -268,7 +285,7 @@ async function pqdbPost<T>(
   const response = await fetch(`${projectUrl}${path}`, {
     method: "POST",
     headers: {
-      apikey: apiKey,
+      ...buildAuthHeaders(apiKey),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -296,7 +313,11 @@ export function registerNlQueryTool(
   projectUrl: string,
   apiKey: string,
   encryptionEnabled: boolean,
+  devToken?: string,
+  projectId?: string,
 ): void {
+  _devToken = devToken;
+  _projectId = projectId;
   mcpServer.tool(
     "pqdb_natural_language_query",
     "Execute a natural language query against the database. Translates to a pqdb query using schema metadata, respecting column sensitivity constraints. Examples: 'show all users', 'get posts where title = Hello', 'first 10 users'",

@@ -61,6 +61,18 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
   const app = express();
   app.use(express.json());
 
+  // CORS for POST-based MCP OAuth token exchange (dashboard → MCP server)
+  app.use("/mcp-auth-complete", (req, res, next) => {
+    res.header("Access-Control-Allow-Origin", dashboardUrl);
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
+
   // --- OAuth routes (metadata, authorize, token, register) ---
   app.use(
     mcpAuthRouter({
@@ -83,6 +95,7 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
     requestId: string | undefined,
     token: string | undefined,
     encryptionKey: string | undefined,
+    refreshToken: string | undefined,
     res: Response,
     method: "GET" | "POST",
   ): Promise<void> {
@@ -91,6 +104,11 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
         error: "Missing required parameters: request_id and token",
       });
       return;
+    }
+
+    // Store refresh token for auto-refresh
+    if (refreshToken) {
+      provider.setRefreshToken(refreshToken);
     }
 
     const redirectUrl = await provider.completeAuthorization(
@@ -118,14 +136,15 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
     const requestId = req.body?.request_id as string | undefined;
     const token = req.body?.token as string | undefined;
     const encryptionKey = req.body?.encryption_key as string | undefined;
-    await handleAuthComplete(requestId, token, encryptionKey, res, "POST");
+    const refreshToken = req.body?.refresh_token as string | undefined;
+    await handleAuthComplete(requestId, token, encryptionKey, refreshToken, res, "POST");
   });
 
   app.get("/mcp-auth-complete", async (req: Request, res: Response) => {
     const requestId = req.query.request_id as string | undefined;
     const token = req.query.token as string | undefined;
     const encryptionKey = req.query.encryption_key as string | undefined;
-    await handleAuthComplete(requestId, token, encryptionKey, res, "GET");
+    await handleAuthComplete(requestId, token, encryptionKey, undefined, res, "GET");
   });
 
   // --- Bearer auth middleware for MCP endpoints ---
@@ -158,8 +177,41 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
           if (sid) transports.delete(sid);
         };
 
-        // Build config from the authenticated developer's JWT + options
-        const devJwt = req.auth?.token;
+        // Build config from the authenticated developer's JWT + options.
+        // Auto-refresh the JWT if it's expired and we have a refresh token.
+        let devJwt = req.auth?.token;
+        if (devJwt) {
+          try {
+            // Check if the JWT is expired by trying a lightweight call
+            const testRes = await fetch(`${options.projectUrl}/v1/projects`, {
+              headers: { Authorization: `Bearer ${devJwt}` },
+            });
+            if (testRes.status === 401) {
+              const rt = provider.getRefreshToken();
+              if (rt) {
+                const refreshRes = await fetch(
+                  `${options.projectUrl}/v1/auth/refresh`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ refresh_token: rt }),
+                  },
+                );
+                if (refreshRes.ok) {
+                  const data = (await refreshRes.json()) as { access_token: string };
+                  devJwt = data.access_token;
+                  // Update the session so future requests use the new token
+                  provider.updateSessionToken(req.auth?.token ?? "", devJwt);
+                  console.error("[pqdb-mcp] Auto-refreshed developer JWT");
+                } else {
+                  console.error("[pqdb-mcp] Failed to refresh JWT — re-authentication required");
+                }
+              }
+            }
+          } catch {
+            // Ignore refresh errors — proceed with current token
+          }
+        }
 
         // Resolve encryption key: env var takes precedence, then OAuth-provided key
         const oauthEncryptionKey = devJwt
@@ -168,39 +220,27 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
         const resolvedEncryptionKey =
           options.encryptionKey ?? oauthEncryptionKey;
 
-        // Auto-fetch a service API key if we don't have one
-        let apiKey = options.apiKey ?? "";
+        // Resolve project ID for the developer JWT auth path.
+        // The backend accepts developer JWTs on /v1/db/* endpoints via
+        // Authorization: Bearer + x-project-id header — no service key needed.
+        let projectId: string | undefined;
+        const apiKey = options.apiKey ?? "";
         if (!apiKey && devJwt) {
           try {
-            // Get the developer's projects to find a project ID
             const projRes = await fetch(`${options.projectUrl}/v1/projects`, {
               headers: { Authorization: `Bearer ${devJwt}` },
             });
             if (projRes.ok) {
               const projects = (await projRes.json()) as Array<{ id: string }>;
               if (projects.length > 0) {
-                // Fetch a service key for the first project
-                const keyRes = await fetch(
-                  `${options.projectUrl}/v1/projects/${projects[0].id}/keys/service-key`,
-                  {
-                    method: "POST",
-                    headers: {
-                      Authorization: `Bearer ${devJwt}`,
-                      "Content-Type": "application/json",
-                    },
-                  },
+                projectId = projects[0].id;
+                console.error(
+                  `[pqdb-mcp] Using developer JWT auth for project ${projectId}`,
                 );
-                if (keyRes.ok) {
-                  const keyData = (await keyRes.json()) as { key: string };
-                  apiKey = keyData.key;
-                  console.error(
-                    `[pqdb-mcp] Auto-fetched service key for project ${projects[0].id}`,
-                  );
-                }
               }
             }
           } catch {
-            console.error("[pqdb-mcp] Failed to auto-fetch service key");
+            console.error("[pqdb-mcp] Failed to fetch project list");
           }
         }
 
@@ -211,6 +251,7 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
           apiKey,
           encryptionKey: resolvedEncryptionKey,
           devToken: devJwt,
+          projectId,
         };
 
         const { mcpServer } = createPqdbMcpServer(config);

@@ -214,9 +214,15 @@ async def delete_project_key(
 async def rotate_project_keys(
     project_id: uuid.UUID, session: AsyncSession
 ) -> list[dict[str, str]]:
-    """Rotate all keys for a project: delete old, create new.
+    """Rotate built-in anon/service keys for a project.
 
+    Only replaces anon and service keys — scoped keys are preserved.
     Returns the new full keys (one-time display).
     """
-    await session.execute(delete(ApiKey).where(ApiKey.project_id == project_id))
+    await session.execute(
+        delete(ApiKey).where(
+            ApiKey.project_id == project_id,
+            ApiKey.role.in_(["anon", "service"]),
+        )
+    )
     return await create_project_keys(project_id, session)

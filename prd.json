@@ -1,173 +1,231 @@
 {
   "project": "pqdb",
   "branchName": "main",
-  "description": "Phase 3b \u2014 MCP + Vector Search + Realtime",
+  "description": "Phase 4a — PQC Security Hardening: ML-DSA-65 auth tokens, hybrid PQC TLS (X25519MLKEM768 via Caddy), scoped API keys with table-level permissions",
+  "preflightComplete": true,
   "userStories": [
     {
-      "id": "US-056",
-      "title": "MCP server scaffolding",
+      "id": "US-078",
+      "title": "Install liboqs-python and ML-DSA-65 key generation",
+      "description": "As the system, I need ML-DSA-65 keypair generation so auth tokens can be signed with post-quantum signatures.",
       "dependsOn": [],
-      "passes": true,
-      "notes": "PR #76 merged. MCP scaffolding: TypeScript, stdio+SSE, 29 tests.",
+      "acceptanceCriteria": [
+        "liboqs-python added to backend dependencies via uv add liboqs-python",
+        "New function generate_mldsa65_keypair() in services/auth.py returns (private_key, public_key) bytes",
+        "Keypair is generated on app startup and stored in app.state",
+        "Existing Ed25519 keypair generation preserved for backward compatibility during migration",
+        "Unit test: keypair generation produces valid ML-DSA-65 keys (verify signature round-trip)",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
       "priority": 1,
-      "description": "",
-      "acceptanceCriteria": []
+      "passes": true,
+      "notes": "Merged PR #108. CI green (liboqs built from source). 10 tests (7 unit + 3 startup). Ed25519 preserved."
     },
     {
-      "id": "US-057",
-      "title": "MCP schema tools + resources",
-      "dependsOn": [
-        "US-056"
+      "id": "US-079",
+      "title": "ML-DSA-65 token signing and verification",
+      "description": "As a developer, I want auth tokens signed with ML-DSA-65 so they're quantum-resistant.",
+      "dependsOn": ["US-078"],
+      "acceptanceCriteria": [
+        "create_access_token and create_refresh_token sign with ML-DSA-65 instead of Ed25519",
+        "Token format: custom JWT-like structure (header.payload.signature) since PyJWT doesn't support ML-DSA",
+        "Header includes {alg:ML-DSA-65,typ:JWT} base64url encoded",
+        "Signature is ML-DSA-65 over header.payload base64url encoded",
+        "decode_token verifies ML-DSA-65 signature and validates claims (exp, type, sub)",
+        "Tokens are larger (~4.6KB total) — verify this works with HTTP Authorization headers",
+        "Developer auth middleware updated to verify ML-DSA-65 tokens",
+        "User auth middleware updated to verify ML-DSA-65 tokens",
+        "Integration tests: login returns valid ML-DSA-65 token, token accepted by protected endpoints",
+        "Unit tests pass",
+        "Integration tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Service responds to health check"
       ],
-      "passes": true,
-      "notes": "PR #80 merged. MCP schema tools + resources. 19 tests.",
       "priority": 2,
-      "description": "",
-      "acceptanceCriteria": []
+      "passes": true,
+      "notes": ""
     },
     {
-      "id": "US-058",
-      "title": "MCP CRUD tools",
-      "dependsOn": [
-        "US-057"
+      "id": "US-080",
+      "title": "Dashboard and SDK token compatibility",
+      "description": "As a developer using the dashboard or SDK, I want the larger ML-DSA-65 tokens to work seamlessly.",
+      "dependsOn": ["US-079"],
+      "acceptanceCriteria": [
+        "Dashboard auth-store handles larger tokens in sessionStorage without size limits",
+        "Dashboard api-client sends larger Authorization headers without issues",
+        "SDK HttpClient sends larger Authorization headers without issues",
+        "MCP server OAuth flow uses POST-based token exchange (ML-DSA-65 tokens are ~4.6KB, too large for URL query params)",
+        "Envelope encryption flow still works (PBKDF2 + token refresh unchanged)",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Verify in browser: login → navigate → auto-decrypt still works"
       ],
-      "passes": true,
-      "notes": "PR #83 merged. MCP CRUD tools: query/insert/update/delete with encryption. 24 tests.",
       "priority": 3,
-      "description": "",
-      "acceptanceCriteria": []
-    },
-    {
-      "id": "US-059",
-      "title": "MCP auth tools + NL query",
-      "dependsOn": [
-        "US-058"
-      ],
       "passes": true,
-      "notes": "PR #85 merged. MCP auth tools + NL query + similar_to. 108 tests.",
-      "priority": 4,
-      "description": "",
-      "acceptanceCriteria": []
+      "notes": "Merged PR #114. POST-based MCP OAuth, large token tests for sessionStorage/headers/SDK."
     },
     {
-      "id": "US-060",
-      "title": "Vector similarity search backend",
+      "id": "US-081",
+      "title": "Add Caddy reverse proxy with PQC TLS to Docker Compose",
+      "description": "As a developer, I want all external traffic encrypted with hybrid PQC TLS so the transport layer is quantum-resistant.",
       "dependsOn": [],
-      "passes": true,
-      "notes": "PR #78 merged. similar_to on select, cosine/l2/ip, 39 tests.",
+      "acceptanceCriteria": [
+        "New infra/Caddyfile with reverse proxy routes: /v1/* → backend:8000, /* → dashboard:3000",
+        "Caddy service added to infra/compose.yaml with tls internal for dev certificates",
+        "Caddy uses Go 1.24+ which negotiates X25519MLKEM768 by default — no explicit PQC config needed",
+        "Volume for Caddy data (certificate persistence across restarts)",
+        "Ports: Caddy exposes 443 (HTTPS) and 80 (HTTP redirect)",
+        "Backend/dashboard/MCP stay on HTTP internally (Caddy terminates TLS)",
+        "WebSocket connections for realtime proxied correctly through Caddy",
+        "Health check endpoint accessible through Caddy",
+        "Unit tests pass",
+        "CI passes",
+        "Production build succeeds"
+      ],
       "priority": 1,
-      "description": "",
-      "acceptanceCriteria": []
+      "passes": true,
+      "notes": "Merged PR #106. All CI green. Review: routing correct, tls internal working, PQC via Go 1.24+ default."
     },
     {
-      "id": "US-061",
-      "title": "Vector index management",
-      "dependsOn": [
-        "US-060"
+      "id": "US-082",
+      "title": "Update dev environment for HTTPS",
+      "description": "As a developer, I want the local dev environment to work over HTTPS through Caddy.",
+      "dependsOn": ["US-081"],
+      "acceptanceCriteria": [
+        "Helper script infra/init-scripts/trust-caddy-ca.sh extracts and installs Caddy dev CA certificate",
+        "Dashboard Vite config updated — remove /v1 proxy (Caddy handles routing)",
+        ".env.example updated with PQDB_BASE_URL=https://localhost",
+        "Backend config.py CORS origins updated to include https://localhost",
+        "Backend WebAuthn origin updated to https://localhost",
+        "MCP server accepts https:// project URLs",
+        "Dashboard MCP callback validation allows https://localhost",
+        "NODE_EXTRA_CA_CERTS documented for Node.js processes to trust Caddy CA",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Verify in browser: full app works over https://localhost"
       ],
-      "passes": true,
-      "notes": "PR #81 merged. Vector index management: HNSW+IVFFlat, Dashboard UI. 28 tests.",
-      "priority": 5,
-      "description": "",
-      "acceptanceCriteria": []
-    },
-    {
-      "id": "US-062",
-      "title": "SDK vector search",
-      "dependsOn": [
-        "US-060"
-      ],
-      "passes": true,
-      "notes": "PR #79 merged. SDK .similarTo() method. 10 tests.",
-      "priority": 5,
-      "description": "",
-      "acceptanceCriteria": []
-    },
-    {
-      "id": "US-063",
-      "title": "Realtime triggers + NOTIFY",
-      "dependsOn": [],
-      "passes": true,
-      "notes": "PR #77 merged. pqdb_notify_changes(), pg_notify PK only, 36 tests.",
-      "priority": 1,
-      "description": "",
-      "acceptanceCriteria": []
-    },
-    {
-      "id": "US-064",
-      "title": "Realtime WebSocket server",
-      "dependsOn": [
-        "US-063"
-      ],
-      "passes": true,
-      "notes": "PR #82 merged. Realtime WebSocket server. 37 tests.",
       "priority": 2,
-      "description": "",
-      "acceptanceCriteria": []
+      "passes": true,
+      "notes": "Merged PR #109. Caddy uses host.docker.internal for hot-reload. CORS tightened. Passkey CI fix: Playwright env passthrough."
     },
     {
-      "id": "US-065",
-      "title": "Realtime RLS enforcement",
-      "dependsOn": [
-        "US-064"
+      "id": "US-083",
+      "title": "PQC TLS verification",
+      "description": "As the system, I need to verify that TLS connections actually negotiate PQC key exchange.",
+      "dependsOn": ["US-082"],
+      "acceptanceCriteria": [
+        "Test script verifies X25519MLKEM768 key exchange via openssl s_client",
+        "Integration test: connect to Caddy endpoint, verify non-404 response over HTTPS",
+        "Documentation: which clients negotiate PQC (Chrome 131+, Firefox 132+, Safari 18.4+, Node 23+)",
+        "Documentation: Node 22 falls back to X25519 (data is ML-KEM encrypted at app layer regardless)",
+        "Unit tests pass",
+        "CI passes",
+        "Production build succeeds"
       ],
-      "passes": true,
-      "notes": "PR #84 merged. Realtime RLS: owner/all/none, service bypass, fallback. 26 tests.",
       "priority": 3,
-      "description": "",
-      "acceptanceCriteria": []
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-066",
-      "title": "SDK realtime client",
-      "dependsOn": [
-        "US-065"
+      "id": "US-084",
+      "title": "Scoped API keys — database schema",
+      "description": "As the system, I need a permissions schema on API keys so keys can be scoped to specific tables and operations.",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Alembic migration adds permissions JSONB column to api_keys table (nullable, default null = full access)",
+        "ApiKey model updated with permissions: Mapped[dict | None]",
+        "Permissions format: {tables: {tablename: [select, insert, update, delete]}} or null for full access",
+        "Null permissions = backward compatible (existing anon/service keys work unchanged)",
+        "Unit test: model accepts permissions dict and defaults to None",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds"
       ],
+      "priority": 1,
       "passes": true,
-      "notes": "PR #86 merged. SDK realtime client: subscribe, reconnect, decryption. 22 tests.",
+      "notes": "Merged PR #107. All CI green. Migration 008, JSONB nullable column, 5 unit tests."
+    },
+    {
+      "id": "US-085",
+      "title": "Scoped API key creation and management endpoints",
+      "description": "As a developer, I want to create API keys with table-level permissions.",
+      "dependsOn": ["US-084"],
+      "acceptanceCriteria": [
+        "New endpoint POST /v1/projects/{id}/keys/scoped accepts {name, permissions} and returns new key",
+        "Permissions schema validated: operations must be select/insert/update/delete",
+        "Endpoint GET /v1/projects/{id}/keys returns permissions for each key",
+        "Endpoint DELETE /v1/projects/{id}/keys/{key_id} deletes a scoped key",
+        "Scoped keys use format pqdb_scoped_{random} to distinguish from anon/service",
+        "Integration tests: create scoped key, verify permissions returned in list",
+        "Integration tests: scoped key validates against the permissions schema",
+        "Unit tests pass",
+        "Integration tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Service responds to health check"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Merged PR #110. DELETE guarded to scoped-only, name validation added. 44 tests (22 unit + 22 integration)."
+    },
+    {
+      "id": "US-086",
+      "title": "Enforce scoped key permissions in middleware",
+      "description": "As the system, I want scoped API key permissions enforced so keys can only access the tables/operations they're scoped to.",
+      "dependsOn": ["US-085"],
+      "passes_note": "Merged PR #113. 4 CRUD endpoints enforced. Service bypass, null=full-access backward compat.",
+      "acceptanceCriteria": [
+        "get_project_context middleware updated: parse permissions from matched key",
+        "ProjectContext extended with permissions: dict | None field",
+        "CRUD endpoints (select, insert, update, delete) check permissions before executing",
+        "If key has permissions and table/operation not allowed → 403 with clear error message",
+        "If key has null permissions (legacy anon/service) → full access (backward compatible)",
+        "Service keys always have full access regardless of permissions field",
+        "Integration tests: scoped key can access allowed table, rejected for disallowed table",
+        "Integration tests: scoped key with select-only rejected for insert/update/delete",
+        "Unit tests pass",
+        "Integration tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Service responds to health check"
+      ],
+      "passes_note": "Merged PR #113. 4 CRUD endpoints enforced. Service bypass, null=full-access backward compat.",
+      "priority": 3,
+      "passes": true,
+      "notes": "Merged PR #113"
+    },
+    {
+      "id": "US-087",
+      "title": "Dashboard UI for scoped API keys",
+      "description": "As a developer, I want to create and manage scoped API keys from the dashboard.",
+      "dependsOn": ["US-086"],
+      "acceptanceCriteria": [
+        "API Keys page shows all keys with their permissions (or Full access for null)",
+        "Create Scoped Key dialog: select tables, check operations per table, name the key",
+        "Key displayed once on creation (same pattern as existing keys — show once, copy)",
+        "Delete button for scoped keys",
+        "Existing anon/service keys shown as Full access (not editable)",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Verify in browser"
+      ],
       "priority": 4,
-      "description": "",
-      "acceptanceCriteria": []
-    },
-    {
-      "id": "US-067",
-      "title": "Dashboard MCP page",
-      "dependsOn": [
-        "US-059"
-      ],
-      "passes": true,
-      "notes": "PR #88 merged. Dashboard MCP page: connection info, tool list, Test Tool UI. 15 tests.",
-      "priority": 5,
-      "description": "",
-      "acceptanceCriteria": []
-    },
-    {
-      "id": "US-068",
-      "title": "Dashboard Realtime page",
-      "dependsOn": [
-        "US-066"
-      ],
-      "passes": true,
-      "notes": "PR #87 merged. Dashboard Realtime page: live event inspector, stats. 16 tests.",
-      "priority": 5,
-      "description": "",
-      "acceptanceCriteria": []
-    },
-    {
-      "id": "US-069",
-      "title": "Phase 3b E2E tests",
-      "dependsOn": [
-        "US-059",
-        "US-062",
-        "US-066",
-        "US-067",
-        "US-068"
-      ],
-      "passes": true,
-      "notes": "PR #89 merged. 7 E2E tests (MCP + vector + realtime). 3 backend bugs fixed. Phase 3b COMPLETE.",
-      "priority": 6,
-      "description": "",
-      "acceptanceCriteria": []
+      "passes": false,
+      "notes": ""
     }
   ]
 }

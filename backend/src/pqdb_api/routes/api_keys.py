@@ -7,11 +7,12 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pqdb_api.database import get_session
 from pqdb_api.middleware.auth import get_current_developer_id
+from pqdb_api.models.api_key import ApiKey
 from pqdb_api.models.project import Project
 from pqdb_api.services.api_keys import (
     create_scoped_key,
@@ -125,15 +126,25 @@ async def generate_service_key(
     developer_id: uuid.UUID = Depends(get_current_developer_id),
     session: AsyncSession = Depends(get_session),
 ) -> ApiKeyCreatedResponse:
-    """Create a service API key for Dashboard/MCP use.
+    """Rotate the service API key for Dashboard/MCP use.
 
-    Always creates a new key — multiple consumers (dashboard, MCP server)
-    each need their own key. Deleting old keys would invalidate other
-    active sessions.
+    Deletes existing service keys first, then creates a fresh one.
+    This ensures exactly one service key exists per project.
     Returns the full key (one-time display). Requires developer JWT.
     """
     await _get_project_for_developer(project_id, developer_id, session)
 
+    # Advisory lock per project to prevent concurrent requests creating duplicates
+    lock_id = int.from_bytes(project_id.bytes[:8], "big") & 0x7FFFFFFFFFFFFFFF
+    await session.execute(select(func.pg_advisory_xact_lock(lock_id)))
+
+    # Delete existing service keys to prevent accumulation
+    await session.execute(
+        delete(ApiKey).where(
+            ApiKey.project_id == project_id,
+            ApiKey.role == "service",
+        )
+    )
     key_info = await create_single_key(project_id, "service", session)
     await session.commit()
 

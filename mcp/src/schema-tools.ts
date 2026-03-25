@@ -38,6 +38,28 @@ interface IntrospectAllResponse {
   tables: IntrospectTable[];
 }
 
+/**
+ * Module-level auth config — set once by registerSchemaTools,
+ * used by all fetch helpers. Avoids threading devToken/projectId
+ * through every function call.
+ */
+let _devToken: string | undefined;
+let _projectId: string | undefined;
+
+/** Build auth headers — uses apikey if available, otherwise developer JWT + project ID. */
+function buildAuthHeaders(apiKey: string): Record<string, string> {
+  if (apiKey) {
+    return { apikey: apiKey };
+  }
+  if (_devToken && _projectId) {
+    return {
+      Authorization: `Bearer ${_devToken}`,
+      "x-project-id": _projectId,
+    };
+  }
+  return {};
+}
+
 /** Make an authenticated GET request to the pqdb API. */
 async function pqdbFetch<T>(
   projectUrl: string,
@@ -46,7 +68,7 @@ async function pqdbFetch<T>(
 ): Promise<T> {
   const response = await fetch(`${projectUrl}${path}`, {
     method: "GET",
-    headers: { apikey: apiKey },
+    headers: buildAuthHeaders(apiKey),
   });
 
   if (!response.ok) {
@@ -73,7 +95,7 @@ async function pqdbPost<T>(
   const response = await fetch(`${projectUrl}${path}`, {
     method: "POST",
     headers: {
-      apikey: apiKey,
+      ...buildAuthHeaders(apiKey),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -100,8 +122,67 @@ export function registerSchemaTools(
   mcpServer: McpServer,
   projectUrl: string,
   apiKey: string,
+  devToken?: string,
+  projectId?: string,
 ): void {
+  // Set module-level auth config for fetch helpers
+  _devToken = devToken;
+  _projectId = projectId;
   // ── Tools ──────────────────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_create_table",
+    "Create a new table with column definitions and sensitivity levels",
+    {
+      name: z.string().describe("Table name"),
+      columns: z
+        .array(
+          z.object({
+            name: z.string().describe("Column name"),
+            data_type: z
+              .string()
+              .describe("Postgres data type (text, integer, boolean, etc.)"),
+            sensitivity: z
+              .enum(["plain", "searchable", "private"])
+              .default("plain")
+              .describe(
+                "plain = unencrypted, searchable = encrypted + blind index, private = encrypted only",
+              ),
+            owner: z
+              .boolean()
+              .default(false)
+              .describe("Whether this column identifies the row owner for RLS"),
+          }),
+        )
+        .describe("Column definitions"),
+    },
+    async ({ name, columns }) => {
+      try {
+        const result = await pqdbPost<Record<string, unknown>>(
+          projectUrl,
+          apiKey,
+          "/v1/db/tables",
+          { name, columns },
+        );
+
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ],
+        };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: err instanceof Error ? err.message : "Failed to create table",
+            },
+          ],
+        };
+      }
+    },
+  );
 
   mcpServer.tool(
     "pqdb_list_tables",

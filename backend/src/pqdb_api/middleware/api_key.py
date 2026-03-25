@@ -26,6 +26,7 @@ from pqdb_api.database import get_session
 from pqdb_api.models.api_key import ApiKey
 from pqdb_api.models.project import Project
 from pqdb_api.services.api_keys import verify_api_key
+from pqdb_api.services.auth import InvalidTokenError, TokenExpiredError, decode_token
 
 logger = structlog.get_logger()
 
@@ -119,28 +120,20 @@ def _get_or_create_engine(
     return engines[database_name]
 
 
-async def get_project_context(
-    request: Request,
-    platform_session: AsyncSession = Depends(get_session),
-) -> ProjectContext:
-    """FastAPI dependency: validate apikey header and resolve project context.
+async def _resolve_via_api_key(
+    raw_key: str,
+    platform_session: AsyncSession,
+) -> tuple[uuid.UUID, str, dict[str, Any] | None]:
+    """Resolve project_id, role, and permissions from an API key.
 
-    Returns a ``ProjectContext`` with project_id, key_role, and database_name.
-
-    Raises:
-        HTTPException 401: missing apikey header
-        HTTPException 403: invalid or unrecognised key
+    Returns (project_id, role, permissions).
+    Raises HTTPException on invalid key.
     """
-    raw_key = request.headers.get("apikey")
-    if not raw_key:
-        raise HTTPException(status_code=401, detail="Missing apikey header")
-
     try:
         prefix, _role = _parse_api_key(raw_key)
     except ValueError:
         raise HTTPException(status_code=403, detail="Invalid API key")
 
-    # Narrow lookup by prefix — avoids iterating all keys with argon2id
     result = await platform_session.execute(
         select(ApiKey).where(ApiKey.key_prefix == prefix)
     )
@@ -155,19 +148,109 @@ async def get_project_context(
     if matched_key is None:
         raise HTTPException(status_code=403, detail="Invalid API key")
 
+    return matched_key.project_id, matched_key.role, matched_key.permissions
+
+
+async def _resolve_via_developer_jwt(
+    request: Request,
+    platform_session: AsyncSession,
+) -> tuple[uuid.UUID, str, dict[str, Any] | None]:
+    """Resolve project context from a developer JWT + x-project-id header.
+
+    The developer JWT proves identity. The x-project-id header specifies
+    which project to access. We verify the developer owns the project.
+
+    Returns (project_id, "service", None) — developer gets service-level access.
+    Raises HTTPException on invalid token or unauthorized project.
+    """
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing authentication")
+
+    token = auth_header[7:]
+    public_key = getattr(request.app.state, "mldsa65_public_key", None)
+    if not public_key:
+        raise HTTPException(status_code=500, detail="Server signing key not configured")
+
+    try:
+        payload = decode_token(token, public_key)
+    except TokenExpiredError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    developer_id = payload.get("sub")
+    if not developer_id:
+        raise HTTPException(status_code=401, detail="Invalid token: missing sub")
+
+    # Require x-project-id header
+    project_id_str = request.headers.get("x-project-id")
+    if not project_id_str:
+        raise HTTPException(status_code=400, detail="Missing x-project-id header")
+
+    try:
+        project_id = uuid.UUID(project_id_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid x-project-id")
+
+    # Verify the developer owns this project
+    proj_result = await platform_session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == uuid.UUID(developer_id),
+        )
+    )
+    project = proj_result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=403, detail="Project not found or not owned by you")
+
+    # Developer gets service-level access with no scoped restrictions
+    return project_id, "service", None
+
+
+async def get_project_context(
+    request: Request,
+    platform_session: AsyncSession = Depends(get_session),
+) -> ProjectContext:
+    """FastAPI dependency: resolve project context from apikey or developer JWT.
+
+    Two auth methods supported:
+    1. ``apikey`` header — for SDK/app traffic (existing flow)
+    2. ``Authorization: Bearer`` + ``x-project-id`` — for developer tools (MCP server)
+
+    Returns a ``ProjectContext`` with project_id, key_role, and database_name.
+    """
+    raw_key = request.headers.get("apikey")
+
+    if raw_key:
+        # Path 1: API key auth (SDK, dashboard, apps)
+        project_id, role, permissions = await _resolve_via_api_key(
+            raw_key, platform_session
+        )
+    elif request.headers.get("authorization", "").startswith("Bearer "):
+        # Path 2: Developer JWT auth (MCP server, dev tools)
+        project_id, role, permissions = await _resolve_via_developer_jwt(
+            request, platform_session
+        )
+    else:
+        raise HTTPException(status_code=401, detail="Missing apikey or Authorization header")
+
     # Load project to get database_name
     proj_result = await platform_session.execute(
-        select(Project).where(Project.id == matched_key.project_id)
+        select(Project).where(Project.id == project_id)
     )
     project = proj_result.scalar_one_or_none()
     if project is None or project.database_name is None:
         raise HTTPException(status_code=403, detail="Project not provisioned")
 
     ctx = ProjectContext(
-        project_id=matched_key.project_id,
-        key_role=matched_key.role,
+        project_id=project_id,
+        key_role=role,
         database_name=project.database_name,
-        permissions=matched_key.permissions,
+        permissions=permissions,
     )
 
     # Store on request.state for audit middleware to pick up

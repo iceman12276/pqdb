@@ -277,6 +277,23 @@ export function generateTypeScript(tables: IntrospectTable[]): string {
 }
 
 /** Make an authenticated GET request using apikey header. */
+/** Module-level auth config — set by registerDocsTools. */
+let _devToken: string | undefined;
+let _projectId: string | undefined;
+
+function buildAuthHeaders(apiKey: string): Record<string, string> {
+  if (apiKey) {
+    return { apikey: apiKey };
+  }
+  if (_devToken && _projectId) {
+    return {
+      Authorization: `Bearer ${_devToken}`,
+      "x-project-id": _projectId,
+    };
+  }
+  return {};
+}
+
 async function apikeyGet<T>(
   projectUrl: string,
   apiKey: string,
@@ -284,7 +301,7 @@ async function apikeyGet<T>(
 ): Promise<T> {
   const response = await fetch(`${projectUrl}${path}`, {
     method: "GET",
-    headers: { apikey: apiKey },
+    headers: buildAuthHeaders(apiKey),
   });
 
   if (!response.ok) {
@@ -308,7 +325,11 @@ export function registerDocsTools(
   mcpServer: McpServer,
   projectUrl: string,
   apiKey: string,
+  devToken?: string,
+  projectId?: string,
 ): void {
+  _devToken = devToken;
+  _projectId = projectId;
   // ── pqdb_search_docs ────────────────────────────────────────────────
 
   mcpServer.tool(

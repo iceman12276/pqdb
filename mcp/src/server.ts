@@ -74,25 +74,25 @@ export function createPqdbMcpServer(config: ServerConfig): PqdbMcpServer {
   );
 
   // Register schema introspection tools and resources (US-057)
-  registerSchemaTools(mcpServer, config.projectUrl, config.apiKey);
+  registerSchemaTools(mcpServer, config.projectUrl, config.apiKey, config.devToken, config.projectId);
 
   // Register CRUD tools (US-058) — pass encryption key for ML-KEM crypto
-  registerCrudTools(mcpServer, config.projectUrl, config.apiKey, encryptionEnabled, config.encryptionKey);
+  registerCrudTools(mcpServer, config.projectUrl, config.apiKey, encryptionEnabled, config.encryptionKey, config.devToken, config.projectId);
 
   // Register auth tools (US-059)
-  registerAuthTools(mcpServer, config.projectUrl, config.apiKey);
+  registerAuthTools(mcpServer, config.projectUrl, config.apiKey, config.devToken, config.projectId);
 
   // Register natural language query tool (US-059)
-  registerNlQueryTool(mcpServer, config.projectUrl, config.apiKey, encryptionEnabled);
+  registerNlQueryTool(mcpServer, config.projectUrl, config.apiKey, encryptionEnabled, config.devToken, config.projectId);
 
   // Register project management tools (get, list, create, logs, pause, restore)
   registerProjectTools(mcpServer, config.projectUrl, config.apiKey, config.devToken);
 
   // Register admin/infrastructure tools (SQL, extensions, migrations)
-  registerAdminTools(mcpServer, config.projectUrl, config.apiKey, config.devToken);
+  registerAdminTools(mcpServer, config.projectUrl, config.apiKey, config.devToken, config.projectId);
 
   // Register documentation and type generation tools
-  registerDocsTools(mcpServer, config.projectUrl, config.apiKey);
+  registerDocsTools(mcpServer, config.projectUrl, config.apiKey, config.devToken, config.projectId);
 
   return { mcpServer, pqdbClient, encryptionEnabled };
 }

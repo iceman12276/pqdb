@@ -93,11 +93,32 @@ export class PqdbOAuthProvider implements OAuthServerProvider {
 
   private readonly dashboardUrl: string;
   private readonly mcpServerUrl: string;
+  /** Refresh token from the dashboard — used to auto-refresh expired JWTs. */
+  private refreshToken: string | undefined;
 
   constructor(options: PqdbOAuthProviderOptions) {
     this.clientsStore = new PqdbClientsStore();
     this.dashboardUrl = options.dashboardUrl;
     this.mcpServerUrl = options.mcpServerUrl;
+  }
+
+  /** Store the refresh token received from the dashboard during auth completion. */
+  setRefreshToken(token: string): void {
+    this.refreshToken = token;
+  }
+
+  /** Get the stored refresh token. */
+  getRefreshToken(): string | undefined {
+    return this.refreshToken;
+  }
+
+  /** Update a session to use a new access token (after refresh). */
+  updateSessionToken(oldToken: string, newToken: string): void {
+    const session = this.sessions.get(oldToken);
+    if (session) {
+      this.sessions.delete(oldToken);
+      this.sessions.set(newToken, session);
+    }
   }
 
   /**

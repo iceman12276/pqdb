@@ -6,6 +6,7 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   server: {
     port: 3000,
+    allowedHosts: ["host.docker.internal", "localhost"],
     proxy: {
       "/v1": {
         target: "http://localhost:8000",
