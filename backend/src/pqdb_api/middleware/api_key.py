@@ -205,7 +205,10 @@ async def _resolve_via_developer_jwt(
     )
     project = proj_result.scalar_one_or_none()
     if project is None:
-        raise HTTPException(status_code=403, detail="Project not found or not owned by you")
+        raise HTTPException(
+            status_code=403,
+            detail="Project not found or not owned by you",
+        )
 
     # Developer gets service-level access with no scoped restrictions
     return project_id, "service", None
@@ -236,7 +239,10 @@ async def get_project_context(
             request, platform_session
         )
     else:
-        raise HTTPException(status_code=401, detail="Missing apikey or Authorization header")
+        raise HTTPException(
+            status_code=401,
+            detail="Missing apikey or Authorization header",
+        )
 
     # Load project to get database_name
     proj_result = await platform_session.execute(
