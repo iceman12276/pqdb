@@ -58,7 +58,10 @@ def client(test_db_url: str) -> Iterator[TestClient]:
 def _setup_project_with_table(
     client: TestClient,
 ) -> tuple[str, str, str]:
-    """Create a developer, project, and a table. Return (token, project_id, service_key)."""
+    """Create a developer, project, and a table.
+
+    Return (token, project_id, service_key).
+    """
     token = signup_and_get_token(client, email="pause-test@example.com")
     project = create_project(client, token, name="pause-test")
     project_id = project["id"]
@@ -124,9 +127,7 @@ class TestPausedProjectRejectsCrud:
         assert resp.status_code == 403
         assert resp.json()["detail"]["error"]["code"] == "PROJECT_PAUSED"
 
-    def test_paused_project_rejects_via_developer_jwt(
-        self, client: TestClient
-    ) -> None:
+    def test_paused_project_rejects_via_developer_jwt(self, client: TestClient) -> None:
         """Developer JWT + x-project-id path also checks project status."""
         token, project_id, svc_key = _setup_project_with_table(client)
 
@@ -233,9 +234,7 @@ class TestManagementEndpointsWorkWhenPaused:
     They must still work when a project is paused.
     """
 
-    def test_pause_endpoint_works_on_active_project(
-        self, client: TestClient
-    ) -> None:
+    def test_pause_endpoint_works_on_active_project(self, client: TestClient) -> None:
         token = signup_and_get_token(client, email="mgmt1@example.com")
         project = create_project(client, token, name="mgmt-test-1")
 
@@ -246,9 +245,7 @@ class TestManagementEndpointsWorkWhenPaused:
         assert resp.status_code == 200
         assert resp.json()["status"] == "paused"
 
-    def test_restore_endpoint_works_on_paused_project(
-        self, client: TestClient
-    ) -> None:
+    def test_restore_endpoint_works_on_paused_project(self, client: TestClient) -> None:
         token = signup_and_get_token(client, email="mgmt2@example.com")
         project = create_project(client, token, name="mgmt-test-2")
 

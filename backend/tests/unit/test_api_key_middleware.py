@@ -147,6 +147,8 @@ class TestCheckProjectStatus:
         check_project_not_paused("active")
 
     def test_paused_project_raises_http_403(self) -> None:
+        from typing import Any
+
         from fastapi import HTTPException
 
         from pqdb_api.middleware.api_key import check_project_not_paused
@@ -154,7 +156,7 @@ class TestCheckProjectStatus:
         with pytest.raises(HTTPException) as exc_info:
             check_project_not_paused("paused")
         assert exc_info.value.status_code == 403
-        detail = exc_info.value.detail
+        detail: Any = exc_info.value.detail
         assert detail["error"]["code"] == "PROJECT_PAUSED"
         assert "paused" in detail["error"]["message"].lower()
 
@@ -172,13 +174,15 @@ class TestCheckProjectStatus:
         check_project_not_paused("archived")
 
     def test_error_response_format_matches_spec(self) -> None:
+        from typing import Any
+
         from fastapi import HTTPException
 
         from pqdb_api.middleware.api_key import check_project_not_paused
 
         with pytest.raises(HTTPException) as exc_info:
             check_project_not_paused("paused")
-        detail = exc_info.value.detail
+        detail: Any = exc_info.value.detail
         assert detail == {
             "error": {
                 "code": "PROJECT_PAUSED",
