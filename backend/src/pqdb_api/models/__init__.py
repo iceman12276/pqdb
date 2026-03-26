@@ -2,7 +2,15 @@
 
 from pqdb_api.models.api_key import ApiKey
 from pqdb_api.models.base import Base
+from pqdb_api.models.branch import DatabaseBranch
 from pqdb_api.models.developer import Developer, DeveloperOAuthIdentity
 from pqdb_api.models.project import Project
 
-__all__ = ["ApiKey", "Base", "Developer", "DeveloperOAuthIdentity", "Project"]
+__all__ = [
+    "ApiKey",
+    "Base",
+    "DatabaseBranch",
+    "Developer",
+    "DeveloperOAuthIdentity",
+    "Project",
+]
