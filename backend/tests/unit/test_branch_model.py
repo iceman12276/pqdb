@@ -133,10 +133,10 @@ class TestDatabaseBranchModel:
 
     def test_unique_constraint_on_project_id_and_name(self) -> None:
         """Verify unique constraint exists on (project_id, name)."""
-        constraints = DatabaseBranch.__table__.constraints
+        table = DatabaseBranch.__table__
         unique_constraints = [
             c
-            for c in constraints
+            for c in table.constraints  # type: ignore[attr-defined]
             if hasattr(c, "columns")
             and {col.name for col in c.columns} == {"project_id", "name"}
         ]
@@ -144,25 +144,25 @@ class TestDatabaseBranchModel:
 
     def test_index_on_project_id(self) -> None:
         """Verify index exists on project_id for fast listing."""
-        indexes = DatabaseBranch.__table__.indexes
+        table = DatabaseBranch.__table__
         project_id_indexes = [
             idx
-            for idx in indexes
+            for idx in table.indexes  # type: ignore[attr-defined]
             if any(col.name == "project_id" for col in idx.columns)
         ]
         assert len(project_id_indexes) >= 1
 
     def test_name_max_length(self) -> None:
         col = DatabaseBranch.__table__.columns["name"]
-        assert col.type.length == 63
+        assert col.type.length == 63  # type: ignore[attr-defined]
 
     def test_database_name_max_length(self) -> None:
         col = DatabaseBranch.__table__.columns["database_name"]
-        assert col.type.length == 255
+        assert col.type.length == 255  # type: ignore[attr-defined]
 
     def test_parent_database_max_length(self) -> None:
         col = DatabaseBranch.__table__.columns["parent_database"]
-        assert col.type.length == 255
+        assert col.type.length == 255  # type: ignore[attr-defined]
 
     def test_name_is_not_nullable(self) -> None:
         col = DatabaseBranch.__table__.columns["name"]
