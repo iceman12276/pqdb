@@ -150,3 +150,88 @@ export function getPhysicalColumns(
   }
   return [{ name: column.name, type: column.type }];
 }
+
+// --- Foreign key types ---
+
+export interface ForeignKeyInfo {
+  constraint_name: string;
+  source_table: string;
+  source_column: string;
+  target_table: string;
+  target_column: string;
+}
+
+/**
+ * Fetch foreign key relationships for the current project database.
+ * Uses the SQL endpoint to query information_schema.
+ */
+export async function fetchForeignKeys(
+  apiKey: string,
+  schema = "public",
+): Promise<ForeignKeyInfo[]> {
+  const sql = `
+    SELECT
+      tc.constraint_name,
+      kcu.table_name AS source_table,
+      kcu.column_name AS source_column,
+      ccu.table_name AS target_table,
+      ccu.column_name AS target_column
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu
+      ON tc.constraint_name = kcu.constraint_name
+      AND tc.table_schema = kcu.table_schema
+    JOIN information_schema.constraint_column_usage ccu
+      ON tc.constraint_name = ccu.constraint_name
+      AND tc.table_schema = ccu.table_schema
+    WHERE tc.constraint_type = 'FOREIGN KEY'
+      AND tc.table_schema = '${schema}'
+    ORDER BY tc.constraint_name
+  `;
+
+  const result = await api.fetch("/v1/db/sql", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: apiKey,
+    },
+    body: JSON.stringify({ query: sql }),
+  });
+
+  if (!result.ok) {
+    // SQL endpoint might not exist yet; degrade gracefully
+    return [];
+  }
+
+  const data = result.data as { rows?: ForeignKeyInfo[] };
+  return data.rows ?? [];
+}
+
+/**
+ * Fetch available schemas in the project database.
+ * Filters out internal Postgres schemas (pg_*, information_schema).
+ */
+export async function fetchSchemas(apiKey: string): Promise<string[]> {
+  const sql = `
+    SELECT schema_name
+    FROM information_schema.schemata
+    WHERE schema_name NOT LIKE 'pg_%'
+      AND schema_name != 'information_schema'
+    ORDER BY schema_name
+  `;
+
+  const result = await api.fetch("/v1/db/sql", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: apiKey,
+    },
+    body: JSON.stringify({ query: sql }),
+  });
+
+  if (!result.ok) {
+    return ["public"];
+  }
+
+  const data = result.data as { rows?: { schema_name: string }[] };
+  return data.rows?.map((r) => r.schema_name) ?? ["public"];
+}
