@@ -1,6 +1,9 @@
 """Unit tests for the DatabaseBranch model and branch name validation."""
 
 import uuid
+from typing import cast
+
+from sqlalchemy import String, Table
 
 from pqdb_api.models.branch import DatabaseBranch, validate_branch_name
 
@@ -133,10 +136,10 @@ class TestDatabaseBranchModel:
 
     def test_unique_constraint_on_project_id_and_name(self) -> None:
         """Verify unique constraint exists on (project_id, name)."""
-        table = DatabaseBranch.__table__
+        table = cast(Table, DatabaseBranch.__table__)
         unique_constraints = [
             c
-            for c in table.constraints  # type: ignore[attr-defined]
+            for c in table.constraints
             if hasattr(c, "columns")
             and {col.name for col in c.columns} == {"project_id", "name"}
         ]
@@ -144,25 +147,28 @@ class TestDatabaseBranchModel:
 
     def test_index_on_project_id(self) -> None:
         """Verify index exists on project_id for fast listing."""
-        table = DatabaseBranch.__table__
+        table = cast(Table, DatabaseBranch.__table__)
         project_id_indexes = [
             idx
-            for idx in table.indexes  # type: ignore[attr-defined]
+            for idx in table.indexes
             if any(col.name == "project_id" for col in idx.columns)
         ]
         assert len(project_id_indexes) >= 1
 
     def test_name_max_length(self) -> None:
         col = DatabaseBranch.__table__.columns["name"]
-        assert col.type.length == 63  # type: ignore[attr-defined]
+        assert isinstance(col.type, String)
+        assert col.type.length == 63
 
     def test_database_name_max_length(self) -> None:
         col = DatabaseBranch.__table__.columns["database_name"]
-        assert col.type.length == 255  # type: ignore[attr-defined]
+        assert isinstance(col.type, String)
+        assert col.type.length == 255
 
     def test_parent_database_max_length(self) -> None:
         col = DatabaseBranch.__table__.columns["parent_database"]
-        assert col.type.length == 255  # type: ignore[attr-defined]
+        assert isinstance(col.type, String)
+        assert col.type.length == 255
 
     def test_name_is_not_nullable(self) -> None:
         col = DatabaseBranch.__table__.columns["name"]
