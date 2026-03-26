@@ -34,6 +34,24 @@ _API_KEY_PREFIX = "pqdb_"
 _VALID_ROLES = {"anon", "service", "scoped"}
 
 
+def check_project_not_paused(status: str) -> None:
+    """Reject requests to paused projects with a 403.
+
+    Called by get_project_context() after resolving the project.
+    Raises HTTPException with PROJECT_PAUSED error if status is "paused".
+    """
+    if status == "paused":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": {
+                    "code": "PROJECT_PAUSED",
+                    "message": "Project is paused. Restore it to resume access.",
+                }
+            },
+        )
+
+
 def _parse_api_key(key: str) -> tuple[str, str]:
     """Parse a raw API key and return (prefix, role).
 
@@ -251,6 +269,8 @@ async def get_project_context(
     project = proj_result.scalar_one_or_none()
     if project is None or project.database_name is None:
         raise HTTPException(status_code=403, detail="Project not provisioned")
+
+    check_project_not_paused(project.status)
 
     ctx = ProjectContext(
         project_id=project_id,
