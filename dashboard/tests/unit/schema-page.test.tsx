@@ -3,14 +3,18 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createQueryWrapper } from "../query-wrapper";
 
-const { mockFetchSchema, mockAddColumn } = vi.hoisted(() => ({
+const { mockFetchSchema, mockAddColumn, mockFetchForeignKeys, mockFetchSchemas } = vi.hoisted(() => ({
   mockFetchSchema: vi.fn(),
   mockAddColumn: vi.fn(),
+  mockFetchForeignKeys: vi.fn(),
+  mockFetchSchemas: vi.fn(),
 }));
 
 vi.mock("~/lib/schema", () => ({
   fetchSchema: mockFetchSchema,
   addColumn: mockAddColumn,
+  fetchForeignKeys: mockFetchForeignKeys,
+  fetchSchemas: mockFetchSchemas,
   getPhysicalColumns: (col: { name: string; type: string; sensitivity: string }) => {
     if (col.sensitivity === "searchable") {
       return [
@@ -102,6 +106,9 @@ const mockTables: IntrospectionTable[] = [
 describe("SchemaPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default mocks for FK and schemas (degrade gracefully)
+    mockFetchForeignKeys.mockResolvedValue([]);
+    mockFetchSchemas.mockResolvedValue(["public"]);
   });
 
   it("shows loading skeleton while fetching", () => {
@@ -253,6 +260,8 @@ describe("SchemaPage", () => {
 describe("SchemaPage — Add Column", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetchForeignKeys.mockResolvedValue([]);
+    mockFetchSchemas.mockResolvedValue(["public"]);
   });
 
   it("shows Add Column button for each table", async () => {
@@ -282,5 +291,128 @@ describe("SchemaPage — Add Column", () => {
     await user.click(addButtons[0]);
 
     expect(await screen.findByText(/add column to/i)).toBeInTheDocument();
+  });
+});
+
+describe("SchemaPage — ERD improvements", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetchForeignKeys.mockResolvedValue([]);
+    mockFetchSchemas.mockResolvedValue(["public"]);
+  });
+
+  it("shows Auto Layout and Copy as SQL buttons in ERD view", async () => {
+    const user = userEvent.setup();
+    mockFetchSchema.mockResolvedValueOnce(mockTables);
+    const { wrapper } = createQueryWrapper();
+    render(<SchemaPage projectId="p1" apiKey="pqdb_anon_abc" />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("users")).toBeInTheDocument();
+    });
+
+    const erdTab = screen.getByRole("tab", { name: /erd/i });
+    await user.click(erdTab);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("erd-view")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("auto-layout-btn")).toBeInTheDocument();
+    expect(screen.getByTestId("copy-sql-btn")).toBeInTheDocument();
+  });
+
+  it("renders schema selector dropdown with public as default", async () => {
+    mockFetchSchema.mockResolvedValueOnce(mockTables);
+    mockFetchSchemas.mockResolvedValue(["public", "custom_schema"]);
+    const { wrapper } = createQueryWrapper();
+    render(<SchemaPage projectId="p1" apiKey="pqdb_anon_abc" />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("users")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("schema-selector")).toBeInTheDocument();
+  });
+
+  it("fetches foreign keys when component mounts", async () => {
+    mockFetchSchema.mockResolvedValueOnce(mockTables);
+    const { wrapper } = createQueryWrapper();
+    render(<SchemaPage projectId="p1" apiKey="pqdb_anon_abc" />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("users")).toBeInTheDocument();
+    });
+
+    expect(mockFetchForeignKeys).toHaveBeenCalledWith("pqdb_anon_abc", "public");
+  });
+
+  it("fetches available schemas when component mounts", async () => {
+    mockFetchSchema.mockResolvedValueOnce(mockTables);
+    const { wrapper } = createQueryWrapper();
+    render(<SchemaPage projectId="p1" apiKey="pqdb_anon_abc" />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("users")).toBeInTheDocument();
+    });
+
+    expect(mockFetchSchemas).toHaveBeenCalledWith("pqdb_anon_abc");
+  });
+
+  it("preserves logical/physical view toggle", async () => {
+    const user = userEvent.setup();
+    mockFetchSchema.mockResolvedValueOnce(mockTables);
+    const { wrapper } = createQueryWrapper();
+    render(<SchemaPage projectId="p1" apiKey="pqdb_anon_abc" />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("email")).toBeInTheDocument();
+    });
+
+    // Logical and Physical buttons should still be present
+    expect(screen.getByRole("button", { name: /logical/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /physical/i })).toBeInTheDocument();
+
+    // Switch to physical
+    await user.click(screen.getByRole("button", { name: /physical/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("email_encrypted")).toBeInTheDocument();
+    });
+  });
+
+  it("Copy as SQL button copies DDL to clipboard", async () => {
+    const user = userEvent.setup();
+    mockFetchSchema.mockResolvedValueOnce(mockTables);
+
+    // Mock clipboard
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      writable: true,
+      configurable: true,
+    });
+
+    const { wrapper } = createQueryWrapper();
+    render(<SchemaPage projectId="p1" apiKey="pqdb_anon_abc" />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText("users")).toBeInTheDocument();
+    });
+
+    const erdTab = screen.getByRole("tab", { name: /erd/i });
+    await user.click(erdTab);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("copy-sql-btn")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("copy-sql-btn"));
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const sql = writeText.mock.calls[0][0] as string;
+    expect(sql).toContain('CREATE TABLE "users"');
+    expect(sql).toContain('CREATE TABLE "posts"');
+    expect(sql).toContain('"id" uuid PRIMARY KEY');
   });
 });
