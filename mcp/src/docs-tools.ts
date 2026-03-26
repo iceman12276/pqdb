@@ -277,47 +277,7 @@ export function generateTypeScript(tables: IntrospectTable[]): string {
 }
 
 /** Make an authenticated GET request using apikey header. */
-/** Module-level auth config — set by registerDocsTools. */
-let _devToken: string | undefined;
-let _projectId: string | undefined;
-
-function buildAuthHeaders(apiKey: string): Record<string, string> {
-  if (apiKey) {
-    return { apikey: apiKey };
-  }
-  if (_devToken && _projectId) {
-    return {
-      Authorization: `Bearer ${_devToken}`,
-      "x-project-id": _projectId,
-    };
-  }
-  return {};
-}
-
-async function apikeyGet<T>(
-  projectUrl: string,
-  apiKey: string,
-  path: string,
-): Promise<T> {
-  const response = await fetch(`${projectUrl}${path}`, {
-    method: "GET",
-    headers: buildAuthHeaders(apiKey),
-  });
-
-  if (!response.ok) {
-    let detail: string;
-    try {
-      const body = (await response.json()) as { detail?: string };
-      detail = body.detail ?? response.statusText;
-    } catch {
-      detail = response.statusText;
-    }
-    throw new Error(detail);
-  }
-
-  return (await response.json()) as T;
-}
-
+import { authFetch as apikeyGet } from "./auth-state.js";
 /**
  * Register documentation and type generation tools on the MCP server.
  */
@@ -328,8 +288,6 @@ export function registerDocsTools(
   devToken?: string,
   projectId?: string,
 ): void {
-  _devToken = devToken;
-  _projectId = projectId;
   // ── pqdb_search_docs ────────────────────────────────────────────────
 
   mcpServer.tool(

@@ -12,6 +12,7 @@ import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middlew
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { PqdbOAuthProvider } from "./oauth-provider.js";
 import { createPqdbMcpServer } from "./server.js";
+import { setAuthState } from "./auth-state.js";
 import type { ServerConfig } from "./config.js";
 
 /**
@@ -243,6 +244,14 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
             console.error("[pqdb-mcp] Failed to fetch project list");
           }
         }
+
+        // Set shared auth state so all tool modules can auto-refresh
+        setAuthState({
+          devToken: devJwt,
+          projectId,
+          refreshToken: provider.getRefreshToken(),
+          projectUrl: options.projectUrl,
+        });
 
         const config: ServerConfig = {
           projectUrl: options.projectUrl,

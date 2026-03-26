@@ -49,69 +49,7 @@ interface IntrospectTable {
   columns: IntrospectColumn[];
 }
 
-/** Module-level auth config — set by registerCrudTools. */
-let _devToken: string | undefined;
-let _projectId: string | undefined;
-
-function buildAuthHeaders(apiKey: string): Record<string, string> {
-  if (apiKey) {
-    return { apikey: apiKey };
-  }
-  if (_devToken && _projectId) {
-    return {
-      Authorization: `Bearer ${_devToken}`,
-      "x-project-id": _projectId,
-    };
-  }
-  return {};
-}
-
-/** Make an authenticated POST request to the pqdb API. */
-async function pqdbPost<T>(
-  projectUrl: string,
-  apiKey: string,
-  path: string,
-  body: unknown,
-): Promise<T> {
-  const response = await fetch(`${projectUrl}${path}`, {
-    method: "POST",
-    headers: {
-      ...buildAuthHeaders(apiKey),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    let detail: string;
-    try {
-      const errorBody = (await response.json()) as { detail?: string };
-      detail = errorBody.detail ?? response.statusText;
-    } catch {
-      detail = response.statusText;
-    }
-    throw new Error(detail);
-  }
-
-  return (await response.json()) as T;
-}
-
-/** Make an authenticated GET request to the pqdb API. */
-async function pqdbGet<T>(
-  projectUrl: string,
-  apiKey: string,
-  path: string,
-): Promise<T> {
-  const response = await fetch(`${projectUrl}${path}`, {
-    headers: buildAuthHeaders(apiKey),
-  });
-
-  if (!response.ok) {
-    throw new Error(`GET ${path} failed: ${response.statusText}`);
-  }
-
-  return (await response.json()) as T;
-}
+import { authFetch as pqdbGet, authPost as pqdbPost } from "./auth-state.js";
 
 /**
  * Replace values in _encrypted columns with "[encrypted]" when
@@ -172,11 +110,9 @@ export function registerCrudTools(
   apiKey: string,
   encryptionEnabled: boolean,
   encryptionKey?: string,
-  devToken?: string,
-  projectId?: string,
+  _devToken?: string,
+  _projectId?: string,
 ): void {
-  _devToken = devToken;
-  _projectId = projectId;
   // Lazy crypto state — derived on first encrypted operation
   let cryptoState: CryptoState | null = null;
 

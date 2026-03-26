@@ -233,78 +233,7 @@ export function translateNaturalLanguage(
   };
 }
 
-/** Module-level auth config — set by registerNlQueryTool. */
-let _devToken: string | undefined;
-let _projectId: string | undefined;
-
-function buildAuthHeaders(apiKey: string): Record<string, string> {
-  if (apiKey) {
-    return { apikey: apiKey };
-  }
-  if (_devToken && _projectId) {
-    return {
-      Authorization: `Bearer ${_devToken}`,
-      "x-project-id": _projectId,
-    };
-  }
-  return {};
-}
-
-/** Make an authenticated GET request to the pqdb API. */
-async function pqdbFetch<T>(
-  projectUrl: string,
-  apiKey: string,
-  path: string,
-): Promise<T> {
-  const response = await fetch(`${projectUrl}${path}`, {
-    method: "GET",
-    headers: buildAuthHeaders(apiKey),
-  });
-
-  if (!response.ok) {
-    let detail: string;
-    try {
-      const body = (await response.json()) as { detail?: string };
-      detail = body.detail ?? response.statusText;
-    } catch {
-      detail = response.statusText;
-    }
-    throw new Error(detail);
-  }
-
-  return (await response.json()) as T;
-}
-
-/** Make an authenticated POST request to the pqdb API. */
-async function pqdbPost<T>(
-  projectUrl: string,
-  apiKey: string,
-  path: string,
-  body: unknown,
-): Promise<T> {
-  const response = await fetch(`${projectUrl}${path}`, {
-    method: "POST",
-    headers: {
-      ...buildAuthHeaders(apiKey),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    let detail: string;
-    try {
-      const errorBody = (await response.json()) as { detail?: string };
-      detail = errorBody.detail ?? response.statusText;
-    } catch {
-      detail = response.statusText;
-    }
-    throw new Error(detail);
-  }
-
-  return (await response.json()) as T;
-}
-
+import { authFetch as pqdbFetch, authPost as pqdbPost } from "./auth-state.js";
 /**
  * Register the natural language query tool on the MCP server.
  */
@@ -316,8 +245,6 @@ export function registerNlQueryTool(
   devToken?: string,
   projectId?: string,
 ): void {
-  _devToken = devToken;
-  _projectId = projectId;
   mcpServer.tool(
     "pqdb_natural_language_query",
     "Execute a natural language query against the database. Translates to a pqdb query using schema metadata, respecting column sensitivity constraints. Examples: 'show all users', 'get posts where title = Hello', 'first 10 users'",

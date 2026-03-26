@@ -38,82 +38,7 @@ interface IntrospectAllResponse {
   tables: IntrospectTable[];
 }
 
-/**
- * Module-level auth config — set once by registerSchemaTools,
- * used by all fetch helpers. Avoids threading devToken/projectId
- * through every function call.
- */
-let _devToken: string | undefined;
-let _projectId: string | undefined;
-
-/** Build auth headers — uses apikey if available, otherwise developer JWT + project ID. */
-function buildAuthHeaders(apiKey: string): Record<string, string> {
-  if (apiKey) {
-    return { apikey: apiKey };
-  }
-  if (_devToken && _projectId) {
-    return {
-      Authorization: `Bearer ${_devToken}`,
-      "x-project-id": _projectId,
-    };
-  }
-  return {};
-}
-
-/** Make an authenticated GET request to the pqdb API. */
-async function pqdbFetch<T>(
-  projectUrl: string,
-  apiKey: string,
-  path: string,
-): Promise<T> {
-  const response = await fetch(`${projectUrl}${path}`, {
-    method: "GET",
-    headers: buildAuthHeaders(apiKey),
-  });
-
-  if (!response.ok) {
-    let detail: string;
-    try {
-      const body = (await response.json()) as { detail?: string };
-      detail = body.detail ?? response.statusText;
-    } catch {
-      detail = response.statusText;
-    }
-    throw new Error(detail);
-  }
-
-  return (await response.json()) as T;
-}
-
-/** Make an authenticated POST request to the pqdb API. */
-async function pqdbPost<T>(
-  projectUrl: string,
-  apiKey: string,
-  path: string,
-  body: unknown,
-): Promise<T> {
-  const response = await fetch(`${projectUrl}${path}`, {
-    method: "POST",
-    headers: {
-      ...buildAuthHeaders(apiKey),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    let detail: string;
-    try {
-      const errorBody = (await response.json()) as { detail?: string };
-      detail = errorBody.detail ?? response.statusText;
-    } catch {
-      detail = response.statusText;
-    }
-    throw new Error(detail);
-  }
-
-  return (await response.json()) as T;
-}
+import { authFetch as pqdbFetch, authPost as pqdbPost } from "./auth-state.js";
 
 /**
  * Register schema tools and resources on the MCP server.
@@ -122,12 +47,9 @@ export function registerSchemaTools(
   mcpServer: McpServer,
   projectUrl: string,
   apiKey: string,
-  devToken?: string,
-  projectId?: string,
+  _devToken?: string,
+  _projectId?: string,
 ): void {
-  // Set module-level auth config for fetch helpers
-  _devToken = devToken;
-  _projectId = projectId;
   // ── Tools ──────────────────────────────────────────────────────────
 
   mcpServer.tool(
