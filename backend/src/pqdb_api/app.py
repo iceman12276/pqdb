@@ -19,6 +19,7 @@ from pqdb_api.routes.developer_oauth import router as developer_oauth_router
 from pqdb_api.routes.google_oauth import router as google_oauth_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.indexes import router as indexes_router
+from pqdb_api.routes.introspection import router as introspection_router
 from pqdb_api.routes.logs import router as logs_router
 from pqdb_api.routes.mfa import router as mfa_router
 from pqdb_api.routes.oauth_github import router as oauth_github_router
@@ -92,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(oauth_github_router)
     app.include_router(oauth_providers_router)
     app.include_router(google_oauth_router)
+    app.include_router(introspection_router)
     app.include_router(db_router)
     app.include_router(logs_router)
     app.include_router(overview_router)
