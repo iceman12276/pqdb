@@ -54,7 +54,7 @@ class TestApiKeyMissing:
 
     def test_missing_apikey_error_message(self, client: TestClient) -> None:
         resp = client.get("/v1/db/health")
-        assert resp.json()["detail"] == "Missing apikey header"
+        assert resp.json()["detail"] == "Missing apikey or Authorization header"
 
 
 class TestApiKeyInvalid:
