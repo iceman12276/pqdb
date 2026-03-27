@@ -21,6 +21,11 @@ logger = structlog.get_logger()
 
 MAX_BRANCHES_PER_PROJECT = 5
 
+# Branch status constants for race-condition guards
+BRANCH_STATUS_ACTIVE = "active"
+BRANCH_STATUS_MERGING = "merging"
+BRANCH_STATUS_REBASING = "rebasing"
+
 
 class BranchingError(Exception):
     """Raised when branch operations fail."""
@@ -130,6 +135,32 @@ async def create_branch_database(
             "branch_database_creation_failed",
             branch_db=branch_db_name,
             template_db=template_db_name,
+            error=str(exc),
+        )
+        raise BranchingError(str(exc)) from exc
+    finally:
+        if conn is not None:
+            await conn.close()
+
+
+async def get_active_connection_count(
+    superuser_dsn: str,
+    database_name: str,
+) -> int:
+    """Return the number of active connections to a database."""
+    conn: Any = None
+    try:
+        conn = await asyncpg.connect(superuser_dsn)
+        row = await conn.fetchrow(
+            "SELECT count(*) AS cnt FROM pg_stat_activity "
+            "WHERE datname = $1 AND pid <> pg_backend_pid()",
+            database_name,
+        )
+        return int(row["cnt"]) if row else 0
+    except Exception as exc:
+        logger.error(
+            "get_connection_count_failed",
+            database_name=database_name,
             error=str(exc),
         )
         raise BranchingError(str(exc)) from exc
