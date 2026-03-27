@@ -137,6 +137,60 @@ class TestCheckScopedPermissions:
             check_scoped_permissions(perms, "t", op)
 
 
+class TestCheckProjectStatus:
+    """Test the check_project_not_paused helper rejects paused projects."""
+
+    def test_active_project_passes(self) -> None:
+        from pqdb_api.middleware.api_key import check_project_not_paused
+
+        # Should not raise for active status
+        check_project_not_paused("active")
+
+    def test_paused_project_raises_http_403(self) -> None:
+        from typing import Any
+
+        from fastapi import HTTPException
+
+        from pqdb_api.middleware.api_key import check_project_not_paused
+
+        with pytest.raises(HTTPException) as exc_info:
+            check_project_not_paused("paused")
+        assert exc_info.value.status_code == 403
+        detail: Any = exc_info.value.detail
+        assert detail["error"]["code"] == "PROJECT_PAUSED"
+        assert "paused" in detail["error"]["message"].lower()
+
+    def test_provisioning_project_passes(self) -> None:
+        from pqdb_api.middleware.api_key import check_project_not_paused
+
+        # Non-paused statuses should not raise
+        check_project_not_paused("provisioning")
+
+    def test_archived_project_passes(self) -> None:
+        from pqdb_api.middleware.api_key import check_project_not_paused
+
+        # Archived projects are handled elsewhere (soft delete);
+        # this check is specifically for paused enforcement
+        check_project_not_paused("archived")
+
+    def test_error_response_format_matches_spec(self) -> None:
+        from typing import Any
+
+        from fastapi import HTTPException
+
+        from pqdb_api.middleware.api_key import check_project_not_paused
+
+        with pytest.raises(HTTPException) as exc_info:
+            check_project_not_paused("paused")
+        detail: Any = exc_info.value.detail
+        assert detail == {
+            "error": {
+                "code": "PROJECT_PAUSED",
+                "message": "Project is paused. Restore it to resume access.",
+            }
+        }
+
+
 class TestBuildProjectDatabaseUrl:
     """Test building a project database URL from platform URL."""
 
