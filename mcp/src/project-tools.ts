@@ -8,6 +8,12 @@
  *   - pqdb_get_logs: get audit log entries for a project (uses apikey)
  *   - pqdb_pause_project: pause a project (uses dev JWT)
  *   - pqdb_restore_project: restore a paused project (uses dev JWT)
+ *   - pqdb_create_branch: create a database branch (uses dev JWT)
+ *   - pqdb_list_branches: list branches for a project (uses dev JWT)
+ *   - pqdb_delete_branch: delete a database branch (uses dev JWT)
+ *   - pqdb_merge_branch: promote/merge a branch into main (uses dev JWT)
+ *   - pqdb_rebase_branch: rebase a branch from main (uses dev JWT)
+ *   - pqdb_reset_branch: reset a branch to match main (uses dev JWT)
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -71,6 +77,29 @@ async function devPost<T>(
   }
 
   return (await response.json()) as T;
+}
+
+/** Make an authenticated DELETE request using developer JWT. */
+async function devDelete(
+  projectUrl: string,
+  devToken: string,
+  path: string,
+): Promise<void> {
+  const response = await fetch(`${projectUrl}${path}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${devToken}` },
+  });
+
+  if (!response.ok) {
+    let detail: string;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      detail = body.detail ?? response.statusText;
+    } catch {
+      detail = response.statusText;
+    }
+    throw new Error(detail);
+  }
 }
 
 /** Build a success MCP tool result. */
@@ -284,6 +313,189 @@ export function registerProjectTools(
         return errorResult({
           data: null,
           error: err instanceof Error ? err.message : "Failed to restore project",
+        });
+      }
+    },
+  );
+
+  // ── pqdb_create_branch ───────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_create_branch",
+    "Create a new database branch for a project. Branches provide isolated copies of the schema and data for development/testing. Requires PQDB_DEV_TOKEN.",
+    {
+      project_id: z.string().describe("ID of the project to create a branch in"),
+      name: z.string().describe("Name of the branch to create"),
+    },
+    async ({ project_id, name }) => {
+      const authError = requireDevToken(devToken);
+      if (authError) return authError;
+
+      try {
+        const result = await devPost<unknown>(
+          projectUrl,
+          devToken!,
+          `/v1/projects/${encodeURIComponent(project_id)}/branches`,
+          { name },
+        );
+
+        return successResult({ data: result, error: null });
+      } catch (err) {
+        return errorResult({
+          data: null,
+          error: err instanceof Error ? err.message : "Failed to create branch",
+        });
+      }
+    },
+  );
+
+  // ── pqdb_list_branches ───────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_list_branches",
+    "List all branches for a project. Requires PQDB_DEV_TOKEN.",
+    {
+      project_id: z.string().describe("ID of the project to list branches for"),
+    },
+    async ({ project_id }) => {
+      const authError = requireDevToken(devToken);
+      if (authError) return authError;
+
+      try {
+        const branches = await devGet<unknown[]>(
+          projectUrl,
+          devToken!,
+          `/v1/projects/${encodeURIComponent(project_id)}/branches`,
+        );
+
+        return successResult({ data: branches, error: null });
+      } catch (err) {
+        return errorResult({
+          data: null,
+          error: err instanceof Error ? err.message : "Failed to list branches",
+        });
+      }
+    },
+  );
+
+  // ── pqdb_delete_branch ───────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_delete_branch",
+    "Delete a database branch. The main branch cannot be deleted. Requires PQDB_DEV_TOKEN.",
+    {
+      project_id: z.string().describe("ID of the project"),
+      name: z.string().describe("Name of the branch to delete"),
+    },
+    async ({ project_id, name }) => {
+      const authError = requireDevToken(devToken);
+      if (authError) return authError;
+
+      try {
+        await devDelete(
+          projectUrl,
+          devToken!,
+          `/v1/projects/${encodeURIComponent(project_id)}/branches/${encodeURIComponent(name)}`,
+        );
+
+        return successResult({ data: { deleted: true }, error: null });
+      } catch (err) {
+        return errorResult({
+          data: null,
+          error: err instanceof Error ? err.message : "Failed to delete branch",
+        });
+      }
+    },
+  );
+
+  // ── pqdb_merge_branch ────────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_merge_branch",
+    "Promote (merge) a branch into main. Applies all branch changes to the main database. Requires PQDB_DEV_TOKEN.",
+    {
+      project_id: z.string().describe("ID of the project"),
+      name: z.string().describe("Name of the branch to merge into main"),
+    },
+    async ({ project_id, name }) => {
+      const authError = requireDevToken(devToken);
+      if (authError) return authError;
+
+      try {
+        const result = await devPost<unknown>(
+          projectUrl,
+          devToken!,
+          `/v1/projects/${encodeURIComponent(project_id)}/branches/${encodeURIComponent(name)}/promote`,
+          {},
+        );
+
+        return successResult({ data: result, error: null });
+      } catch (err) {
+        return errorResult({
+          data: null,
+          error: err instanceof Error ? err.message : "Failed to merge branch",
+        });
+      }
+    },
+  );
+
+  // ── pqdb_rebase_branch ───────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_rebase_branch",
+    "Rebase a branch from main. Pulls the latest main schema and data into the branch. Requires PQDB_DEV_TOKEN.",
+    {
+      project_id: z.string().describe("ID of the project"),
+      name: z.string().describe("Name of the branch to rebase"),
+    },
+    async ({ project_id, name }) => {
+      const authError = requireDevToken(devToken);
+      if (authError) return authError;
+
+      try {
+        const result = await devPost<unknown>(
+          projectUrl,
+          devToken!,
+          `/v1/projects/${encodeURIComponent(project_id)}/branches/${encodeURIComponent(name)}/rebase`,
+          {},
+        );
+
+        return successResult({ data: result, error: null });
+      } catch (err) {
+        return errorResult({
+          data: null,
+          error: err instanceof Error ? err.message : "Failed to rebase branch",
+        });
+      }
+    },
+  );
+
+  // ── pqdb_reset_branch ────────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_reset_branch",
+    "Reset a branch to match main. Discards all branch changes and resets to the current main state. Requires PQDB_DEV_TOKEN.",
+    {
+      project_id: z.string().describe("ID of the project"),
+      name: z.string().describe("Name of the branch to reset"),
+    },
+    async ({ project_id, name }) => {
+      const authError = requireDevToken(devToken);
+      if (authError) return authError;
+
+      try {
+        const result = await devPost<unknown>(
+          projectUrl,
+          devToken!,
+          `/v1/projects/${encodeURIComponent(project_id)}/branches/${encodeURIComponent(name)}/reset`,
+          {},
+        );
+
+        return successResult({ data: result, error: null });
+      } catch (err) {
+        return errorResult({
+          data: null,
+          error: err instanceof Error ? err.message : "Failed to reset branch",
         });
       }
     },

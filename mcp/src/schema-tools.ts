@@ -77,14 +77,20 @@ export function registerSchemaTools(
           }),
         )
         .describe("Column definitions"),
+      branch: z
+        .string()
+        .optional()
+        .describe("Branch name to create the table in (default: main)"),
     },
-    async ({ name, columns }) => {
+    async ({ name, columns, branch }) => {
       try {
+        const branchHeaders = branch ? { "x-branch": branch } : undefined;
         const result = await pqdbPost<Record<string, unknown>>(
           projectUrl,
           apiKey,
           "/v1/db/tables",
           { name, columns },
+          branchHeaders,
         );
 
         return {
@@ -109,13 +115,20 @@ export function registerSchemaTools(
   mcpServer.tool(
     "pqdb_list_tables",
     "List all tables with column count and sensitivity summary",
-    {},
-    async () => {
+    {
+      branch: z
+        .string()
+        .optional()
+        .describe("Branch name to list tables from (default: main)"),
+    },
+    async ({ branch }) => {
       try {
+        const branchHeaders = branch ? { "x-branch": branch } : undefined;
         const result = await pqdbFetch<IntrospectAllResponse>(
           projectUrl,
           apiKey,
           "/v1/db/introspect",
+          branchHeaders,
         );
 
         const tables = result.tables.map((t) => ({
@@ -144,13 +157,21 @@ export function registerSchemaTools(
   mcpServer.tool(
     "pqdb_describe_table",
     "Describe full schema for a table — columns, types, sensitivity levels, valid operations",
-    { table_name: z.string().describe("Name of the table to describe") },
-    async ({ table_name }) => {
+    {
+      table_name: z.string().describe("Name of the table to describe"),
+      branch: z
+        .string()
+        .optional()
+        .describe("Branch name to describe table from (default: main)"),
+    },
+    async ({ table_name, branch }) => {
       try {
+        const branchHeaders = branch ? { "x-branch": branch } : undefined;
         const result = await pqdbFetch<IntrospectTable>(
           projectUrl,
           apiKey,
           `/v1/db/introspect/${encodeURIComponent(table_name)}`,
+          branchHeaders,
         );
 
         return {
@@ -173,13 +194,20 @@ export function registerSchemaTools(
   mcpServer.tool(
     "pqdb_describe_schema",
     "ERD-style overview of all tables with columns, types, sensitivity, and foreign key relationships",
-    {},
-    async () => {
+    {
+      branch: z
+        .string()
+        .optional()
+        .describe("Branch name to describe schema from (default: main)"),
+    },
+    async ({ branch }) => {
       try {
+        const branchHeaders = branch ? { "x-branch": branch } : undefined;
         const result = await pqdbFetch<IntrospectAllResponse>(
           projectUrl,
           apiKey,
           "/v1/db/introspect",
+          branchHeaders,
         );
 
         const tables = result.tables.map((t) => ({
