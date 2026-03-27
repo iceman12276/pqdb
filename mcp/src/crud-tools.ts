@@ -197,8 +197,12 @@ export function registerCrudTools(
         })
         .optional()
         .describe("Vector similarity search parameters"),
+      branch: z
+        .string()
+        .optional()
+        .describe("Branch name to query against (default: main)"),
     },
-    async ({ table, columns, filters, limit, offset, order_by, order_dir, similar_to }) => {
+    async ({ table, columns, filters, limit, offset, order_by, order_dir, similar_to, branch }) => {
       try {
         const body: Record<string, unknown> = {
           columns: columns ?? ["*"],
@@ -215,11 +219,13 @@ export function registerCrudTools(
           body.similar_to = similar_to;
         }
 
+        const branchHeaders = branch ? { "x-branch": branch } : undefined;
         const result = await pqdbPost<{ data: Record<string, unknown>[] }>(
           projectUrl,
           apiKey,
           `/v1/db/${encodeURIComponent(table)}/select`,
           body,
+          branchHeaders,
         );
 
         if (!encryptionEnabled) {
@@ -258,8 +264,12 @@ export function registerCrudTools(
       rows: z
         .array(z.record(z.string(), z.unknown()))
         .describe("Array of row objects to insert"),
+      branch: z
+        .string()
+        .optional()
+        .describe("Branch name to insert into (default: main)"),
     },
-    async ({ table, rows }) => {
+    async ({ table, rows, branch }) => {
       try {
         let transformedRows = rows;
 
@@ -288,11 +298,13 @@ export function registerCrudTools(
           }
         }
 
+        const branchHeaders = branch ? { "x-branch": branch } : undefined;
         const result = await pqdbPost<{ data: unknown[] }>(
           projectUrl,
           apiKey,
           `/v1/db/${encodeURIComponent(table)}/insert`,
           { rows: transformedRows },
+          branchHeaders,
         );
 
         return successResult({ data: result.data, error: null });
@@ -319,8 +331,12 @@ export function registerCrudTools(
         .array(FilterZod)
         .optional()
         .describe("Filter conditions to match rows"),
+      branch: z
+        .string()
+        .optional()
+        .describe("Branch name to update in (default: main)"),
     },
-    async ({ table, values, filters }) => {
+    async ({ table, values, filters, branch }) => {
       try {
         let transformedValues = values;
 
@@ -353,11 +369,13 @@ export function registerCrudTools(
           }
         }
 
+        const branchHeaders = branch ? { "x-branch": branch } : undefined;
         const result = await pqdbPost<{ data: unknown[] }>(
           projectUrl,
           apiKey,
           `/v1/db/${encodeURIComponent(table)}/update`,
           { values: transformedValues, filters: filters ?? [] },
+          branchHeaders,
         );
 
         return successResult({ data: result.data, error: null });
@@ -380,14 +398,20 @@ export function registerCrudTools(
       filters: z
         .array(FilterZod)
         .describe("Filter conditions to match rows for deletion"),
+      branch: z
+        .string()
+        .optional()
+        .describe("Branch name to delete from (default: main)"),
     },
-    async ({ table, filters }) => {
+    async ({ table, filters, branch }) => {
       try {
+        const branchHeaders = branch ? { "x-branch": branch } : undefined;
         const result = await pqdbPost<{ data: unknown[] }>(
           projectUrl,
           apiKey,
           `/v1/db/${encodeURIComponent(table)}/delete`,
           { filters },
+          branchHeaders,
         );
 
         return successResult({ data: result.data, error: null });

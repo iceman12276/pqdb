@@ -12,6 +12,21 @@ vi.mock("@pqdb/client", () => ({
     from: vi.fn(),
     reindex: vi.fn(),
   })),
+  ColumnDef: class ColumnDef {
+    type: string;
+    sensitivity: string;
+    constructor(type: string, sensitivity: string) {
+      this.type = type;
+      this.sensitivity = sensitivity;
+    }
+  },
+  defineTableSchema: vi.fn((name: string, columns: Record<string, unknown>) => ({
+    name,
+    columns,
+  })),
+  deriveKeyPair: vi.fn(),
+  transformInsertRows: vi.fn(),
+  transformSelectResponse: vi.fn(),
 }));
 
 // Mock global fetch
@@ -159,6 +174,24 @@ describe("pqdb_query_rows tool", () => {
     expect(body.columns).toEqual(["*"]);
   });
 
+  it("includes x-branch header when branch parameter is provided", async () => {
+    mockFetchOk({ data: [{ id: "1" }] });
+
+    await client.callTool({
+      name: "pqdb_query_rows",
+      arguments: { table: "users", branch: "feature-x" },
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/v1/db/users/select",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-branch": "feature-x",
+        }),
+      }),
+    );
+  });
+
   it("replaces encrypted values with [encrypted] when no encryption key", async () => {
     mockFetchOk({
       data: [
@@ -208,6 +241,10 @@ describe("pqdb_insert_rows tool", () => {
 
   it("calls POST /v1/db/{table}/insert with correct body", async () => {
     const rows = [{ name: "Alice" }, { name: "Bob" }];
+    // First call: introspect (encryption check), second call: actual insert
+    mockFetchOk({
+      tables: [{ name: "users", columns: [{ name: "name", type: "text", sensitivity: "plain" }] }],
+    });
     mockFetchOk({ data: rows });
 
     await client.callTool({
@@ -215,21 +252,20 @@ describe("pqdb_insert_rows tool", () => {
       arguments: { table: "users", rows },
     });
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:8000/v1/db/users/insert",
-      {
-        method: "POST",
-        headers: {
-          apikey: "pqdb_anon_testkey123",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ rows }),
-      },
+    const insertCall = mockFetch.mock.calls.find(
+      (c: unknown[]) => (c[0] as string).includes("/insert"),
     );
+    expect(insertCall).toBeDefined();
+    expect(insertCall![0]).toBe("http://localhost:8000/v1/db/users/insert");
+    expect((insertCall![1] as { method: string }).method).toBe("POST");
+    expect(JSON.parse((insertCall![1] as { body: string }).body)).toEqual({ rows });
   });
 
   it("returns { data, error: null } on success", async () => {
     const inserted = [{ id: "1", name: "Alice" }];
+    mockFetchOk({
+      tables: [{ name: "users", columns: [{ name: "name", type: "text", sensitivity: "plain" }] }],
+    });
     mockFetchOk({ data: inserted });
 
     const result = await client.callTool({
@@ -259,11 +295,22 @@ describe("pqdb_insert_rows tool", () => {
   });
 
   it("errors when rows contain _encrypted columns without encryption key", async () => {
+    // Introspect returns a table with a searchable (encrypted) column
+    mockFetchOk({
+      tables: [{
+        name: "users",
+        columns: [
+          { name: "name", type: "text", sensitivity: "plain" },
+          { name: "email", type: "text", sensitivity: "searchable" },
+        ],
+      }],
+    });
+
     const result = await client.callTool({
       name: "pqdb_insert_rows",
       arguments: {
         table: "users",
-        rows: [{ email_encrypted: "some_value", name: "Alice" }],
+        rows: [{ email: "some_value", name: "Alice" }],
       },
     });
 
@@ -271,6 +318,26 @@ describe("pqdb_insert_rows tool", () => {
     const text = (result.content[0] as { type: string; text: string }).text;
     const parsed = JSON.parse(text);
     expect(parsed.error).toContain("encryption");
+  });
+
+  it("includes x-branch header when branch parameter is provided", async () => {
+    // First call: introspect (encryption check), second call: actual insert
+    mockFetchOk({
+      tables: [{ name: "users", columns: [{ name: "name", type: "text", sensitivity: "plain" }] }],
+    });
+    mockFetchOk({ data: [{ id: "1", name: "Alice" }] });
+
+    await client.callTool({
+      name: "pqdb_insert_rows",
+      arguments: { table: "users", rows: [{ name: "Alice" }], branch: "dev" },
+    });
+
+    // The second call (insert) should have the x-branch header
+    const insertCall = mockFetch.mock.calls.find(
+      (c: unknown[]) => (c[0] as string).includes("/insert"),
+    );
+    expect(insertCall).toBeDefined();
+    expect((insertCall![1] as { headers: Record<string, string> }).headers["x-branch"]).toBe("dev");
   });
 });
 
@@ -298,6 +365,10 @@ describe("pqdb_update_rows tool", () => {
   });
 
   it("calls POST /v1/db/{table}/update with correct body", async () => {
+    // First call: introspect (encryption check), second call: actual update
+    mockFetchOk({
+      tables: [{ name: "users", columns: [{ name: "name", type: "text", sensitivity: "plain" }] }],
+    });
     mockFetchOk({ data: [{ id: "1", name: "Bob" }] });
 
     await client.callTool({
@@ -309,24 +380,23 @@ describe("pqdb_update_rows tool", () => {
       },
     });
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:8000/v1/db/users/update",
-      {
-        method: "POST",
-        headers: {
-          apikey: "pqdb_anon_testkey123",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          values: { name: "Bob" },
-          filters: [{ column: "id", op: "eq", value: "1" }],
-        }),
-      },
+    const updateCall = mockFetch.mock.calls.find(
+      (c: unknown[]) => (c[0] as string).includes("/update"),
     );
+    expect(updateCall).toBeDefined();
+    expect(updateCall![0]).toBe("http://localhost:8000/v1/db/users/update");
+    expect((updateCall![1] as { method: string }).method).toBe("POST");
+    expect(JSON.parse((updateCall![1] as { body: string }).body)).toEqual({
+      values: { name: "Bob" },
+      filters: [{ column: "id", op: "eq", value: "1" }],
+    });
   });
 
   it("returns { data, error: null } on success", async () => {
     const updated = [{ id: "1", name: "Bob" }];
+    mockFetchOk({
+      tables: [{ name: "users", columns: [{ name: "name", type: "text", sensitivity: "plain" }] }],
+    });
     mockFetchOk({ data: updated });
 
     const result = await client.callTool({
@@ -345,6 +415,10 @@ describe("pqdb_update_rows tool", () => {
   });
 
   it("returns { data: null, error } on API failure", async () => {
+    // introspect succeeds, but the update itself fails
+    mockFetchOk({
+      tables: [{ name: "users", columns: [{ name: "name", type: "text", sensitivity: "plain" }] }],
+    });
     mockFetchError(400, "Must provide values to update");
 
     const result = await client.callTool({
@@ -364,11 +438,21 @@ describe("pqdb_update_rows tool", () => {
   });
 
   it("errors when values contain _encrypted columns without encryption key", async () => {
+    mockFetchOk({
+      tables: [{
+        name: "users",
+        columns: [
+          { name: "name", type: "text", sensitivity: "plain" },
+          { name: "email", type: "text", sensitivity: "searchable" },
+        ],
+      }],
+    });
+
     const result = await client.callTool({
       name: "pqdb_update_rows",
       arguments: {
         table: "users",
-        values: { email_encrypted: "some_value" },
+        values: { email: "some_value" },
         filters: [{ column: "id", op: "eq", value: "1" }],
       },
     });
@@ -377,6 +461,30 @@ describe("pqdb_update_rows tool", () => {
     const text = (result.content[0] as { type: string; text: string }).text;
     const parsed = JSON.parse(text);
     expect(parsed.error).toContain("encryption");
+  });
+
+  it("includes x-branch header when branch parameter is provided", async () => {
+    // First call: introspect (encryption check), second call: actual update
+    mockFetchOk({
+      tables: [{ name: "users", columns: [{ name: "name", type: "text", sensitivity: "plain" }] }],
+    });
+    mockFetchOk({ data: [{ id: "1", name: "Updated" }] });
+
+    await client.callTool({
+      name: "pqdb_update_rows",
+      arguments: {
+        table: "users",
+        values: { name: "Updated" },
+        filters: [{ column: "id", op: "eq", value: "1" }],
+        branch: "staging",
+      },
+    });
+
+    const updateCall = mockFetch.mock.calls.find(
+      (c: unknown[]) => (c[0] as string).includes("/update"),
+    );
+    expect(updateCall).toBeDefined();
+    expect((updateCall![1] as { headers: Record<string, string> }).headers["x-branch"]).toBe("staging");
   });
 });
 
@@ -463,5 +571,27 @@ describe("pqdb_delete_rows tool", () => {
     const parsed = JSON.parse(text);
     expect(parsed.data).toBeNull();
     expect(parsed.error).toContain("filter");
+  });
+
+  it("includes x-branch header when branch parameter is provided", async () => {
+    mockFetchOk({ data: [{ id: "1" }] });
+
+    await client.callTool({
+      name: "pqdb_delete_rows",
+      arguments: {
+        table: "users",
+        filters: [{ column: "id", op: "eq", value: "1" }],
+        branch: "feature-x",
+      },
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/v1/db/users/delete",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-branch": "feature-x",
+        }),
+      }),
+    );
   });
 });

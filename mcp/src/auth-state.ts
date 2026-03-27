@@ -83,11 +83,12 @@ export async function authFetch<T>(
   projectUrl: string,
   apiKey: string,
   path: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
   const doFetch = async (): Promise<Response> =>
     fetch(`${projectUrl}${path}`, {
       method: "GET",
-      headers: buildAuthHeaders(apiKey),
+      headers: { ...buildAuthHeaders(apiKey), ...extraHeaders },
     });
 
   let response = await doFetch();
@@ -120,6 +121,7 @@ export async function authPost<T>(
   apiKey: string,
   path: string,
   body: unknown,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
   const doFetch = async (): Promise<Response> =>
     fetch(`${projectUrl}${path}`, {
@@ -127,6 +129,7 @@ export async function authPost<T>(
       headers: {
         ...buildAuthHeaders(apiKey),
         "Content-Type": "application/json",
+        ...extraHeaders,
       },
       body: JSON.stringify(body),
     });
