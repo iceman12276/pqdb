@@ -36,6 +36,7 @@ _FUNCTIONS_SQL = text("""
     JOIN pg_catalog.pg_language l ON l.oid = p.prolang
     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
       AND p.prorettype != 'pg_catalog.trigger'::pg_catalog.regtype
+      AND l.lanname NOT IN ('c', 'internal')
     ORDER BY n.nspname, p.proname
 """)
 
