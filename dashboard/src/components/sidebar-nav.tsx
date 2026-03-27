@@ -11,6 +11,8 @@ import {
   Bot,
   KeyRound,
   Settings,
+  List,
+  Puzzle,
 } from "lucide-react";
 import { Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -32,6 +34,8 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Schema", icon: GitBranch, path: "/schema" },
   { label: "Functions", icon: FunctionSquare, path: "/functions" },
   { label: "Triggers", icon: Zap, path: "/triggers" },
+  { label: "Enums", icon: List, path: "/enums" },
+  { label: "Extensions", icon: Puzzle, path: "/extensions" },
   { label: "Authentication", icon: Shield, path: "/auth" },
   { label: "Realtime", icon: Radio, path: "/realtime" },
   { label: "Logs", icon: ScrollText, path: "/logs" },
