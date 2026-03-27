@@ -37,3 +37,48 @@ class TestBranchDatabaseNameFormat:
         name = make_branch_database_name(uuid.uuid4())
         # "pqdb_branch_" (12) + 12 hex chars = 24
         assert len(name) == 24
+
+
+class TestPromoteRequestModel:
+    """Verify the PromoteRequest model defaults and validation."""
+
+    def test_default_force_is_false(self) -> None:
+        from pqdb_api.routes.branches import PromoteRequest
+
+        req = PromoteRequest()
+        assert req.force is False
+
+    def test_force_true_accepted(self) -> None:
+        from pqdb_api.routes.branches import PromoteRequest
+
+        req = PromoteRequest(force=True)
+        assert req.force is True
+
+
+class TestPromoteResponseModel:
+    """Verify the PromoteResponse model shape."""
+
+    def test_fields_present(self) -> None:
+        from pqdb_api.routes.branches import PromoteResponse
+
+        resp = PromoteResponse(
+            status="promoted",
+            old_database="pqdb_project_abc",
+            new_database="pqdb_branch_def",
+            stale_branches=["dev", "staging"],
+        )
+        assert resp.status == "promoted"
+        assert resp.old_database == "pqdb_project_abc"
+        assert resp.new_database == "pqdb_branch_def"
+        assert resp.stale_branches == ["dev", "staging"]
+
+    def test_empty_stale_branches(self) -> None:
+        from pqdb_api.routes.branches import PromoteResponse
+
+        resp = PromoteResponse(
+            status="promoted",
+            old_database="old",
+            new_database="new",
+            stale_branches=[],
+        )
+        assert resp.stale_branches == []

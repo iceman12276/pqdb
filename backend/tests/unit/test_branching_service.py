@@ -5,8 +5,40 @@ import uuid
 from pqdb_api.services.branching import (
     BranchingError,
     BranchLimitExceededError,
+    InvalidBranchNameError,
     make_branch_database_name,
 )
+
+
+class TestBranchStatusConstants:
+    """Verify branch status values used for race-condition guards."""
+
+    def test_active_status(self) -> None:
+        from pqdb_api.services.branching import BRANCH_STATUS_ACTIVE
+
+        assert BRANCH_STATUS_ACTIVE == "active"
+
+    def test_merging_status(self) -> None:
+        from pqdb_api.services.branching import BRANCH_STATUS_MERGING
+
+        assert BRANCH_STATUS_MERGING == "merging"
+
+    def test_rebasing_status(self) -> None:
+        from pqdb_api.services.branching import BRANCH_STATUS_REBASING
+
+        assert BRANCH_STATUS_REBASING == "rebasing"
+
+
+class TestInvalidBranchNameError:
+    """Tests for the InvalidBranchNameError exception."""
+
+    def test_is_branching_error(self) -> None:
+        err = InvalidBranchNameError("bad name")
+        assert isinstance(err, BranchingError)
+
+    def test_message(self) -> None:
+        err = InvalidBranchNameError("bad name")
+        assert str(err) == "bad name"
 
 
 class TestMakeBranchDatabaseName:
