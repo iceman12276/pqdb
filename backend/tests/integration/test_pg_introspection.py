@@ -88,15 +88,15 @@ def _exec_sql(client: TestClient, sql: str) -> None:
 # Functions
 # ===========================================================================
 class TestFunctions:
-    """GET /v1/db/functions — queries pg_proc + pg_namespace."""
+    """GET /v1/db/catalog/functions — queries pg_proc + pg_namespace."""
 
     def test_route_exists(self, client: TestClient) -> None:
-        resp = client.get("/v1/db/functions")
+        resp = client.get("/v1/db/catalog/functions")
         assert resp.status_code != 404
         assert resp.status_code != 405
 
     def test_empty_when_no_user_functions(self, client: TestClient) -> None:
-        resp = client.get("/v1/db/functions")
+        resp = client.get("/v1/db/catalog/functions")
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -110,7 +110,7 @@ class TestFunctions:
             AS $$ SELECT a + b $$
             """,
         )
-        resp = client.get("/v1/db/functions")
+        resp = client.get("/v1/db/catalog/functions")
         assert resp.status_code == 200
         data = resp.json()
         names = [f["name"] for f in data]
@@ -124,7 +124,7 @@ class TestFunctions:
 
     def test_excludes_system_functions(self, client: TestClient) -> None:
         """System schema functions (pg_catalog) must not appear."""
-        resp = client.get("/v1/db/functions")
+        resp = client.get("/v1/db/catalog/functions")
         assert resp.status_code == 200
         data = resp.json()
         schemas = {f["schema"] for f in data}
@@ -136,15 +136,15 @@ class TestFunctions:
 # Triggers
 # ===========================================================================
 class TestTriggers:
-    """GET /v1/db/triggers — queries pg_trigger + pg_class."""
+    """GET /v1/db/catalog/triggers — queries pg_trigger + pg_class."""
 
     def test_route_exists(self, client: TestClient) -> None:
-        resp = client.get("/v1/db/triggers")
+        resp = client.get("/v1/db/catalog/triggers")
         assert resp.status_code != 404
         assert resp.status_code != 405
 
     def test_empty_when_no_user_triggers(self, client: TestClient) -> None:
-        resp = client.get("/v1/db/triggers")
+        resp = client.get("/v1/db/catalog/triggers")
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -171,7 +171,7 @@ class TestTriggers:
             FOR EACH ROW EXECUTE FUNCTION trigger_fn();
             """,
         )
-        resp = client.get("/v1/db/triggers")
+        resp = client.get("/v1/db/catalog/triggers")
         assert resp.status_code == 200
         data = resp.json()
         names = [t["name"] for t in data]
@@ -188,15 +188,15 @@ class TestTriggers:
 # Enums
 # ===========================================================================
 class TestEnums:
-    """GET /v1/db/enums — queries pg_type + pg_enum."""
+    """GET /v1/db/catalog/enums — queries pg_type + pg_enum."""
 
     def test_route_exists(self, client: TestClient) -> None:
-        resp = client.get("/v1/db/enums")
+        resp = client.get("/v1/db/catalog/enums")
         assert resp.status_code != 404
         assert resp.status_code != 405
 
     def test_empty_when_no_user_enums(self, client: TestClient) -> None:
-        resp = client.get("/v1/db/enums")
+        resp = client.get("/v1/db/catalog/enums")
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -205,7 +205,7 @@ class TestEnums:
             client,
             "CREATE TYPE mood AS ENUM ('happy', 'sad', 'neutral')",
         )
-        resp = client.get("/v1/db/enums")
+        resp = client.get("/v1/db/catalog/enums")
         assert resp.status_code == 200
         data = resp.json()
         names = [e["name"] for e in data]
@@ -220,16 +220,16 @@ class TestEnums:
 # Extensions
 # ===========================================================================
 class TestExtensions:
-    """GET /v1/db/extensions — queries pg_extension."""
+    """GET /v1/db/catalog/extensions — queries pg_extension."""
 
     def test_route_exists(self, client: TestClient) -> None:
-        resp = client.get("/v1/db/extensions")
+        resp = client.get("/v1/db/catalog/extensions")
         assert resp.status_code != 404
         assert resp.status_code != 405
 
     def test_returns_default_extensions(self, client: TestClient) -> None:
         """plpgsql is always installed by default."""
-        resp = client.get("/v1/db/extensions")
+        resp = client.get("/v1/db/catalog/extensions")
         assert resp.status_code == 200
         data = resp.json()
         names = [e["name"] for e in data]
@@ -237,7 +237,7 @@ class TestExtensions:
 
     def test_returns_created_extension(self, client: TestClient) -> None:
         _exec_sql(client, "CREATE EXTENSION IF NOT EXISTS pgcrypto")
-        resp = client.get("/v1/db/extensions")
+        resp = client.get("/v1/db/catalog/extensions")
         assert resp.status_code == 200
         data = resp.json()
         names = [e["name"] for e in data]
@@ -249,7 +249,7 @@ class TestExtensions:
 
     def test_extension_has_comment(self, client: TestClient) -> None:
         """Extensions typically have a comment from their control file."""
-        resp = client.get("/v1/db/extensions")
+        resp = client.get("/v1/db/catalog/extensions")
         data = resp.json()
         plpgsql = next(e for e in data if e["name"] == "plpgsql")
         assert "comment" in plpgsql
@@ -259,10 +259,10 @@ class TestExtensions:
 # Indexes
 # ===========================================================================
 class TestIndexes:
-    """GET /v1/db/indexes — queries pg_indexes view."""
+    """GET /v1/db/catalog/indexes — queries pg_indexes view."""
 
     def test_route_exists(self, client: TestClient) -> None:
-        resp = client.get("/v1/db/indexes")
+        resp = client.get("/v1/db/catalog/indexes")
         assert resp.status_code != 404
         assert resp.status_code != 405
 
@@ -275,7 +275,7 @@ class TestIndexes:
             client,
             "CREATE INDEX idx_name ON idx_test (name)",
         )
-        resp = client.get("/v1/db/indexes")
+        resp = client.get("/v1/db/catalog/indexes")
         assert resp.status_code == 200
         data = resp.json()
         names = [i["name"] for i in data]
@@ -295,14 +295,14 @@ class TestIndexes:
             client,
             "CREATE UNIQUE INDEX idx_code ON uniq_test (code)",
         )
-        resp = client.get("/v1/db/indexes")
+        resp = client.get("/v1/db/catalog/indexes")
         data = resp.json()
         idx = next(i for i in data if i["name"] == "idx_code")
         assert idx["unique"] is True
 
     def test_excludes_pqdb_internal_tables(self, client: TestClient) -> None:
         """Indexes on _pqdb_* tables should not appear."""
-        resp = client.get("/v1/db/indexes")
+        resp = client.get("/v1/db/catalog/indexes")
         data = resp.json()
         for idx in data:
             assert not idx["table"].startswith("_pqdb_")
@@ -312,15 +312,15 @@ class TestIndexes:
 # Publications
 # ===========================================================================
 class TestPublications:
-    """GET /v1/db/publications — queries pg_publication."""
+    """GET /v1/db/catalog/publications — queries pg_publication."""
 
     def test_route_exists(self, client: TestClient) -> None:
-        resp = client.get("/v1/db/publications")
+        resp = client.get("/v1/db/catalog/publications")
         assert resp.status_code != 404
         assert resp.status_code != 405
 
     def test_empty_when_no_publications(self, client: TestClient) -> None:
-        resp = client.get("/v1/db/publications")
+        resp = client.get("/v1/db/catalog/publications")
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -333,7 +333,7 @@ class TestPublications:
             client,
             "CREATE PUBLICATION my_pub FOR TABLE pub_test",
         )
-        resp = client.get("/v1/db/publications")
+        resp = client.get("/v1/db/catalog/publications")
         assert resp.status_code == 200
         data = resp.json()
         names = [p["name"] for p in data]

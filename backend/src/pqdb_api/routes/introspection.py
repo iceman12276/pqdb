@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pqdb_api.middleware.api_key import get_project_session
 
-router = APIRouter(prefix="/v1/db", tags=["introspection"])
+router = APIRouter(prefix="/v1/db/catalog", tags=["introspection"])
 
 
 # --- SQL constants ---
