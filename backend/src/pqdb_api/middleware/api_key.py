@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import (
 
 from pqdb_api.database import get_session
 from pqdb_api.models.api_key import ApiKey
+from pqdb_api.models.branch import DatabaseBranch
 from pqdb_api.models.project import Project
 from pqdb_api.services.api_keys import verify_api_key
 from pqdb_api.services.auth import InvalidTokenError, TokenExpiredError, decode_token
@@ -272,10 +273,29 @@ async def get_project_context(
 
     check_project_not_paused(project.status)
 
+    # x-branch header: resolve to branch database_name
+    database_name = project.database_name
+    branch_name = request.headers.get("x-branch")
+    if branch_name:
+        branch_result = await platform_session.execute(
+            select(DatabaseBranch).where(
+                DatabaseBranch.project_id == project_id,
+                DatabaseBranch.name == branch_name,
+                DatabaseBranch.status == "active",
+            )
+        )
+        branch = branch_result.scalar_one_or_none()
+        if branch is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Branch '{branch_name}' not found",
+            )
+        database_name = branch.database_name
+
     ctx = ProjectContext(
         project_id=project_id,
         key_role=role,
-        database_name=project.database_name,
+        database_name=database_name,
         permissions=permissions,
     )
 
