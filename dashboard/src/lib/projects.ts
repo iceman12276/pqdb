@@ -143,3 +143,29 @@ export async function deleteProjectKey(
     throw new Error("Failed to delete API key");
   }
 }
+
+export async function pauseProject(projectId: string): Promise<Project> {
+  const result = await api.fetch(`/v1/projects/${projectId}/pause`, {
+    method: "POST",
+  });
+  if (!result.ok) {
+    const errorData = result.data as { error?: { message?: string }; detail?: string } | null;
+    throw new Error(
+      errorData?.error?.message ?? errorData?.detail ?? "Failed to pause project",
+    );
+  }
+  return result.data as Project;
+}
+
+export async function restoreProject(projectId: string): Promise<Project> {
+  const result = await api.fetch(`/v1/projects/${projectId}/restore`, {
+    method: "POST",
+  });
+  if (!result.ok) {
+    const errorData = result.data as { error?: { message?: string }; detail?: string } | null;
+    throw new Error(
+      errorData?.error?.message ?? errorData?.detail ?? "Failed to restore project",
+    );
+  }
+  return result.data as Project;
+}

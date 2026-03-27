@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { createQueryWrapper } from "../query-wrapper";
 import { SidebarNav, sidebarNavItems } from "~/components/sidebar-nav";
 
 // Mock @tanstack/react-router
@@ -25,22 +26,31 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
+vi.mock("~/lib/projects", () => ({
+  fetchProject: vi.fn(),
+}));
+
+function renderSidebar(props?: { projectStatus?: string }) {
+  const { wrapper } = createQueryWrapper();
+  return render(<SidebarNav {...props} />, { wrapper });
+}
+
 describe("SidebarNav", () => {
   it("renders the sidebar navigation", () => {
     mockUseParams.mockReturnValue({ projectId: "proj-123" });
-    render(<SidebarNav />);
+    renderSidebar();
     expect(screen.getByTestId("sidebar-nav")).toBeInTheDocument();
   });
 
   it("renders the pqdb brand", () => {
     mockUseParams.mockReturnValue({ projectId: "proj-123" });
-    render(<SidebarNav />);
+    renderSidebar();
     expect(screen.getByText("pqdb")).toBeInTheDocument();
   });
 
   it("renders all required sidebar items", () => {
     mockUseParams.mockReturnValue({ projectId: "proj-123" });
-    render(<SidebarNav />);
+    renderSidebar();
 
     const requiredItems = [
       "Project Overview",
@@ -61,7 +71,7 @@ describe("SidebarNav", () => {
 
   it("all nav items are active (no disabled items)", () => {
     mockUseParams.mockReturnValue({ projectId: "proj-123" });
-    render(<SidebarNav />);
+    renderSidebar({ projectStatus: "active" });
 
     const realtimeItem = screen.getByText("Realtime").closest("a");
     expect(realtimeItem).not.toHaveAttribute("aria-disabled", "true");
@@ -72,7 +82,7 @@ describe("SidebarNav", () => {
 
   it("does not gray out non-disabled items", () => {
     mockUseParams.mockReturnValue({ projectId: "proj-123" });
-    render(<SidebarNav />);
+    renderSidebar({ projectStatus: "active" });
 
     const overviewItem = screen.getByText("Project Overview").closest("a");
     expect(overviewItem).not.toHaveAttribute("aria-disabled", "true");
@@ -80,7 +90,7 @@ describe("SidebarNav", () => {
 
   it("generates project-scoped links when projectId is available", () => {
     mockUseParams.mockReturnValue({ projectId: "proj-abc" });
-    render(<SidebarNav />);
+    renderSidebar({ projectStatus: "active" });
 
     const overviewLink = screen.getByText("Project Overview").closest("a");
     expect(overviewLink).toHaveAttribute("href", "/projects/proj-abc");
@@ -109,7 +119,7 @@ describe("SidebarNav", () => {
 
   it("links to /projects when no projectId is available", () => {
     mockUseParams.mockReturnValue({});
-    render(<SidebarNav />);
+    renderSidebar();
 
     const overviewLink = screen.getByText("Project Overview").closest("a");
     expect(overviewLink).toHaveAttribute("href", "/projects");
@@ -120,7 +130,7 @@ describe("SidebarNav", () => {
 
   it("calls useParams with strict: false", () => {
     mockUseParams.mockReturnValue({ projectId: "proj-123" });
-    render(<SidebarNav />);
+    renderSidebar();
     expect(mockUseParams).toHaveBeenCalledWith({ strict: false });
   });
 });

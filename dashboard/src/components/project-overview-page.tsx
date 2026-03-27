@@ -1,12 +1,16 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Alert, AlertDescription } from "~/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 import {
   fetchProjectOverview,
   type ProjectOverview,
 } from "~/lib/project-overview";
+import { restoreProject } from "~/lib/projects";
 
 function StatusCard({
   title,
@@ -36,9 +40,18 @@ function StatusCard({
 }
 
 export function ProjectOverviewPage({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
   const { data: overview, isLoading, error } = useQuery<ProjectOverview>({
     queryKey: ["project-overview", projectId],
     queryFn: () => fetchProjectOverview(projectId),
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: () => restoreProject(projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+    },
   });
 
   if (error) {
@@ -73,6 +86,27 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
           </div>
         )}
       </div>
+
+      {/* Paused Banner */}
+      {overview?.status === "paused" && (
+        <Alert variant="destructive" data-testid="paused-banner">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription className="flex items-center justify-between">
+            <span>
+              This project is paused. Data operations are blocked. Restore to
+              resume.
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => restoreMutation.mutate()}
+              disabled={restoreMutation.isPending}
+            >
+              {restoreMutation.isPending ? "Restoring..." : "Restore"}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Connection Info */}
       {overview?.database_name && (
