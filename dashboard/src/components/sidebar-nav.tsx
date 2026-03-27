@@ -3,12 +3,16 @@ import {
   Table2,
   Terminal,
   GitBranch,
+  FunctionSquare,
+  Zap,
   Shield,
   Radio,
   ScrollText,
   Bot,
   KeyRound,
   Settings,
+  List,
+  Puzzle,
   ListTree,
   Megaphone,
 } from "lucide-react";
@@ -30,6 +34,10 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Table Editor", icon: Table2, path: "/tables" },
   { label: "Query Playground", icon: Terminal, path: "/sql" },
   { label: "Schema", icon: GitBranch, path: "/schema" },
+  { label: "Functions", icon: FunctionSquare, path: "/functions" },
+  { label: "Triggers", icon: Zap, path: "/triggers" },
+  { label: "Enums", icon: List, path: "/enums" },
+  { label: "Extensions", icon: Puzzle, path: "/extensions" },
   { label: "Authentication", icon: Shield, path: "/auth" },
   { label: "Realtime", icon: Radio, path: "/realtime" },
   { label: "Logs", icon: ScrollText, path: "/logs" },
@@ -41,7 +49,7 @@ export const sidebarNavItems: NavItem[] = [
 ];
 
 /** Nav items that require data access and should be disabled when paused. */
-const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/indexes", "/publications"]);
+const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/functions", "/triggers", "/enums", "/extensions", "/indexes", "/publications"]);
 
 export function SidebarNav({ projectStatus }: { projectStatus?: string } = {}) {
   const { projectId } = useParams({ strict: false }) as {
