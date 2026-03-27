@@ -531,7 +531,7 @@ class TestXBranchHeader:
             headers=auth_headers(token),
         )
         assert branch_resp.status_code == 201
-        branch_db = branch_resp.json()["database_name"]
+        _ = branch_resp.json()["database_name"]  # verify field exists
 
         # 3. Request /v1/db/health with x-branch header
         health_resp = full_client.get(
