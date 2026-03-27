@@ -331,6 +331,28 @@ def _enforce_scoped_permissions(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
+def _deny_ddl_for_scoped_key(context: ProjectContext) -> None:
+    """Block DDL operations for scoped API keys.
+
+    Scoped keys are limited to CRUD on their allowed tables.
+    Schema operations (create table, add/drop column) require
+    an anon or service key.
+    """
+    if context.key_role == "scoped":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": {
+                    "code": "SCOPED_KEY_DDL_DENIED",
+                    "message": (
+                        "Scoped API keys cannot perform schema operations. "
+                        "Use an anon or service key."
+                    ),
+                }
+            },
+        )
+
+
 def _parse_filter_op(op_str: str) -> FilterOp:
     """Convert string filter op to FilterOp enum."""
     return FilterOp(op_str)
@@ -405,8 +427,10 @@ async def get_hmac_key_by_apikey(
 async def create_table_endpoint(
     body: CreateTableRequest,
     session: AsyncSession = Depends(get_project_session),
+    context: ProjectContext = Depends(get_project_context),
 ) -> dict[str, Any]:
     """Create a table with column sensitivity metadata."""
+    _deny_ddl_for_scoped_key(context)
     try:
         table_def = TableDefinition(
             name=body.name,
@@ -509,12 +533,14 @@ async def add_column_endpoint(
     table_name: str,
     body: ColumnSchema,
     session: AsyncSession = Depends(get_project_session),
+    context: ProjectContext = Depends(get_project_context),
 ) -> dict[str, Any]:
     """Add a column to an existing table.
 
     Creates physical shadow columns based on sensitivity level.
     Updates _pqdb_columns metadata atomically with DDL.
     """
+    _deny_ddl_for_scoped_key(context)
     try:
         col_def = ColumnDefinition(
             name=body.name,
@@ -543,12 +569,14 @@ async def drop_column_endpoint(
     table_name: str,
     column_name: str,
     session: AsyncSession = Depends(get_project_session),
+    context: ProjectContext = Depends(get_project_context),
 ) -> None:
     """Drop a column from a table.
 
     Removes all physical shadow columns and _pqdb_columns metadata.
     Cannot drop system columns (id, created_at, updated_at).
     """
+    _deny_ddl_for_scoped_key(context)
     try:
         await drop_column(session, table_name, column_name)
     except ValueError as exc:
