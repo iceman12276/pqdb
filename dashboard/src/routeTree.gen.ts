@@ -23,6 +23,8 @@ import { Route as ProjectsProjectIdRealtimeRouteImport } from './routes/projects
 import { Route as ProjectsProjectIdMcpRouteImport } from './routes/projects/$projectId/mcp'
 import { Route as ProjectsProjectIdLogsRouteImport } from './routes/projects/$projectId/logs'
 import { Route as ProjectsProjectIdKeysRouteImport } from './routes/projects/$projectId.keys'
+import { Route as ProjectsProjectIdExtensionsRouteImport } from './routes/projects/$projectId/extensions'
+import { Route as ProjectsProjectIdEnumsRouteImport } from './routes/projects/$projectId/enums'
 import { Route as ProjectsProjectIdAuthRouteImport } from './routes/projects/$projectId.auth'
 import { Route as ProjectsProjectIdTablesIndexRouteImport } from './routes/projects/$projectId/tables/index'
 import { Route as ProjectsProjectIdTablesTableNameRouteImport } from './routes/projects/$projectId/tables/$tableName'
@@ -99,6 +101,17 @@ const ProjectsProjectIdKeysRoute = ProjectsProjectIdKeysRouteImport.update({
   path: '/keys',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdExtensionsRoute =
+  ProjectsProjectIdExtensionsRouteImport.update({
+    id: '/extensions',
+    path: '/extensions',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
+const ProjectsProjectIdEnumsRoute = ProjectsProjectIdEnumsRouteImport.update({
+  id: '/enums',
+  path: '/enums',
+  getParentRoute: () => ProjectsProjectIdRoute,
+} as any)
 const ProjectsProjectIdAuthRoute = ProjectsProjectIdAuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -125,6 +138,8 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
+  '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
@@ -143,6 +158,8 @@ export interface FileRoutesByTo {
   '/projects': typeof ProjectsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
+  '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
@@ -163,6 +180,8 @@ export interface FileRoutesById {
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
+  '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
@@ -184,6 +203,8 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/settings/'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/enums'
+    | '/projects/$projectId/extensions'
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
@@ -202,6 +223,8 @@ export interface FileRouteTypes {
     | '/projects'
     | '/settings'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/enums'
+    | '/projects/$projectId/extensions'
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
@@ -221,6 +244,8 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/settings/'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/enums'
+    | '/projects/$projectId/extensions'
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
@@ -342,6 +367,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdKeysRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/extensions': {
+      id: '/projects/$projectId/extensions'
+      path: '/extensions'
+      fullPath: '/projects/$projectId/extensions'
+      preLoaderRoute: typeof ProjectsProjectIdExtensionsRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
+    '/projects/$projectId/enums': {
+      id: '/projects/$projectId/enums'
+      path: '/enums'
+      fullPath: '/projects/$projectId/enums'
+      preLoaderRoute: typeof ProjectsProjectIdEnumsRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
     '/projects/$projectId/auth': {
       id: '/projects/$projectId/auth'
       path: '/auth'
@@ -368,6 +407,8 @@ declare module '@tanstack/react-router' {
 
 interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdAuthRoute: typeof ProjectsProjectIdAuthRoute
+  ProjectsProjectIdEnumsRoute: typeof ProjectsProjectIdEnumsRoute
+  ProjectsProjectIdExtensionsRoute: typeof ProjectsProjectIdExtensionsRoute
   ProjectsProjectIdKeysRoute: typeof ProjectsProjectIdKeysRoute
   ProjectsProjectIdLogsRoute: typeof ProjectsProjectIdLogsRoute
   ProjectsProjectIdMcpRoute: typeof ProjectsProjectIdMcpRoute
@@ -382,6 +423,8 @@ interface ProjectsProjectIdRouteChildren {
 
 const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdAuthRoute: ProjectsProjectIdAuthRoute,
+  ProjectsProjectIdEnumsRoute: ProjectsProjectIdEnumsRoute,
+  ProjectsProjectIdExtensionsRoute: ProjectsProjectIdExtensionsRoute,
   ProjectsProjectIdKeysRoute: ProjectsProjectIdKeysRoute,
   ProjectsProjectIdLogsRoute: ProjectsProjectIdLogsRoute,
   ProjectsProjectIdMcpRoute: ProjectsProjectIdMcpRoute,
