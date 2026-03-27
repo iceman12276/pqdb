@@ -4,15 +4,22 @@ import {
   ReactFlow,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  ReactFlowProvider,
   type Node,
   type Edge,
   type NodeTypes,
+  type EdgeTypes,
+  Position,
   Background,
   Controls,
   MiniMap,
+  BaseEdge,
+  EdgeLabelRenderer,
+  getSmoothStepPath,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { KeyRound, Plus, Trash2 } from "lucide-react";
+import { KeyRound, Plus, Trash2, LayoutGrid, Copy, Check } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -44,13 +51,18 @@ import {
   fetchIndexes,
   createIndex,
   dropIndex,
+  fetchForeignKeys,
+  fetchSchemas,
   type IntrospectionTable,
   type IntrospectionColumn,
+  type ForeignKeyInfo,
   type Sensitivity,
   type VectorIndex,
   type IndexType,
   type IndexDistance,
 } from "~/lib/schema";
+import { applyDagreLayout } from "~/lib/auto-layout";
+import { generateCreateTableSQL, type ForeignKey } from "~/lib/generate-sql";
 
 interface SchemaPageProps {
   projectId: string;
@@ -68,8 +80,83 @@ const nodeTypes: NodeTypes = {
   tableNode: ErdTableNode,
 };
 
+/**
+ * Custom FK edge with hover label showing source.column -> target.column.
+ */
+function ForeignKeyEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  data,
+}: {
+  id: string;
+  sourceX: number;
+  sourceY: number;
+  targetX: number;
+  targetY: number;
+  sourcePosition: Position;
+  targetPosition: Position;
+  data?: { fkLabel?: string };
+}) {
+  const [hovered, setHovered] = React.useState(false);
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+  });
+
+  return (
+    <>
+      {/* Invisible wider path for hover target */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={20}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      />
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={{
+          stroke: "var(--color-primary)",
+          strokeWidth: 2,
+          animation: "dashdraw 0.5s linear infinite",
+          strokeDasharray: "5 5",
+        }}
+      />
+      {hovered && data?.fkLabel && (
+        <EdgeLabelRenderer>
+          <div
+            data-testid={`fk-label-${id}`}
+            className="absolute bg-popover text-popover-foreground border border-border rounded px-2 py-1 text-xs font-mono shadow-md pointer-events-none"
+            style={{
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+            }}
+          >
+            {data.fkLabel}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+}
+
+const edgeTypes: EdgeTypes = {
+  fk: ForeignKeyEdge as EdgeTypes["default"],
+};
+
 function buildNodesAndEdges(
   tables: IntrospectionTable[],
+  foreignKeys: ForeignKeyInfo[],
   viewMode: "logical" | "physical",
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = tables.map((table, idx) => ({
@@ -83,39 +170,60 @@ function buildNodesAndEdges(
     } satisfies TableNodeData,
   }));
 
-  // Build edges from foreign-key-like columns (columns ending with _id that match another table name)
   const tableNames = new Set(tables.map((t) => t.name));
   const edges: Edge[] = [];
 
-  for (const table of tables) {
-    for (const col of table.columns) {
-      if (col.name.endsWith("_id")) {
-        const refTable = col.name.replace(/_id$/, "") + "s"; // simple pluralization
-        if (tableNames.has(refTable) && refTable !== table.name) {
-          edges.push({
-            id: `${table.name}-${col.name}-${refTable}`,
-            source: table.name,
-            target: refTable,
-            animated: true,
-            label: col.name,
-            style: { stroke: "var(--color-primary)" },
-          });
-        }
-        // Also check singular
-        const refTableSingular = col.name.replace(/_id$/, "");
-        if (
-          tableNames.has(refTableSingular) &&
-          refTableSingular !== table.name &&
-          refTableSingular !== refTable
-        ) {
-          edges.push({
-            id: `${table.name}-${col.name}-${refTableSingular}`,
-            source: table.name,
-            target: refTableSingular,
-            animated: true,
-            label: col.name,
-            style: { stroke: "var(--color-primary)" },
-          });
+  if (foreignKeys.length > 0) {
+    // Use real FK data from information_schema
+    for (const fk of foreignKeys) {
+      if (tableNames.has(fk.source_table) && tableNames.has(fk.target_table)) {
+        edges.push({
+          id: `fk-${fk.constraint_name}`,
+          source: fk.source_table,
+          target: fk.target_table,
+          type: "fk",
+          animated: true,
+          data: {
+            fkLabel: `${fk.source_table}.${fk.source_column} → ${fk.target_table}.${fk.target_column}`,
+          },
+        });
+      }
+    }
+  } else {
+    // Fallback: heuristic FK detection from column names
+    for (const table of tables) {
+      for (const col of table.columns) {
+        if (col.name.endsWith("_id")) {
+          const refTable = col.name.replace(/_id$/, "") + "s";
+          if (tableNames.has(refTable) && refTable !== table.name) {
+            edges.push({
+              id: `${table.name}-${col.name}-${refTable}`,
+              source: table.name,
+              target: refTable,
+              type: "fk",
+              animated: true,
+              data: {
+                fkLabel: `${table.name}.${col.name} → ${refTable}.id`,
+              },
+            });
+          }
+          const refTableSingular = col.name.replace(/_id$/, "");
+          if (
+            tableNames.has(refTableSingular) &&
+            refTableSingular !== table.name &&
+            refTableSingular !== refTable
+          ) {
+            edges.push({
+              id: `${table.name}-${col.name}-${refTableSingular}`,
+              source: table.name,
+              target: refTableSingular,
+              type: "fk",
+              animated: true,
+              data: {
+                fkLabel: `${table.name}.${col.name} → ${refTableSingular}.id`,
+              },
+            });
+          }
         }
       }
     }
@@ -516,49 +624,122 @@ function IndexesSection({
   );
 }
 
-function ErdView({
+function ErdViewInner({
   tables,
+  foreignKeys,
   viewMode,
 }: {
   tables: IntrospectionTable[];
+  foreignKeys: ForeignKeyInfo[];
   viewMode: "logical" | "physical";
 }) {
+  const { fitView } = useReactFlow();
+  const [copied, setCopied] = React.useState(false);
+
   const { nodes: initialNodes, edges: initialEdges } = React.useMemo(
-    () => buildNodesAndEdges(tables, viewMode),
-    [tables, viewMode],
+    () => buildNodesAndEdges(tables, foreignKeys, viewMode),
+    [tables, foreignKeys, viewMode],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  // Update nodes when viewMode or tables change
+  // Update nodes when viewMode, tables, or foreignKeys change
   React.useEffect(() => {
     const { nodes: newNodes, edges: newEdges } = buildNodesAndEdges(
       tables,
+      foreignKeys,
       viewMode,
     );
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [tables, viewMode, setNodes, setEdges]);
+  }, [tables, foreignKeys, viewMode, setNodes, setEdges]);
+
+  function handleAutoLayout() {
+    const layoutNodes = applyDagreLayout(nodes, edges);
+    setNodes(layoutNodes);
+    // Fit view after a small delay to let React re-render positions
+    setTimeout(() => fitView({ padding: 0.2 }), 50);
+  }
+
+  function handleCopySQL() {
+    const fks: ForeignKey[] = foreignKeys.map((fk) => ({
+      constraint_name: fk.constraint_name,
+      source_table: fk.source_table,
+      source_column: fk.source_column,
+      target_table: fk.target_table,
+      target_column: fk.target_column,
+    }));
+    const sql = generateCreateTableSQL(tables, fks, viewMode);
+    navigator.clipboard.writeText(sql).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch((err) => {
+      console.error("Failed to copy SQL to clipboard:", err);
+    });
+  }
 
   return (
-    <div data-testid="erd-view" className="h-[600px] w-full rounded-lg border border-border">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
-        minZoom={0.1}
-        maxZoom={2}
-      >
-        <Background />
-        <Controls />
-        <MiniMap />
-      </ReactFlow>
+    <div data-testid="erd-view" className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleAutoLayout}
+          data-testid="auto-layout-btn"
+        >
+          <LayoutGrid className="h-3.5 w-3.5 mr-1" />
+          Auto Layout
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleCopySQL}
+          data-testid="copy-sql-btn"
+        >
+          {copied ? (
+            <Check className="h-3.5 w-3.5 mr-1" />
+          ) : (
+            <Copy className="h-3.5 w-3.5 mr-1" />
+          )}
+          {copied ? "Copied!" : "Copy as SQL"}
+        </Button>
+      </div>
+      <div className="h-[600px] w-full rounded-lg border border-border">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.2 }}
+          minZoom={0.1}
+          maxZoom={2}
+        >
+          <Background />
+          <Controls />
+          <MiniMap />
+        </ReactFlow>
+      </div>
     </div>
+  );
+}
+
+function ErdView({
+  tables,
+  foreignKeys,
+  viewMode,
+}: {
+  tables: IntrospectionTable[];
+  foreignKeys: ForeignKeyInfo[];
+  viewMode: "logical" | "physical";
+}) {
+  return (
+    <ReactFlowProvider>
+      <ErdViewInner tables={tables} foreignKeys={foreignKeys} viewMode={viewMode} />
+    </ReactFlowProvider>
   );
 }
 
@@ -630,6 +811,7 @@ export function SchemaPage({ projectId, apiKey }: SchemaPageProps) {
   const [viewMode, setViewMode] = React.useState<"logical" | "physical">(
     "logical",
   );
+  const [selectedSchema, setSelectedSchema] = React.useState("public");
   const queryClient = useQueryClient();
 
   const {
@@ -639,6 +821,18 @@ export function SchemaPage({ projectId, apiKey }: SchemaPageProps) {
   } = useQuery({
     queryKey: ["schema", projectId, apiKey],
     queryFn: () => fetchSchema(apiKey),
+    enabled: !!apiKey,
+  });
+
+  const { data: foreignKeys } = useQuery({
+    queryKey: ["foreignKeys", projectId, apiKey, selectedSchema],
+    queryFn: () => fetchForeignKeys(apiKey, selectedSchema),
+    enabled: !!apiKey,
+  });
+
+  const { data: schemas } = useQuery({
+    queryKey: ["schemas", projectId, apiKey],
+    queryFn: () => fetchSchemas(apiKey),
     enabled: !!apiKey,
   });
 
@@ -677,11 +871,28 @@ export function SchemaPage({ projectId, apiKey }: SchemaPageProps) {
     );
   }
 
+  const availableSchemas = schemas ?? ["public"];
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Schema</h2>
         <div className="flex items-center gap-2">
+          <Select
+            value={selectedSchema}
+            onValueChange={(v) => { if (v) setSelectedSchema(v); }}
+          >
+            <SelectTrigger className="w-[140px]" data-testid="schema-selector">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {availableSchemas.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <span className="text-sm text-muted-foreground">View:</span>
           <Button
             variant={viewMode === "logical" ? "default" : "outline"}
@@ -714,7 +925,11 @@ export function SchemaPage({ projectId, apiKey }: SchemaPageProps) {
           />
         </TabsContent>
         <TabsContent value="erd">
-          <ErdView tables={tables} viewMode={viewMode} />
+          <ErdView
+            tables={tables}
+            foreignKeys={foreignKeys ?? []}
+            viewMode={viewMode}
+          />
         </TabsContent>
       </Tabs>
     </div>
