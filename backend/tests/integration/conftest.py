@@ -270,7 +270,10 @@ def _clean_tables(test_db_name: str, test_db_url: str) -> Iterator[None]:
         try:
             async with engine.begin() as conn:
                 await conn.execute(
-                    sa_text("TRUNCATE api_keys, projects, developers CASCADE")
+                    sa_text(
+                        "TRUNCATE database_branches, api_keys,"
+                        " projects, developers CASCADE"
+                    )
                 )
         except Exception:
             pass  # Tables may not exist in project-only test databases

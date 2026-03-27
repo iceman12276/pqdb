@@ -14,6 +14,7 @@ from pqdb_api.middleware.rate_limit import RateLimitMiddleware
 from pqdb_api.routes.api_keys import router as api_keys_router
 from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.auth_settings import router as auth_settings_router
+from pqdb_api.routes.branches import router as branches_router
 from pqdb_api.routes.db import router as db_router
 from pqdb_api.routes.developer_oauth import router as developer_oauth_router
 from pqdb_api.routes.google_oauth import router as google_oauth_router
@@ -99,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(passkeys_router)
     app.include_router(policies_router)
     app.include_router(indexes_router)
+    app.include_router(branches_router)
 
     app.add_websocket_route("/v1/realtime", realtime_ws_endpoint)
 
