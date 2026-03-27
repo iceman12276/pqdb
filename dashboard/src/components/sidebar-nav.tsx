@@ -11,7 +11,9 @@ import {
   Settings,
 } from "lucide-react";
 import { Link, useParams } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "~/lib/utils";
+import { fetchProject } from "~/lib/projects";
 
 export interface NavItem {
   label: string;
@@ -34,10 +36,21 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Project Settings", icon: Settings, path: "/settings" },
 ];
 
-export function SidebarNav() {
+/** Nav items that require data access and should be disabled when paused. */
+const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema"]);
+
+export function SidebarNav({ projectStatus }: { projectStatus?: string } = {}) {
   const { projectId } = useParams({ strict: false }) as {
     projectId?: string;
   };
+
+  const { data: project } = useQuery({
+    queryKey: ["project", projectId],
+    queryFn: () => fetchProject(projectId!),
+    enabled: !!projectId && projectStatus === undefined,
+  });
+
+  const status = projectStatus ?? project?.status;
 
   return (
     <nav
@@ -55,17 +68,21 @@ export function SidebarNav() {
             ? `/projects/${projectId}${item.path}`
             : "/projects";
 
+          const isDisabled =
+            item.disabled ||
+            (status === "paused" && pauseDisabledPaths.has(item.path));
+
           return (
             <li key={item.label}>
               <Link
-                to={item.disabled ? undefined! : href}
+                to={isDisabled ? undefined! : href}
                 className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  item.disabled
+                  isDisabled
                     ? "cursor-not-allowed text-muted-foreground opacity-50"
                     : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 )}
-                aria-disabled={item.disabled}
+                aria-disabled={isDisabled}
               >
                 <item.icon className="h-4 w-4" />
                 {item.label}
