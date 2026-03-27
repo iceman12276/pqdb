@@ -131,7 +131,6 @@ async def create_branch(
         select(DatabaseBranch).where(
             DatabaseBranch.project_id == project_id,
             DatabaseBranch.name == body.name,
-            DatabaseBranch.status != "deleted",
         )
     )
     if existing.scalar_one_or_none() is not None:
@@ -214,7 +213,6 @@ async def list_branches(
     result = await session.execute(
         select(DatabaseBranch).where(
             DatabaseBranch.project_id == project_id,
-            DatabaseBranch.status != "deleted",
         )
     )
     branches = result.scalars().all()
@@ -236,7 +234,6 @@ async def delete_branch(
         select(DatabaseBranch).where(
             DatabaseBranch.project_id == project_id,
             DatabaseBranch.name == branch_name,
-            DatabaseBranch.status != "deleted",
         )
     )
     branch = result.scalar_one_or_none()
@@ -268,8 +265,8 @@ async def delete_branch(
     if engine is not None:
         await engine.dispose()
 
-    # Mark as deleted
-    branch.status = "deleted"
+    # Hard delete — the database is already dropped, no point keeping metadata
+    await session.delete(branch)
     await session.commit()
 
     logger.info(

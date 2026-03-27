@@ -21,8 +21,10 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from pqdb_api.database import get_session
+from pqdb_api.routes.api_keys import router as api_keys_router
 from pqdb_api.routes.auth import router as auth_router
 from pqdb_api.routes.branches import router as branches_router
+from pqdb_api.routes.db import router as db_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.services.auth import generate_mldsa65_keypair
@@ -421,3 +423,140 @@ class TestFullBranchFlow:
         )
         assert list_resp2.status_code == 200
         assert len(list_resp2.json()) == 0
+
+
+def _make_branch_app_with_db(test_db_url: str) -> FastAPI:
+    """Build a test app with branches + db + api_keys routers for x-branch tests."""
+    private_key, public_key = generate_mldsa65_keypair()
+
+    mock_provisioner = AsyncMock(spec=DatabaseProvisioner)
+    mock_provisioner.superuser_dsn = "postgresql://test:test@localhost/test"
+
+    async def _mock_provision(project_id: uuid.UUID) -> str:
+        return make_database_name(project_id)
+
+    mock_provisioner.provision = AsyncMock(side_effect=_mock_provision)
+
+    stored_keys: dict[str, bytes] = {}
+    mock_vault = MagicMock(spec=VaultClient)
+
+    def _mock_store(project_id: uuid.UUID, key: bytes) -> None:
+        stored_keys[str(project_id)] = key
+
+    def _mock_get(project_id: uuid.UUID) -> bytes:
+        key = stored_keys.get(str(project_id))
+        if key is None:
+            from pqdb_api.services.vault import VaultError
+
+            raise VaultError("Key not found")
+        return key
+
+    def _mock_get_keys(project_id: uuid.UUID) -> object:
+        from pqdb_api.services.vault import VersionedHmacKeys
+
+        key = stored_keys.get(str(project_id))
+        if key is None:
+            from pqdb_api.services.vault import VaultError
+
+            raise VaultError("Key not found")
+        return VersionedHmacKeys(current_version=1, keys={"1": key.hex()})
+
+    mock_vault.store_hmac_key = MagicMock(side_effect=_mock_store)
+    mock_vault.get_hmac_key = MagicMock(side_effect=_mock_get)
+    mock_vault.get_hmac_keys = MagicMock(side_effect=_mock_get_keys)
+
+    from pqdb_api.config import Settings
+
+    settings = Settings(
+        database_url=test_db_url,
+        superuser_dsn="postgresql://test:test@localhost/test",
+    )
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        engine = create_async_engine(test_db_url)
+        session_factory = async_sessionmaker(
+            engine, class_=AsyncSession, expire_on_commit=False
+        )
+
+        async def _override_get_session() -> AsyncIterator[AsyncSession]:
+            async with session_factory() as session:
+                yield session
+
+        app.dependency_overrides[get_session] = _override_get_session
+        app.state.mldsa65_private_key = private_key
+        app.state.mldsa65_public_key = public_key
+        app.state.provisioner = mock_provisioner
+        app.state.vault_client = mock_vault
+        app.state.hmac_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
+        yield
+        await engine.dispose()
+
+    app = FastAPI(lifespan=lifespan)
+    app.state.settings = settings
+    app.include_router(health_router)
+    app.include_router(auth_router)
+    app.include_router(projects_router)
+    app.include_router(api_keys_router)
+    app.include_router(branches_router)
+    app.include_router(db_router)
+    return app
+
+
+class TestXBranchHeader:
+    """Tests for x-branch header resolution in API key middleware."""
+
+    @pytest.fixture()
+    def full_client(self, test_db_url: str) -> Iterator[TestClient]:
+        app = _make_branch_app_with_db(test_db_url)
+        with TestClient(app) as c:
+            yield c
+
+    @patch("pqdb_api.routes.branches.create_branch_database", new_callable=AsyncMock)
+    def test_x_branch_header_resolves_branch_database(
+        self, mock_create: AsyncMock, full_client: TestClient
+    ) -> None:
+        """x-branch header resolves to the branch's database_name."""
+        # 1. Sign up, create project, get API keys
+        token = signup_and_get_token(full_client, email="xbranch@test.com")
+        project = create_project(full_client, token)
+        project_id = project["id"]
+        api_keys = project["api_keys"]
+        service_key = next(k["key"] for k in api_keys if k["role"] == "service")
+
+        # 2. Create a branch
+        branch_resp = full_client.post(
+            f"/v1/projects/{project_id}/branches",
+            json={"name": "staging"},
+            headers=auth_headers(token),
+        )
+        assert branch_resp.status_code == 201
+        branch_db = branch_resp.json()["database_name"]
+
+        # 3. Request /v1/db/health with x-branch header
+        health_resp = full_client.get(
+            "/v1/db/health",
+            headers={"apikey": service_key, "x-branch": "staging"},
+        )
+        assert health_resp.status_code == 200
+        data = health_resp.json()
+        assert data["project_id"] == project_id
+        assert data["role"] == "service"
+
+    def test_x_branch_header_nonexistent_branch_returns_404(
+        self, full_client: TestClient
+    ) -> None:
+        """x-branch header with unknown branch name returns 404."""
+        # Sign up, create project, get API keys
+        token = signup_and_get_token(full_client, email="xbranch404@test.com")
+        project = create_project(full_client, token)
+        api_keys = project["api_keys"]
+        service_key = next(k["key"] for k in api_keys if k["role"] == "service")
+
+        # Request with non-existent branch
+        resp = full_client.get(
+            "/v1/db/health",
+            headers={"apikey": service_key, "x-branch": "nonexistent"},
+        )
+        assert resp.status_code == 404
+        assert "nonexistent" in resp.json()["detail"]

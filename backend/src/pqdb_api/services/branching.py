@@ -79,7 +79,6 @@ async def check_branch_limit(
         .select_from(DatabaseBranch)
         .where(
             DatabaseBranch.project_id == project_id,
-            DatabaseBranch.status != "deleted",
         )
     )
     count: int = result.scalar_one()
