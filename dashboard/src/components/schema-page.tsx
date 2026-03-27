@@ -674,6 +674,8 @@ function ErdViewInner({
     navigator.clipboard.writeText(sql).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }).catch((err) => {
+      console.error("Failed to copy SQL to clipboard:", err);
     });
   }
 
@@ -817,7 +819,7 @@ export function SchemaPage({ projectId, apiKey }: SchemaPageProps) {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["schema", projectId, apiKey, selectedSchema],
+    queryKey: ["schema", projectId, apiKey],
     queryFn: () => fetchSchema(apiKey),
     enabled: !!apiKey,
   });
@@ -835,7 +837,7 @@ export function SchemaPage({ projectId, apiKey }: SchemaPageProps) {
   });
 
   function handleColumnAdded() {
-    queryClient.invalidateQueries({ queryKey: ["schema", projectId, apiKey, selectedSchema] });
+    queryClient.invalidateQueries({ queryKey: ["schema", projectId, apiKey] });
   }
 
   if (isLoading) {

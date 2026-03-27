@@ -165,10 +165,19 @@ export interface ForeignKeyInfo {
  * Fetch foreign key relationships for the current project database.
  * Uses the SQL endpoint to query information_schema.
  */
+/** Validate a Postgres identifier to prevent SQL injection. */
+function isValidIdentifier(value: string): boolean {
+  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value);
+}
+
 export async function fetchForeignKeys(
   apiKey: string,
   schema = "public",
 ): Promise<ForeignKeyInfo[]> {
+  if (!isValidIdentifier(schema)) {
+    throw new Error(`Invalid schema name: ${schema}`);
+  }
+
   const sql = `
     SELECT
       tc.constraint_name,
