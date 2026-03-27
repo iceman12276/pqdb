@@ -20,9 +20,11 @@ import { Route as ProjectsProjectIdSqlRouteImport } from './routes/projects/$pro
 import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects/$projectId/settings'
 import { Route as ProjectsProjectIdSchemaRouteImport } from './routes/projects/$projectId/schema'
 import { Route as ProjectsProjectIdRealtimeRouteImport } from './routes/projects/$projectId/realtime'
+import { Route as ProjectsProjectIdPublicationsRouteImport } from './routes/projects/$projectId/publications'
 import { Route as ProjectsProjectIdMcpRouteImport } from './routes/projects/$projectId/mcp'
 import { Route as ProjectsProjectIdLogsRouteImport } from './routes/projects/$projectId/logs'
 import { Route as ProjectsProjectIdKeysRouteImport } from './routes/projects/$projectId.keys'
+import { Route as ProjectsProjectIdIndexesRouteImport } from './routes/projects/$projectId/indexes'
 import { Route as ProjectsProjectIdAuthRouteImport } from './routes/projects/$projectId.auth'
 import { Route as ProjectsProjectIdTablesIndexRouteImport } from './routes/projects/$projectId/tables/index'
 import { Route as ProjectsProjectIdTablesTableNameRouteImport } from './routes/projects/$projectId/tables/$tableName'
@@ -84,6 +86,12 @@ const ProjectsProjectIdRealtimeRoute =
     path: '/realtime',
     getParentRoute: () => ProjectsProjectIdRoute,
   } as any)
+const ProjectsProjectIdPublicationsRoute =
+  ProjectsProjectIdPublicationsRouteImport.update({
+    id: '/publications',
+    path: '/publications',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdMcpRoute = ProjectsProjectIdMcpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
@@ -99,6 +107,12 @@ const ProjectsProjectIdKeysRoute = ProjectsProjectIdKeysRouteImport.update({
   path: '/keys',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdIndexesRoute =
+  ProjectsProjectIdIndexesRouteImport.update({
+    id: '/indexes',
+    path: '/indexes',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdAuthRoute = ProjectsProjectIdAuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -125,9 +139,11 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/indexes': typeof ProjectsProjectIdIndexesRoute
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
@@ -143,9 +159,11 @@ export interface FileRoutesByTo {
   '/projects': typeof ProjectsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/indexes': typeof ProjectsProjectIdIndexesRoute
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
@@ -163,9 +181,11 @@ export interface FileRoutesById {
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/indexes': typeof ProjectsProjectIdIndexesRoute
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
@@ -184,9 +204,11 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/settings/'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/indexes'
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
@@ -202,9 +224,11 @@ export interface FileRouteTypes {
     | '/projects'
     | '/settings'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/indexes'
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
@@ -221,9 +245,11 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/settings/'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/indexes'
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
@@ -321,6 +347,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdRealtimeRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/publications': {
+      id: '/projects/$projectId/publications'
+      path: '/publications'
+      fullPath: '/projects/$projectId/publications'
+      preLoaderRoute: typeof ProjectsProjectIdPublicationsRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
     '/projects/$projectId/mcp': {
       id: '/projects/$projectId/mcp'
       path: '/mcp'
@@ -340,6 +373,13 @@ declare module '@tanstack/react-router' {
       path: '/keys'
       fullPath: '/projects/$projectId/keys'
       preLoaderRoute: typeof ProjectsProjectIdKeysRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
+    '/projects/$projectId/indexes': {
+      id: '/projects/$projectId/indexes'
+      path: '/indexes'
+      fullPath: '/projects/$projectId/indexes'
+      preLoaderRoute: typeof ProjectsProjectIdIndexesRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
     '/projects/$projectId/auth': {
@@ -368,9 +408,11 @@ declare module '@tanstack/react-router' {
 
 interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdAuthRoute: typeof ProjectsProjectIdAuthRoute
+  ProjectsProjectIdIndexesRoute: typeof ProjectsProjectIdIndexesRoute
   ProjectsProjectIdKeysRoute: typeof ProjectsProjectIdKeysRoute
   ProjectsProjectIdLogsRoute: typeof ProjectsProjectIdLogsRoute
   ProjectsProjectIdMcpRoute: typeof ProjectsProjectIdMcpRoute
+  ProjectsProjectIdPublicationsRoute: typeof ProjectsProjectIdPublicationsRoute
   ProjectsProjectIdRealtimeRoute: typeof ProjectsProjectIdRealtimeRoute
   ProjectsProjectIdSchemaRoute: typeof ProjectsProjectIdSchemaRoute
   ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
@@ -382,9 +424,11 @@ interface ProjectsProjectIdRouteChildren {
 
 const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdAuthRoute: ProjectsProjectIdAuthRoute,
+  ProjectsProjectIdIndexesRoute: ProjectsProjectIdIndexesRoute,
   ProjectsProjectIdKeysRoute: ProjectsProjectIdKeysRoute,
   ProjectsProjectIdLogsRoute: ProjectsProjectIdLogsRoute,
   ProjectsProjectIdMcpRoute: ProjectsProjectIdMcpRoute,
+  ProjectsProjectIdPublicationsRoute: ProjectsProjectIdPublicationsRoute,
   ProjectsProjectIdRealtimeRoute: ProjectsProjectIdRealtimeRoute,
   ProjectsProjectIdSchemaRoute: ProjectsProjectIdSchemaRoute,
   ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,

@@ -9,6 +9,8 @@ import {
   Bot,
   KeyRound,
   Settings,
+  ListTree,
+  Megaphone,
 } from "lucide-react";
 import { Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -31,13 +33,15 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Authentication", icon: Shield, path: "/auth" },
   { label: "Realtime", icon: Radio, path: "/realtime" },
   { label: "Logs", icon: ScrollText, path: "/logs" },
+  { label: "Indexes", icon: ListTree, path: "/indexes" },
+  { label: "Publications", icon: Megaphone, path: "/publications" },
   { label: "MCP", icon: Bot, path: "/mcp" },
   { label: "API Keys", icon: KeyRound, path: "/keys" },
   { label: "Project Settings", icon: Settings, path: "/settings" },
 ];
 
 /** Nav items that require data access and should be disabled when paused. */
-const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema"]);
+const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/indexes", "/publications"]);
 
 export function SidebarNav({ projectStatus }: { projectStatus?: string } = {}) {
   const { projectId } = useParams({ strict: false }) as {
