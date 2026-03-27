@@ -3,6 +3,8 @@ import {
   Table2,
   Terminal,
   GitBranch,
+  FunctionSquare,
+  Zap,
   Shield,
   Radio,
   ScrollText,
@@ -28,6 +30,8 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Table Editor", icon: Table2, path: "/tables" },
   { label: "Query Playground", icon: Terminal, path: "/sql" },
   { label: "Schema", icon: GitBranch, path: "/schema" },
+  { label: "Functions", icon: FunctionSquare, path: "/functions" },
+  { label: "Triggers", icon: Zap, path: "/triggers" },
   { label: "Authentication", icon: Shield, path: "/auth" },
   { label: "Realtime", icon: Radio, path: "/realtime" },
   { label: "Logs", icon: ScrollText, path: "/logs" },
@@ -37,7 +41,7 @@ export const sidebarNavItems: NavItem[] = [
 ];
 
 /** Nav items that require data access and should be disabled when paused. */
-const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema"]);
+const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/functions", "/triggers"]);
 
 export function SidebarNav({ projectStatus }: { projectStatus?: string } = {}) {
   const { projectId } = useParams({ strict: false }) as {
