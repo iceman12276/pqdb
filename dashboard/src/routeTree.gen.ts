@@ -21,9 +21,11 @@ import { Route as ProjectsProjectIdSqlRouteImport } from './routes/projects/$pro
 import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects/$projectId/settings'
 import { Route as ProjectsProjectIdSchemaRouteImport } from './routes/projects/$projectId/schema'
 import { Route as ProjectsProjectIdRealtimeRouteImport } from './routes/projects/$projectId/realtime'
+import { Route as ProjectsProjectIdPublicationsRouteImport } from './routes/projects/$projectId/publications'
 import { Route as ProjectsProjectIdMcpRouteImport } from './routes/projects/$projectId/mcp'
 import { Route as ProjectsProjectIdLogsRouteImport } from './routes/projects/$projectId/logs'
 import { Route as ProjectsProjectIdKeysRouteImport } from './routes/projects/$projectId.keys'
+import { Route as ProjectsProjectIdIndexesRouteImport } from './routes/projects/$projectId/indexes'
 import { Route as ProjectsProjectIdFunctionsRouteImport } from './routes/projects/$projectId/functions'
 import { Route as ProjectsProjectIdExtensionsRouteImport } from './routes/projects/$projectId/extensions'
 import { Route as ProjectsProjectIdEnumsRouteImport } from './routes/projects/$projectId/enums'
@@ -94,6 +96,12 @@ const ProjectsProjectIdRealtimeRoute =
     path: '/realtime',
     getParentRoute: () => ProjectsProjectIdRoute,
   } as any)
+const ProjectsProjectIdPublicationsRoute =
+  ProjectsProjectIdPublicationsRouteImport.update({
+    id: '/publications',
+    path: '/publications',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdMcpRoute = ProjectsProjectIdMcpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
@@ -109,6 +117,12 @@ const ProjectsProjectIdKeysRoute = ProjectsProjectIdKeysRouteImport.update({
   path: '/keys',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdIndexesRoute =
+  ProjectsProjectIdIndexesRouteImport.update({
+    id: '/indexes',
+    path: '/indexes',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdFunctionsRoute =
   ProjectsProjectIdFunctionsRouteImport.update({
     id: '/functions',
@@ -155,9 +169,11 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
   '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
   '/projects/$projectId/functions': typeof ProjectsProjectIdFunctionsRoute
+  '/projects/$projectId/indexes': typeof ProjectsProjectIdIndexesRoute
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
@@ -177,9 +193,11 @@ export interface FileRoutesByTo {
   '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
   '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
   '/projects/$projectId/functions': typeof ProjectsProjectIdFunctionsRoute
+  '/projects/$projectId/indexes': typeof ProjectsProjectIdIndexesRoute
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
@@ -201,9 +219,11 @@ export interface FileRoutesById {
   '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
   '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
   '/projects/$projectId/functions': typeof ProjectsProjectIdFunctionsRoute
+  '/projects/$projectId/indexes': typeof ProjectsProjectIdIndexesRoute
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
@@ -226,9 +246,11 @@ export interface FileRouteTypes {
     | '/projects/$projectId/enums'
     | '/projects/$projectId/extensions'
     | '/projects/$projectId/functions'
+    | '/projects/$projectId/indexes'
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
@@ -248,9 +270,11 @@ export interface FileRouteTypes {
     | '/projects/$projectId/enums'
     | '/projects/$projectId/extensions'
     | '/projects/$projectId/functions'
+    | '/projects/$projectId/indexes'
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
@@ -271,9 +295,11 @@ export interface FileRouteTypes {
     | '/projects/$projectId/enums'
     | '/projects/$projectId/extensions'
     | '/projects/$projectId/functions'
+    | '/projects/$projectId/indexes'
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
@@ -379,6 +405,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdRealtimeRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/publications': {
+      id: '/projects/$projectId/publications'
+      path: '/publications'
+      fullPath: '/projects/$projectId/publications'
+      preLoaderRoute: typeof ProjectsProjectIdPublicationsRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
     '/projects/$projectId/mcp': {
       id: '/projects/$projectId/mcp'
       path: '/mcp'
@@ -398,6 +431,13 @@ declare module '@tanstack/react-router' {
       path: '/keys'
       fullPath: '/projects/$projectId/keys'
       preLoaderRoute: typeof ProjectsProjectIdKeysRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
+    '/projects/$projectId/indexes': {
+      id: '/projects/$projectId/indexes'
+      path: '/indexes'
+      fullPath: '/projects/$projectId/indexes'
+      preLoaderRoute: typeof ProjectsProjectIdIndexesRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
     '/projects/$projectId/functions': {
@@ -450,9 +490,11 @@ interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdEnumsRoute: typeof ProjectsProjectIdEnumsRoute
   ProjectsProjectIdExtensionsRoute: typeof ProjectsProjectIdExtensionsRoute
   ProjectsProjectIdFunctionsRoute: typeof ProjectsProjectIdFunctionsRoute
+  ProjectsProjectIdIndexesRoute: typeof ProjectsProjectIdIndexesRoute
   ProjectsProjectIdKeysRoute: typeof ProjectsProjectIdKeysRoute
   ProjectsProjectIdLogsRoute: typeof ProjectsProjectIdLogsRoute
   ProjectsProjectIdMcpRoute: typeof ProjectsProjectIdMcpRoute
+  ProjectsProjectIdPublicationsRoute: typeof ProjectsProjectIdPublicationsRoute
   ProjectsProjectIdRealtimeRoute: typeof ProjectsProjectIdRealtimeRoute
   ProjectsProjectIdSchemaRoute: typeof ProjectsProjectIdSchemaRoute
   ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
@@ -468,9 +510,11 @@ const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdEnumsRoute: ProjectsProjectIdEnumsRoute,
   ProjectsProjectIdExtensionsRoute: ProjectsProjectIdExtensionsRoute,
   ProjectsProjectIdFunctionsRoute: ProjectsProjectIdFunctionsRoute,
+  ProjectsProjectIdIndexesRoute: ProjectsProjectIdIndexesRoute,
   ProjectsProjectIdKeysRoute: ProjectsProjectIdKeysRoute,
   ProjectsProjectIdLogsRoute: ProjectsProjectIdLogsRoute,
   ProjectsProjectIdMcpRoute: ProjectsProjectIdMcpRoute,
+  ProjectsProjectIdPublicationsRoute: ProjectsProjectIdPublicationsRoute,
   ProjectsProjectIdRealtimeRoute: ProjectsProjectIdRealtimeRoute,
   ProjectsProjectIdSchemaRoute: ProjectsProjectIdSchemaRoute,
   ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,
@@ -495,12 +539,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

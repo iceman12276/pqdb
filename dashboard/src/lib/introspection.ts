@@ -86,3 +86,46 @@ export async function fetchExtensions(apiKey: string): Promise<Extension[]> {
   }
   return result.data as Extension[];
 }
+
+// --- Index types ---
+
+export interface IndexInfo {
+  name: string;
+  table: string;
+  definition: string;
+  unique: boolean;
+  size_bytes: number;
+}
+
+export async function fetchIndexes(apiKey: string): Promise<IndexInfo[]> {
+  const result = await api.fetch("/v1/db/catalog/indexes", {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch indexes");
+  }
+  return result.data as IndexInfo[];
+}
+
+// --- Publication types ---
+
+export interface PublicationInfo {
+  name: string;
+  all_tables: boolean;
+  insert: boolean;
+  update: boolean;
+  delete: boolean;
+  tables: string[];
+}
+
+export async function fetchPublications(
+  apiKey: string,
+): Promise<PublicationInfo[]> {
+  const result = await api.fetch("/v1/db/catalog/publications", {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch publications");
+  }
+  return result.data as PublicationInfo[];
+}
