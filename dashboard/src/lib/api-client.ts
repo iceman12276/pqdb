@@ -11,6 +11,7 @@ import {
   clearTokens,
   type TokenPair,
 } from "./auth-store";
+import { getActiveBranch } from "./branch-store";
 
 interface ApiError {
   code: number;
@@ -98,11 +99,15 @@ export function createApiClient(config: { baseUrl: string }): ApiClient {
     init?: RequestInit,
   ): Promise<FetchResult> {
     const accessToken = getAccessToken();
+    const branch = getActiveBranch();
     const headers: Record<string, string> = {
       ...(init?.headers as Record<string, string>),
     };
     if (accessToken) {
       headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+    if (branch) {
+      headers["x-branch"] = branch;
     }
 
     const response = await fetch(`${baseUrl}${path}`, {

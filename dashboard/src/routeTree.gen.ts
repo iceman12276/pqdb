@@ -29,6 +29,7 @@ import { Route as ProjectsProjectIdIndexesRouteImport } from './routes/projects/
 import { Route as ProjectsProjectIdFunctionsRouteImport } from './routes/projects/$projectId/functions'
 import { Route as ProjectsProjectIdExtensionsRouteImport } from './routes/projects/$projectId/extensions'
 import { Route as ProjectsProjectIdEnumsRouteImport } from './routes/projects/$projectId/enums'
+import { Route as ProjectsProjectIdBranchesRouteImport } from './routes/projects/$projectId/branches'
 import { Route as ProjectsProjectIdAuthRouteImport } from './routes/projects/$projectId.auth'
 import { Route as ProjectsProjectIdTablesIndexRouteImport } from './routes/projects/$projectId/tables/index'
 import { Route as ProjectsProjectIdTablesTableNameRouteImport } from './routes/projects/$projectId/tables/$tableName'
@@ -140,6 +141,12 @@ const ProjectsProjectIdEnumsRoute = ProjectsProjectIdEnumsRouteImport.update({
   path: '/enums',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdBranchesRoute =
+  ProjectsProjectIdBranchesRouteImport.update({
+    id: '/branches',
+    path: '/branches',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdAuthRoute = ProjectsProjectIdAuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -166,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/branches': typeof ProjectsProjectIdBranchesRoute
   '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
   '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
   '/projects/$projectId/functions': typeof ProjectsProjectIdFunctionsRoute
@@ -190,6 +198,7 @@ export interface FileRoutesByTo {
   '/projects': typeof ProjectsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/branches': typeof ProjectsProjectIdBranchesRoute
   '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
   '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
   '/projects/$projectId/functions': typeof ProjectsProjectIdFunctionsRoute
@@ -216,6 +225,7 @@ export interface FileRoutesById {
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/branches': typeof ProjectsProjectIdBranchesRoute
   '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
   '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
   '/projects/$projectId/functions': typeof ProjectsProjectIdFunctionsRoute
@@ -243,6 +253,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/settings/'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/branches'
     | '/projects/$projectId/enums'
     | '/projects/$projectId/extensions'
     | '/projects/$projectId/functions'
@@ -267,6 +278,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/settings'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/branches'
     | '/projects/$projectId/enums'
     | '/projects/$projectId/extensions'
     | '/projects/$projectId/functions'
@@ -292,6 +304,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/settings/'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/branches'
     | '/projects/$projectId/enums'
     | '/projects/$projectId/extensions'
     | '/projects/$projectId/functions'
@@ -461,6 +474,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdEnumsRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/branches': {
+      id: '/projects/$projectId/branches'
+      path: '/branches'
+      fullPath: '/projects/$projectId/branches'
+      preLoaderRoute: typeof ProjectsProjectIdBranchesRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
     '/projects/$projectId/auth': {
       id: '/projects/$projectId/auth'
       path: '/auth'
@@ -487,6 +507,7 @@ declare module '@tanstack/react-router' {
 
 interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdAuthRoute: typeof ProjectsProjectIdAuthRoute
+  ProjectsProjectIdBranchesRoute: typeof ProjectsProjectIdBranchesRoute
   ProjectsProjectIdEnumsRoute: typeof ProjectsProjectIdEnumsRoute
   ProjectsProjectIdExtensionsRoute: typeof ProjectsProjectIdExtensionsRoute
   ProjectsProjectIdFunctionsRoute: typeof ProjectsProjectIdFunctionsRoute
@@ -507,6 +528,7 @@ interface ProjectsProjectIdRouteChildren {
 
 const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdAuthRoute: ProjectsProjectIdAuthRoute,
+  ProjectsProjectIdBranchesRoute: ProjectsProjectIdBranchesRoute,
   ProjectsProjectIdEnumsRoute: ProjectsProjectIdEnumsRoute,
   ProjectsProjectIdExtensionsRoute: ProjectsProjectIdExtensionsRoute,
   ProjectsProjectIdFunctionsRoute: ProjectsProjectIdFunctionsRoute,
@@ -539,3 +561,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}

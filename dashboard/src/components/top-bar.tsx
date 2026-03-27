@@ -2,11 +2,13 @@ import * as React from "react";
 import { Search, Settings, Plug, LogOut } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 import { ProjectSelector } from "./project-selector";
+import { BranchSelector } from "./branch-selector";
 import { ConnectPopup } from "./connect-popup";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { useNavigate } from "~/lib/navigation";
 import { useParams } from "@tanstack/react-router";
 import { clearTokens } from "~/lib/auth-store";
+import { getActiveBranch, setActiveBranch } from "~/lib/branch-store";
 import type { Project } from "~/lib/projects";
 
 export function TopBar() {
@@ -17,10 +19,21 @@ export function TopBar() {
   const [selectedProject, setSelectedProject] = React.useState<Project | null>(
     null,
   );
+  const [activeBranch, setActiveBranchState] = React.useState<string | null>(
+    () => getActiveBranch(),
+  );
 
   function handleProjectSelect(project: Project) {
     setSelectedProject(project);
+    // Reset branch when switching projects
+    setActiveBranch(null);
+    setActiveBranchState(null);
     navigate({ to: "/projects/$projectId", params: { projectId: project.id } });
+  }
+
+  function handleBranchChange(branch: string | null) {
+    setActiveBranch(branch);
+    setActiveBranchState(branch);
   }
 
   return (
@@ -54,6 +67,16 @@ export function TopBar() {
           selectedProjectId={selectedProject?.id ?? null}
           onProjectSelect={handleProjectSelect}
         />
+        {(selectedProject?.id ?? urlProjectId) && (
+          <>
+            <span className="text-muted-foreground">/</span>
+            <BranchSelector
+              projectId={(selectedProject?.id ?? urlProjectId)!}
+              activeBranch={activeBranch}
+              onBranchChange={handleBranchChange}
+            />
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
