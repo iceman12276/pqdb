@@ -719,8 +719,8 @@ function ErdViewInner({
           maxZoom={2}
         >
           <Background />
-          <Controls />
-          <MiniMap />
+          <Controls className="[&>button]:bg-background [&>button]:border-border [&>button]:text-foreground [&>button]:hover:bg-muted" />
+          <MiniMap className="!bg-background border border-border" maskColor="hsl(var(--muted))" />
         </ReactFlow>
       </div>
     </div>
