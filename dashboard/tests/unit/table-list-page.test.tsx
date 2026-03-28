@@ -2,12 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { createQueryWrapper } from "../query-wrapper";
 
-const { mockFetchTables } = vi.hoisted(() => ({
+const { mockFetchTables, mockCreateTable } = vi.hoisted(() => ({
   mockFetchTables: vi.fn(),
+  mockCreateTable: vi.fn(),
 }));
 
 vi.mock("~/lib/table-data", () => ({
   fetchTables: mockFetchTables,
+  createTable: mockCreateTable,
   fetchTableRows: vi.fn().mockResolvedValue([]),
   insertRow: vi.fn().mockResolvedValue([]),
   deleteRow: vi.fn().mockResolvedValue([]),
@@ -72,5 +74,27 @@ describe("TableListPage", () => {
     });
     expect(screen.getByText(/4 columns/i)).toBeInTheDocument();
     expect(screen.getByText(/3 columns/i)).toBeInTheDocument();
+  });
+
+  it("shows New Table button when tables are loaded", async () => {
+    mockFetchTables.mockResolvedValueOnce(mockTablesData);
+    const { wrapper } = createQueryWrapper();
+    render(<TableListPage projectId="p1" apiKey="pqdb_service_abc" />, { wrapper });
+    expect(await screen.findByRole("button", { name: /new table/i })).toBeInTheDocument();
+  });
+
+  it("shows New Table button in empty state", async () => {
+    mockFetchTables.mockResolvedValueOnce([]);
+    const { wrapper } = createQueryWrapper();
+    render(<TableListPage projectId="p1" apiKey="pqdb_service_abc" />, { wrapper });
+    expect(await screen.findByRole("button", { name: /new table/i })).toBeInTheDocument();
+  });
+
+  it("disables New Table button when project is paused", async () => {
+    mockFetchTables.mockResolvedValueOnce(mockTablesData);
+    const { wrapper } = createQueryWrapper();
+    render(<TableListPage projectId="p1" apiKey="pqdb_service_abc" isPaused />, { wrapper });
+    const btn = await screen.findByRole("button", { name: /new table/i });
+    expect(btn).toBeDisabled();
   });
 });
