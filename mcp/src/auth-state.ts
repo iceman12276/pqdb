@@ -112,8 +112,16 @@ export async function authFetch<T>(
   if (!response.ok) {
     let detail: string;
     try {
-      const body = (await response.json()) as { detail?: string };
-      detail = body.detail ?? response.statusText;
+      const body = (await response.json()) as { detail?: unknown };
+      const d = body.detail;
+      if (typeof d === "string") {
+        detail = d;
+      } else if (d && typeof d === "object" && "error" in d) {
+        const err = (d as { error: { code?: string; message?: string } }).error;
+        detail = err.message ?? err.code ?? response.statusText;
+      } else {
+        detail = JSON.stringify(d) ?? response.statusText;
+      }
     } catch {
       detail = response.statusText;
     }
@@ -155,8 +163,16 @@ export async function authPost<T>(
   if (!response.ok) {
     let detail: string;
     try {
-      const errorBody = (await response.json()) as { detail?: string };
-      detail = errorBody.detail ?? response.statusText;
+      const errorBody = (await response.json()) as { detail?: unknown };
+      const d = errorBody.detail;
+      if (typeof d === "string") {
+        detail = d;
+      } else if (d && typeof d === "object" && "error" in d) {
+        const err = (d as { error: { code?: string; message?: string } }).error;
+        detail = err.message ?? err.code ?? response.statusText;
+      } else {
+        detail = JSON.stringify(d) ?? response.statusText;
+      }
     } catch {
       detail = response.statusText;
     }

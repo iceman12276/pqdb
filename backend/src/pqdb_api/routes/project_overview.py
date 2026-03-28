@@ -7,7 +7,10 @@ for the dashboard overview page.
 from __future__ import annotations
 
 import uuid
+import structlog
 from typing import Any
+
+logger = structlog.get_logger()
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select, text
@@ -41,7 +44,8 @@ async def _safe_count(session: AsyncSession, sql: Any) -> int:
     try:
         result = await session.execute(sql)
         return result.scalar() or 0
-    except Exception:
+    except Exception as exc:
+        logger.warning("safe_count_failed", sql=str(sql), error=str(exc))
         await session.rollback()
         return 0
 

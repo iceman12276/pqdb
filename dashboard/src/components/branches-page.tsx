@@ -25,6 +25,7 @@ import {
   promoteBranch,
   rebaseBranch,
 } from "~/lib/branches";
+import { setActiveBranch } from "~/lib/branch-store";
 
 interface BranchesPageProps {
   projectId: string;
@@ -80,6 +81,7 @@ export function BranchesPage({ projectId }: BranchesPageProps) {
       promoteBranch(projectId, branchName, true),
     onSuccess: () => {
       setPromoteTarget(null);
+      setActiveBranch(null); // Reset to main after promote
       queryClient.invalidateQueries({ queryKey: ["branches", projectId] });
     },
   });
