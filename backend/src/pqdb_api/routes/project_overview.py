@@ -7,11 +7,9 @@ for the dashboard overview page.
 from __future__ import annotations
 
 import uuid
-import structlog
 from typing import Any
 
-logger = structlog.get_logger()
-
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +19,8 @@ from pqdb_api.middleware.auth import get_current_developer_id
 from pqdb_api.models.project import Project
 from pqdb_api.routes.projects import _get_project_session
 from pqdb_api.services.audit_log import ensure_audit_table
+
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/v1/projects", tags=["overview"])
 
