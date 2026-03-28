@@ -720,7 +720,12 @@ function ErdViewInner({
         >
           <Background />
           <Controls className="!bg-background !border-border !shadow-none [&_button]:!bg-background [&_button]:!border-border [&_button]:!fill-foreground [&_button:hover]:!bg-muted" />
-          <MiniMap className="!bg-background !border-border" nodeColor="hsl(var(--muted-foreground))" maskColor="hsl(var(--muted) / 0.7)" />
+          <MiniMap
+            className="!bg-background !border !border-border !rounded-lg !shadow-none"
+            nodeColor="hsl(var(--muted-foreground))"
+            maskColor="hsl(var(--muted) / 0.5)"
+            style={{ borderWidth: 1 }}
+          />
         </ReactFlow>
       </div>
     </div>
