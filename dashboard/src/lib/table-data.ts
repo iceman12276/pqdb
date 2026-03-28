@@ -122,6 +122,41 @@ export async function deleteRow(
 }
 
 /**
+ * Create a new table (POST /v1/db/tables).
+ */
+export async function createTable(
+  apiKey: string,
+  name: string,
+  columns: Array<{
+    name: string;
+    data_type: string;
+    sensitivity: string;
+    is_owner: boolean;
+  }>,
+): Promise<TableListItem> {
+  const result = await api.fetch("/v1/db/tables", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: apiKey,
+    },
+    body: JSON.stringify({
+      name,
+      columns: columns.map((c) => ({
+        name: c.name,
+        data_type: c.data_type,
+        sensitivity: c.sensitivity,
+        owner: c.is_owner,
+      })),
+    }),
+  });
+  if (!result.ok) {
+    throw new Error("Failed to create table");
+  }
+  return result.data as TableListItem;
+}
+
+/**
  * Get row count for a table using select with limit 0.
  * We use a select with a large limit and count client-side, or
  * we can use the introspect endpoint which doesn't provide counts.

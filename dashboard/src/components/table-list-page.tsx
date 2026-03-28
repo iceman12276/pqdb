@@ -1,15 +1,18 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Table2 } from "lucide-react";
+import { Plus, Table2 } from "lucide-react";
+import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
 import { Skeleton } from "~/components/ui/skeleton";
 import { fetchTables, type TableListItem } from "~/lib/table-data";
+import { CreateTableDialog } from "~/components/create-table-dialog";
 
 interface TableListPageProps {
   projectId: string;
   apiKey: string;
   onSelectTable?: (tableName: string) => void;
+  isPaused?: boolean;
 }
 
 const sensitivityColors: Record<string, string> = {
@@ -18,7 +21,8 @@ const sensitivityColors: Record<string, string> = {
   private: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
 };
 
-export function TableListPage({ projectId, apiKey, onSelectTable }: TableListPageProps) {
+export function TableListPage({ projectId, apiKey, onSelectTable, isPaused }: TableListPageProps) {
+  const [createOpen, setCreateOpen] = React.useState(false);
   const {
     data: tables,
     isLoading,
@@ -49,20 +53,51 @@ export function TableListPage({ projectId, apiKey, onSelectTable }: TableListPag
     );
   }
 
+  const newTableButton = (
+    <Button
+      onClick={() => setCreateOpen(true)}
+      disabled={isPaused}
+      size="sm"
+    >
+      <Plus className="h-4 w-4 mr-1" />
+      New Table
+    </Button>
+  );
+
+  const createDialog = (
+    <CreateTableDialog
+      apiKey={apiKey}
+      projectId={projectId}
+      open={createOpen}
+      onOpenChange={setCreateOpen}
+      disabled={isPaused}
+    />
+  );
+
   if (!tables || tables.length === 0) {
     return (
-      <div className="text-center py-12">
-        <Table2 className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-        <p className="text-muted-foreground">
-          No tables yet. Create a table using the SDK or API.
-        </p>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Tables</h2>
+          {newTableButton}
+        </div>
+        <div className="text-center py-12">
+          <Table2 className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+          <p className="text-muted-foreground">
+            No tables yet. Create a table using the SDK or API.
+          </p>
+        </div>
+        {createDialog}
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-semibold">Tables</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Tables</h2>
+        {newTableButton}
+      </div>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {tables.map((table) => (
           <TableCard
@@ -72,6 +107,7 @@ export function TableListPage({ projectId, apiKey, onSelectTable }: TableListPag
           />
         ))}
       </div>
+      {createDialog}
     </div>
   );
 }

@@ -60,6 +60,7 @@ function TablesRouteInner({ projectId }: { projectId: string }) {
       <TableListPage
         projectId={projectId}
         apiKey={apiKey}
+        isPaused={project.status === "paused"}
         onSelectTable={(name) => {
           navigate({
             to: "/projects/$projectId/tables/$tableName",
