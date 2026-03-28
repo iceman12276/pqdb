@@ -12,14 +12,21 @@ let _projectId: string | undefined;
 let _refreshToken: string | undefined;
 let _projectUrl: string | undefined;
 
-/** Set the shared auth state. Called once during MCP session initialization. */
+/** Whether the dev token has been refreshed at least once. */
+let _tokenRefreshed = false;
+
+/** Set the shared auth state. Called during MCP session initialization.
+ *  If the token has already been refreshed, keeps the fresh token. */
 export function setAuthState(opts: {
   devToken?: string;
   projectId?: string;
   refreshToken?: string;
   projectUrl?: string;
 }): void {
-  _devToken = opts.devToken;
+  // Don't overwrite a refreshed token with the stale original
+  if (!_tokenRefreshed || !_devToken) {
+    _devToken = opts.devToken;
+  }
   _projectId = opts.projectId;
   _refreshToken = opts.refreshToken;
   _projectUrl = opts.projectUrl;
@@ -68,6 +75,7 @@ async function refreshDevToken(): Promise<boolean> {
     if (res.ok) {
       const data = (await res.json()) as { access_token: string };
       _devToken = data.access_token;
+      _tokenRefreshed = true;
       console.error("[pqdb-mcp] Auto-refreshed developer JWT");
       return true;
     }

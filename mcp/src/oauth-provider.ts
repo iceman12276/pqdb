@@ -53,6 +53,8 @@ export interface PqdbOAuthProviderOptions {
   dashboardUrl: string;
   /** MCP server's own URL (e.g. http://localhost:3002). */
   mcpServerUrl: string;
+  /** Backend API URL (e.g. http://localhost:8000). */
+  projectUrl: string;
 }
 
 /**
@@ -93,6 +95,7 @@ export class PqdbOAuthProvider implements OAuthServerProvider {
 
   private readonly dashboardUrl: string;
   private readonly mcpServerUrl: string;
+  private readonly projectUrl: string;
   /** Refresh token from the dashboard — used to auto-refresh expired JWTs. */
   private refreshToken: string | undefined;
 
@@ -100,6 +103,7 @@ export class PqdbOAuthProvider implements OAuthServerProvider {
     this.clientsStore = new PqdbClientsStore();
     this.dashboardUrl = options.dashboardUrl;
     this.mcpServerUrl = options.mcpServerUrl;
+    this.projectUrl = options.projectUrl;
   }
 
   /** Store the refresh token received from the dashboard during auth completion. */
@@ -112,12 +116,13 @@ export class PqdbOAuthProvider implements OAuthServerProvider {
     return this.refreshToken;
   }
 
-  /** Update a session to use a new access token (after refresh). */
+  /** Update a session to use a new access token (after refresh).
+   *  Keeps the old token valid so existing client connections don't break. */
   updateSessionToken(oldToken: string, newToken: string): void {
     const session = this.sessions.get(oldToken);
     if (session) {
-      this.sessions.delete(oldToken);
-      this.sessions.set(newToken, session);
+      // Keep old token valid (client still sends it) AND add new token
+      this.sessions.set(newToken, { ...session });
     }
   }
 
@@ -210,16 +215,68 @@ export class PqdbOAuthProvider implements OAuthServerProvider {
   }
 
   /**
-   * Refresh token exchange — not yet implemented.
-   * Future: call pqdb backend /v1/auth/refresh with the developer's refresh token.
+   * Refresh token exchange — calls the backend to get a fresh JWT,
+   * then issues a new opaque session token to Claude Code.
    */
   async exchangeRefreshToken(
-    _client: OAuthClientInformationFull,
+    client: OAuthClientInformationFull,
     _refreshToken: string,
     _scopes?: string[],
     _resource?: URL,
   ): Promise<OAuthTokens> {
-    throw new Error("Refresh token exchange not yet implemented");
+    if (!this.refreshToken) {
+      throw new Error("No refresh token available");
+    }
+
+    // Call backend to get a fresh developer JWT
+    const res = await fetch(`${this.projectUrl}/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: this.refreshToken }),
+    });
+
+    if (!res.ok) {
+      throw new Error("Backend token refresh failed");
+    }
+
+    const data = (await res.json()) as { access_token: string };
+    const freshJwt = data.access_token;
+
+    // Generate an opaque session token for Claude Code
+    const sessionToken = randomUUID();
+
+    // Find the existing session for this client to preserve encryption key
+    let encryptionKey: string | undefined;
+    for (const [, session] of this.sessions) {
+      if (session.clientId === client.client_id) {
+        encryptionKey = session.encryptionKey;
+        break;
+      }
+    }
+
+    // Store new session
+    this.sessions.set(sessionToken, {
+      clientId: client.client_id,
+      scopes: _scopes ?? [],
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+      encryptionKey,
+    });
+
+    // Update auth-state so tool modules use the fresh JWT
+    const { setAuthState } = await import("./auth-state.js");
+    setAuthState({
+      devToken: freshJwt,
+      projectUrl: this.projectUrl,
+      refreshToken: this.refreshToken,
+    });
+
+    console.error("[pqdb-mcp] OAuth token refreshed successfully");
+
+    return {
+      access_token: sessionToken,
+      token_type: "bearer",
+      expires_in: 86400,
+    };
   }
 
   /**

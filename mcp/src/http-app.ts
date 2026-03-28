@@ -57,7 +57,7 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
   const { dashboardUrl, mcpServerUrl } = options;
   const issuerUrl = new URL(mcpServerUrl);
 
-  const provider = new PqdbOAuthProvider({ dashboardUrl, mcpServerUrl });
+  const provider = new PqdbOAuthProvider({ dashboardUrl, mcpServerUrl, projectUrl: options.projectUrl });
 
   const app = express();
   app.use(express.json());
