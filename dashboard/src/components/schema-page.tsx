@@ -720,7 +720,7 @@ function ErdViewInner({
         >
           <Background />
           <Controls className="!bg-background !border-border !shadow-none [&_button]:!bg-background [&_button]:!border-border [&_button]:!fill-foreground [&_button:hover]:!bg-muted" />
-          <MiniMap />
+          <MiniMap className="dark:!bg-zinc-900" />
         </ReactFlow>
       </div>
     </div>
