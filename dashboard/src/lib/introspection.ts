@@ -130,6 +130,29 @@ export async function fetchPublications(
   return result.data as PublicationInfo[];
 }
 
+// --- Backup stats types ---
+
+export interface BackupStats {
+  archived_count: number;
+  failed_count: number;
+  last_archived_wal: string | null;
+  last_archived_time: string | null;
+  last_failed_wal: string | null;
+  last_failed_time: string | null;
+}
+
+export async function fetchBackupStats(
+  apiKey: string,
+): Promise<BackupStats> {
+  const result = await api.fetch("/v1/db/catalog/backups", {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch backup stats");
+  }
+  return result.data as BackupStats;
+}
+
 // --- Foreign Data Wrapper types (US-109) ---
 
 export interface ForeignWrapper {
