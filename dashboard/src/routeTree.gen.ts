@@ -16,6 +16,7 @@ import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects/index'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as ProjectsProjectIdIndexRouteImport } from './routes/projects/$projectId/index'
+import { Route as ProjectsProjectIdWrappersRouteImport } from './routes/projects/$projectId/wrappers'
 import { Route as ProjectsProjectIdTriggersRouteImport } from './routes/projects/$projectId/triggers'
 import { Route as ProjectsProjectIdSqlRouteImport } from './routes/projects/$projectId/sql'
 import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects/$projectId/settings'
@@ -72,6 +73,12 @@ const ProjectsProjectIdIndexRoute = ProjectsProjectIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdWrappersRoute =
+  ProjectsProjectIdWrappersRouteImport.update({
+    id: '/wrappers',
+    path: '/wrappers',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdTriggersRoute =
   ProjectsProjectIdTriggersRouteImport.update({
     id: '/triggers',
@@ -211,6 +218,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId/triggers': typeof ProjectsProjectIdTriggersRoute
+  '/projects/$projectId/wrappers': typeof ProjectsProjectIdWrappersRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
   '/projects/$projectId/tables/$tableName': typeof ProjectsProjectIdTablesTableNameRoute
   '/projects/$projectId/tables/': typeof ProjectsProjectIdTablesIndexRoute
@@ -239,6 +247,7 @@ export interface FileRoutesByTo {
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId/triggers': typeof ProjectsProjectIdTriggersRoute
+  '/projects/$projectId/wrappers': typeof ProjectsProjectIdWrappersRoute
   '/projects/$projectId': typeof ProjectsProjectIdIndexRoute
   '/projects/$projectId/tables/$tableName': typeof ProjectsProjectIdTablesTableNameRoute
   '/projects/$projectId/tables': typeof ProjectsProjectIdTablesIndexRoute
@@ -269,6 +278,7 @@ export interface FileRoutesById {
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId/triggers': typeof ProjectsProjectIdTriggersRoute
+  '/projects/$projectId/wrappers': typeof ProjectsProjectIdWrappersRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
   '/projects/$projectId/tables/$tableName': typeof ProjectsProjectIdTablesTableNameRoute
   '/projects/$projectId/tables/': typeof ProjectsProjectIdTablesIndexRoute
@@ -300,6 +310,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
     | '/projects/$projectId/triggers'
+    | '/projects/$projectId/wrappers'
     | '/projects/$projectId/'
     | '/projects/$projectId/tables/$tableName'
     | '/projects/$projectId/tables/'
@@ -328,6 +339,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
     | '/projects/$projectId/triggers'
+    | '/projects/$projectId/wrappers'
     | '/projects/$projectId'
     | '/projects/$projectId/tables/$tableName'
     | '/projects/$projectId/tables'
@@ -357,6 +369,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
     | '/projects/$projectId/triggers'
+    | '/projects/$projectId/wrappers'
     | '/projects/$projectId/'
     | '/projects/$projectId/tables/$tableName'
     | '/projects/$projectId/tables/'
@@ -420,6 +433,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/projects/$projectId/'
       preLoaderRoute: typeof ProjectsProjectIdIndexRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
+    '/projects/$projectId/wrappers': {
+      id: '/projects/$projectId/wrappers'
+      path: '/wrappers'
+      fullPath: '/projects/$projectId/wrappers'
+      preLoaderRoute: typeof ProjectsProjectIdWrappersRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
     '/projects/$projectId/triggers': {
@@ -584,6 +604,7 @@ interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
   ProjectsProjectIdSqlRoute: typeof ProjectsProjectIdSqlRoute
   ProjectsProjectIdTriggersRoute: typeof ProjectsProjectIdTriggersRoute
+  ProjectsProjectIdWrappersRoute: typeof ProjectsProjectIdWrappersRoute
   ProjectsProjectIdIndexRoute: typeof ProjectsProjectIdIndexRoute
   ProjectsProjectIdTablesTableNameRoute: typeof ProjectsProjectIdTablesTableNameRoute
   ProjectsProjectIdTablesIndexRoute: typeof ProjectsProjectIdTablesIndexRoute
@@ -608,6 +629,7 @@ const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,
   ProjectsProjectIdSqlRoute: ProjectsProjectIdSqlRoute,
   ProjectsProjectIdTriggersRoute: ProjectsProjectIdTriggersRoute,
+  ProjectsProjectIdWrappersRoute: ProjectsProjectIdWrappersRoute,
   ProjectsProjectIdIndexRoute: ProjectsProjectIdIndexRoute,
   ProjectsProjectIdTablesTableNameRoute: ProjectsProjectIdTablesTableNameRoute,
   ProjectsProjectIdTablesIndexRoute: ProjectsProjectIdTablesIndexRoute,
