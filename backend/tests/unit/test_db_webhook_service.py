@@ -97,7 +97,9 @@ class TestBuildWebhookPayload:
         )
         from datetime import datetime, timezone
 
-        dt = datetime.fromisoformat(payload["timestamp"])
+        ts = payload["timestamp"]
+        assert isinstance(ts, str)
+        dt = datetime.fromisoformat(ts)
         assert dt.tzinfo is not None or dt.tzinfo == timezone.utc
 
     def test_empty_row_data(self) -> None:
@@ -163,7 +165,7 @@ class TestDeliverWebhook:
 
     @pytest.mark.asyncio()
     async def test_sends_hmac_in_header(self) -> None:
-        payload = {
+        payload: dict[str, object] = {
             "table": "t",
             "event": "INSERT",
             "row": {"id": 1},
@@ -253,7 +255,7 @@ class TestDeliverWebhook:
     async def test_payload_sent_as_json_string(self) -> None:
         """Body is a JSON string (not dict) for HMAC consistency."""
         client = _mock_async_client(post_return=_mock_response(200))
-        payload = {
+        payload: dict[str, object] = {
             "table": "t",
             "event": "INSERT",
             "row": {"id": 1},
