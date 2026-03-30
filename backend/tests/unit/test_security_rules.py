@@ -96,7 +96,11 @@ class TestCheckPlainPiiColumns:
 
     def test_encrypted_email_returns_no_finding(self) -> None:
         columns = [
-            {"table_name": "users", "column_name": "email", "sensitivity": "searchable"},
+            {
+                "table_name": "users",
+                "column_name": "email",
+                "sensitivity": "searchable",
+            },
         ]
         findings = check_plain_pii_columns(columns)
         assert findings == []
@@ -120,7 +124,11 @@ class TestCheckPlainPiiColumns:
             {"table_name": "users", "column_name": "email", "sensitivity": "plain"},
             {"table_name": "users", "column_name": "phone", "sensitivity": "plain"},
             {"table_name": "users", "column_name": "ssn", "sensitivity": "plain"},
-            {"table_name": "users", "column_name": "display_name", "sensitivity": "plain"},
+            {
+                "table_name": "users",
+                "column_name": "display_name",
+                "sensitivity": "plain",
+            },
         ]
         findings = check_plain_pii_columns(columns)
         pii_cols = {f.message for f in findings}
@@ -282,7 +290,11 @@ class TestCheckMissingOwnerColumn:
     def test_multiple_tables_mixed(self) -> None:
         columns = [
             {"table_name": "posts", "column_name": "title", "sensitivity": "plain"},
-            {"table_name": "comments", "column_name": "owner_id", "sensitivity": "plain"},
+            {
+                "table_name": "comments",
+                "column_name": "owner_id",
+                "sensitivity": "plain",
+            },
         ]
         findings = check_missing_owner_column(["posts", "comments"], columns)
         assert len(findings) == 1
