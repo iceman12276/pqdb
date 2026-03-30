@@ -3,6 +3,7 @@ import {
   Table2,
   Terminal,
   GitBranch,
+  GitCommitHorizontal,
   Network,
   FunctionSquare,
   Zap,
@@ -46,6 +47,7 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Publications", icon: Megaphone, path: "/publications" },
   { label: "Branches", icon: GitBranch, path: "/branches" },
   { label: "MCP", icon: Bot, path: "/mcp" },
+  { label: "Migrations", icon: GitCommitHorizontal, path: "/migrations" },
   { label: "API Keys", icon: KeyRound, path: "/keys" },
   { label: "Project Settings", icon: Settings, path: "/settings" },
 ];
