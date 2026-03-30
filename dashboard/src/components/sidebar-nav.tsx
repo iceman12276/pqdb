@@ -8,6 +8,7 @@ import {
   FunctionSquare,
   Zap,
   Shield,
+  ShieldAlert,
   Radio,
   ScrollText,
   Bot,
@@ -52,12 +53,13 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Migrations", icon: GitCommitHorizontal, path: "/migrations" },
   { label: "Backups", icon: HardDrive, path: "/backups" },
   { label: "Replication", icon: Database, path: "/replication" },
+  { label: "Security", icon: ShieldAlert, path: "/security" },
   { label: "API Keys", icon: KeyRound, path: "/keys" },
   { label: "Project Settings", icon: Settings, path: "/settings" },
 ];
 
 /** Nav items that require data access and should be disabled when paused. */
-const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/functions", "/triggers", "/enums", "/extensions", "/indexes", "/publications", "/backups", "/replication"]);
+const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/functions", "/triggers", "/enums", "/extensions", "/indexes", "/publications", "/backups", "/replication", "/security"]);
 
 export function SidebarNav({ projectStatus }: { projectStatus?: string } = {}) {
   const { projectId } = useParams({ strict: false }) as {

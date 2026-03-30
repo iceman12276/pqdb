@@ -1,0 +1,50 @@
+/**
+ * Advisor API functions for performance and security endpoints.
+ * Calls GET /v1/db/advisor/* via the authenticated API client with project apikey header.
+ */
+
+import { api } from "./api-client";
+
+export interface PerformanceFinding {
+  rule_id: string;
+  severity: "warning" | "info";
+  category: string;
+  title: string;
+  message: string;
+  table: string;
+  suggestion: string;
+}
+
+export interface SecurityFinding {
+  rule_id: string;
+  severity: "critical" | "warning" | "info";
+  category: string;
+  title: string;
+  message: string;
+  table: string | null;
+  suggestion: string | null;
+}
+
+export async function fetchPerformanceFindings(
+  apiKey: string,
+): Promise<PerformanceFinding[]> {
+  const result = await api.fetch("/v1/db/advisor/performance", {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch performance findings");
+  }
+  return result.data as PerformanceFinding[];
+}
+
+export async function fetchSecurityFindings(
+  apiKey: string,
+): Promise<SecurityFinding[]> {
+  const result = await api.fetch("/v1/db/advisor/security", {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch security findings");
+  }
+  return result.data as SecurityFinding[];
+}

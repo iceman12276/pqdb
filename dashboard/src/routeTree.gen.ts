@@ -19,6 +19,7 @@ import { Route as ProjectsProjectIdIndexRouteImport } from './routes/projects/$p
 import { Route as ProjectsProjectIdTriggersRouteImport } from './routes/projects/$projectId/triggers'
 import { Route as ProjectsProjectIdSqlRouteImport } from './routes/projects/$projectId/sql'
 import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects/$projectId/settings'
+import { Route as ProjectsProjectIdSecurityRouteImport } from './routes/projects/$projectId/security'
 import { Route as ProjectsProjectIdSchemaRouteImport } from './routes/projects/$projectId/schema'
 import { Route as ProjectsProjectIdReplicationRouteImport } from './routes/projects/$projectId/replication'
 import { Route as ProjectsProjectIdRealtimeRouteImport } from './routes/projects/$projectId/realtime'
@@ -87,6 +88,12 @@ const ProjectsProjectIdSettingsRoute =
   ProjectsProjectIdSettingsRouteImport.update({
     id: '/settings',
     path: '/settings',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
+const ProjectsProjectIdSecurityRoute =
+  ProjectsProjectIdSecurityRouteImport.update({
+    id: '/security',
+    path: '/security',
     getParentRoute: () => ProjectsProjectIdRoute,
   } as any)
 const ProjectsProjectIdSchemaRoute = ProjectsProjectIdSchemaRouteImport.update({
@@ -208,6 +215,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
+  '/projects/$projectId/security': typeof ProjectsProjectIdSecurityRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId/triggers': typeof ProjectsProjectIdTriggersRoute
@@ -236,6 +244,7 @@ export interface FileRoutesByTo {
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
+  '/projects/$projectId/security': typeof ProjectsProjectIdSecurityRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId/triggers': typeof ProjectsProjectIdTriggersRoute
@@ -266,6 +275,7 @@ export interface FileRoutesById {
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
+  '/projects/$projectId/security': typeof ProjectsProjectIdSecurityRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId/triggers': typeof ProjectsProjectIdTriggersRoute
@@ -297,6 +307,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/replication'
     | '/projects/$projectId/schema'
+    | '/projects/$projectId/security'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
     | '/projects/$projectId/triggers'
@@ -325,6 +336,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/replication'
     | '/projects/$projectId/schema'
+    | '/projects/$projectId/security'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
     | '/projects/$projectId/triggers'
@@ -354,6 +366,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/replication'
     | '/projects/$projectId/schema'
+    | '/projects/$projectId/security'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
     | '/projects/$projectId/triggers'
@@ -441,6 +454,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/projects/$projectId/settings'
       preLoaderRoute: typeof ProjectsProjectIdSettingsRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
+    '/projects/$projectId/security': {
+      id: '/projects/$projectId/security'
+      path: '/security'
+      fullPath: '/projects/$projectId/security'
+      preLoaderRoute: typeof ProjectsProjectIdSecurityRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
     '/projects/$projectId/schema': {
@@ -581,6 +601,7 @@ interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdRealtimeRoute: typeof ProjectsProjectIdRealtimeRoute
   ProjectsProjectIdReplicationRoute: typeof ProjectsProjectIdReplicationRoute
   ProjectsProjectIdSchemaRoute: typeof ProjectsProjectIdSchemaRoute
+  ProjectsProjectIdSecurityRoute: typeof ProjectsProjectIdSecurityRoute
   ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
   ProjectsProjectIdSqlRoute: typeof ProjectsProjectIdSqlRoute
   ProjectsProjectIdTriggersRoute: typeof ProjectsProjectIdTriggersRoute
@@ -605,6 +626,7 @@ const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdRealtimeRoute: ProjectsProjectIdRealtimeRoute,
   ProjectsProjectIdReplicationRoute: ProjectsProjectIdReplicationRoute,
   ProjectsProjectIdSchemaRoute: ProjectsProjectIdSchemaRoute,
+  ProjectsProjectIdSecurityRoute: ProjectsProjectIdSecurityRoute,
   ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,
   ProjectsProjectIdSqlRoute: ProjectsProjectIdSqlRoute,
   ProjectsProjectIdTriggersRoute: ProjectsProjectIdTriggersRoute,
