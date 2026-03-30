@@ -1,10 +1,13 @@
 """FastAPI application factory."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from pqdb_api.config import Settings
 from pqdb_api.database import dispose_engine, init_engine
@@ -35,10 +38,19 @@ from pqdb_api.routes.realtime_ws import realtime_ws_endpoint
 from pqdb_api.routes.roles import router as roles_router
 from pqdb_api.routes.security_advisor import router as security_advisor_router
 from pqdb_api.routes.user_auth import router as user_auth_router
+from pqdb_api.routes.webhooks import router as webhooks_router
 from pqdb_api.services.auth import generate_mldsa65_keypair
+from pqdb_api.services.db_webhook import webhook_listen_loop
 from pqdb_api.services.provisioner import DatabaseProvisioner
 from pqdb_api.services.rate_limiter import RateLimiter
 from pqdb_api.services.vault import VaultClient
+
+_logger = structlog.get_logger()
+
+
+def _build_raw_dsn(sa_url: str) -> str:
+    """Convert ``postgresql+asyncpg://…`` to ``postgresql://…`` for asyncpg."""
+    return sa_url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
 
 @asynccontextmanager
@@ -64,7 +76,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.auth_rate_limiter = RateLimiter(
         max_requests=settings.rate_limit_auth, window_seconds=60
     )
+
+    # Start the webhook NOTIFY listener
+    raw_dsn = _build_raw_dsn(settings.database_url)
+    webhook_engine = create_async_engine(settings.database_url)
+    webhook_session_factory = async_sessionmaker(
+        webhook_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    webhook_task = asyncio.create_task(
+        webhook_listen_loop(raw_dsn, webhook_session_factory)
+    )
+    app.state.webhook_listener_task = webhook_task
+
     yield
+
+    # Shut down the webhook listener
+    webhook_task.cancel()
+    try:
+        await webhook_task
+    except asyncio.CancelledError:
+        pass
+    await webhook_engine.dispose()
     await dispose_engine()
 
 
@@ -107,6 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(indexes_router)
     app.include_router(migrations_router)
     app.include_router(branches_router)
+    app.include_router(webhooks_router)
     app.include_router(security_advisor_router)
     app.include_router(performance_advisor_router)
 
