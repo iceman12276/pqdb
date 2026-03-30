@@ -124,3 +124,28 @@ class TestMigrationsEndpoint:
             data = resp.json()
             revisions = [m["revision"] for m in data["migrations"]]
             assert revisions == sorted(revisions)
+
+    def test_different_developer_cannot_access_project_migrations(
+        self, test_db_url: str
+    ) -> None:
+        """A developer must not see migrations for another developer's project."""
+        from pqdb_api.routes.migrations import router as migrations_router
+
+        app = _make_platform_app(test_db_url)
+        app.include_router(migrations_router)
+
+        with TestClient(app) as client:
+            # Developer A creates a project
+            token_a = signup_and_get_token(client, email="dev_a@test.com")
+            project = create_project(client, token_a)
+            project_id = project["id"]
+
+            # Developer B signs up separately
+            token_b = signup_and_get_token(client, email="dev_b@test.com")
+
+            # Developer B tries to access Developer A's project migrations
+            resp = client.get(
+                f"/v1/projects/{project_id}/migrations",
+                headers=auth_headers(token_b),
+            )
+            assert resp.status_code == 404

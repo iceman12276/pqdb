@@ -2,16 +2,19 @@
 
 import os
 import re
+import uuid
 from pathlib import Path
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import select, text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pqdb_api.database import get_session
 from pqdb_api.middleware.auth import get_current_developer_id
+from pqdb_api.models.project import Project
 
 logger = structlog.get_logger()
 
@@ -106,7 +109,7 @@ def list_migration_files(versions_dir: Path | None = None) -> list[MigrationEntr
 
 @router.get("/{project_id}/migrations", response_model=MigrationListResponse)
 async def get_migrations(
-    project_id: str,
+    project_id: uuid.UUID,
     developer_id: str = Depends(get_current_developer_id),
     session: AsyncSession = Depends(get_session),
 ) -> MigrationListResponse:
@@ -115,6 +118,16 @@ async def get_migrations(
     Reads migration files from disk and queries alembic_version table
     for the currently applied revision. Requires developer JWT.
     """
+    # Verify the developer owns this project
+    result = await session.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.developer_id == uuid.UUID(developer_id),
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
     # Get currently applied revision from alembic_version table
     current_head: str | None = None
     applied_versions: set[str] = set()
@@ -125,9 +138,9 @@ async def get_migrations(
             applied_versions.add(row[0])
         if applied_versions:
             current_head = max(applied_versions)
-    except Exception:
+    except ProgrammingError:
         # alembic_version table may not exist yet
-        logger.debug("alembic_version_not_found", project_id=project_id)
+        logger.debug("alembic_version_not_found", project_id=str(project_id))
 
     # Parse migration files from disk
     migrations = list_migration_files()
