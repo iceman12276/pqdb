@@ -12,9 +12,8 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.integration.conftest import _make_project_app
-
 from pqdb_api.routes.introspection import router as introspection_router
+from tests.integration.conftest import _make_project_app
 
 
 @pytest.fixture()
@@ -99,8 +98,19 @@ class TestWrappersWithData:
               OPTIONS (schema_name 'pg_catalog', table_name 'pg_type');
         """
         subprocess.run(
-            ["psql", "-h", PG_HOST, "-p", str(PG_PORT), "-U", PG_USER,
-             "-d", db_name, "-c", setup_sql],
+            [
+                "psql",
+                "-h",
+                PG_HOST,
+                "-p",
+                str(PG_PORT),
+                "-U",
+                PG_USER,
+                "-d",
+                db_name,
+                "-c",
+                setup_sql,
+            ],
             env=env,
             check=True,
             capture_output=True,
@@ -115,8 +125,19 @@ class TestWrappersWithData:
             DROP EXTENSION IF EXISTS postgres_fdw CASCADE;
         """
         subprocess.run(
-            ["psql", "-h", PG_HOST, "-p", str(PG_PORT), "-U", PG_USER,
-             "-d", db_name, "-c", teardown_sql],
+            [
+                "psql",
+                "-h",
+                PG_HOST,
+                "-p",
+                str(PG_PORT),
+                "-U",
+                PG_USER,
+                "-d",
+                db_name,
+                "-c",
+                teardown_sql,
+            ],
             env=env,
             check=False,
             capture_output=True,

@@ -129,3 +129,45 @@ export async function fetchPublications(
   }
   return result.data as PublicationInfo[];
 }
+
+// --- Foreign Data Wrapper types (US-109) ---
+
+export interface ForeignWrapper {
+  name: string;
+  handler: string | null;
+  validator: string | null;
+}
+
+export interface ForeignServer {
+  name: string;
+  wrapper: string;
+  options: string[];
+}
+
+export interface ForeignTableColumn {
+  name: string;
+  type: string;
+}
+
+export interface ForeignTable {
+  name: string;
+  server: string;
+  schema: string;
+  columns: ForeignTableColumn[];
+}
+
+export interface WrappersData {
+  wrappers: ForeignWrapper[];
+  servers: ForeignServer[];
+  tables: ForeignTable[];
+}
+
+export async function fetchWrappers(apiKey: string): Promise<WrappersData> {
+  const result = await api.fetch("/v1/db/catalog/wrappers", {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch wrappers");
+  }
+  return result.data as WrappersData;
+}

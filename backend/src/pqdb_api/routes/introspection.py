@@ -316,9 +316,7 @@ async def list_wrappers(
                 "columns": [],
             }
         if row[3]:  # column name present
-            tables_map[tbl_name]["columns"].append(
-                {"name": row[3], "type": row[4]}
-            )
+            tables_map[tbl_name]["columns"].append({"name": row[3], "type": row[4]})
 
     return {
         "wrappers": wrappers,
