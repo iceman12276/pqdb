@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select, text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pqdb_api.database import get_session
@@ -101,7 +102,7 @@ async def get_security_findings(
             }
             for row in cols_result.fetchall()
         ]
-    except Exception:
+    except ProgrammingError:
         await project_session.rollback()
 
     # 2. Fetch tables with RLS policies from pg_policy (always exists)
