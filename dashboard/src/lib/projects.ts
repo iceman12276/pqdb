@@ -157,6 +157,26 @@ export async function pauseProject(projectId: string): Promise<Project> {
   return result.data as Project;
 }
 
+export interface MigrationEntry {
+  revision: string;
+  down_revision: string | null;
+  description: string;
+  applied: boolean;
+}
+
+export interface MigrationListResponse {
+  current_head: string | null;
+  migrations: MigrationEntry[];
+}
+
+export async function fetchMigrations(projectId: string): Promise<MigrationListResponse> {
+  const result = await api.fetch(`/v1/projects/${projectId}/migrations`);
+  if (!result.ok) {
+    throw new Error("Failed to fetch migrations");
+  }
+  return result.data as MigrationListResponse;
+}
+
 export async function restoreProject(projectId: string): Promise<Project> {
   const result = await api.fetch(`/v1/projects/${projectId}/restore`, {
     method: "POST",
