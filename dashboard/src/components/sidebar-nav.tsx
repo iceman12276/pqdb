@@ -3,6 +3,7 @@ import {
   Table2,
   Terminal,
   GitBranch,
+  GitCommitHorizontal,
   Network,
   FunctionSquare,
   Zap,
@@ -16,7 +17,9 @@ import {
   Puzzle,
   ListTree,
   Megaphone,
+  HardDrive,
   Database,
+  Link2,
   Gauge,
 } from "lucide-react";
 import { Link, useParams } from "@tanstack/react-router";
@@ -48,6 +51,9 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Publications", icon: Megaphone, path: "/publications" },
   { label: "Branches", icon: GitBranch, path: "/branches" },
   { label: "MCP", icon: Bot, path: "/mcp" },
+  { label: "Migrations", icon: GitCommitHorizontal, path: "/migrations" },
+  { label: "Backups", icon: HardDrive, path: "/backups" },
+  { label: "Wrappers", icon: Link2, path: "/wrappers" },
   { label: "Replication", icon: Database, path: "/replication" },
   { label: "Performance", icon: Gauge, path: "/performance" },
   { label: "API Keys", icon: KeyRound, path: "/keys" },
@@ -55,7 +61,7 @@ export const sidebarNavItems: NavItem[] = [
 ];
 
 /** Nav items that require data access and should be disabled when paused. */
-const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/functions", "/triggers", "/enums", "/extensions", "/indexes", "/publications", "/replication", "/performance"]);
+const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/functions", "/triggers", "/enums", "/extensions", "/indexes", "/publications", "/wrappers", "/backups", "/replication", "/performance"]);
 
 export function SidebarNav({ projectStatus }: { projectStatus?: string } = {}) {
   const { projectId } = useParams({ strict: false }) as {

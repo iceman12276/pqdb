@@ -23,6 +23,7 @@ from pqdb_api.routes.indexes import router as indexes_router
 from pqdb_api.routes.introspection import router as introspection_router
 from pqdb_api.routes.logs import router as logs_router
 from pqdb_api.routes.mfa import router as mfa_router
+from pqdb_api.routes.migrations import router as migrations_router
 from pqdb_api.routes.oauth_github import router as oauth_github_router
 from pqdb_api.routes.oauth_providers import router as oauth_providers_router
 from pqdb_api.routes.passkeys import router as passkeys_router
@@ -32,6 +33,7 @@ from pqdb_api.routes.project_overview import router as overview_router
 from pqdb_api.routes.projects import router as projects_router
 from pqdb_api.routes.realtime_ws import realtime_ws_endpoint
 from pqdb_api.routes.roles import router as roles_router
+from pqdb_api.routes.security_advisor import router as security_advisor_router
 from pqdb_api.routes.user_auth import router as user_auth_router
 from pqdb_api.services.auth import generate_mldsa65_keypair
 from pqdb_api.services.provisioner import DatabaseProvisioner
@@ -103,7 +105,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(passkeys_router)
     app.include_router(policies_router)
     app.include_router(indexes_router)
+    app.include_router(migrations_router)
     app.include_router(branches_router)
+    app.include_router(security_advisor_router)
     app.include_router(performance_advisor_router)
 
     app.add_websocket_route("/v1/realtime", realtime_ws_endpoint)
