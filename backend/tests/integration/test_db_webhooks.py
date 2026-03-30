@@ -193,8 +193,8 @@ class TestListWebhooks:
         data = resp.json()
         assert len(data) == 1
         assert data[0]["table_name"] == "webhook_test"
-        # Secret should NOT be returned in list
-        assert "secret" not in data[0] or data[0].get("secret") is not None
+        # Secret must NOT be returned in list responses
+        assert "secret" not in data[0]
 
 
 class TestDeleteWebhook:
@@ -273,6 +273,82 @@ class TestWebhookTriggerDispatch:
         resp = client.post(
             "/v1/db/webhook_test/insert",
             json={"rows": [{"name": "Bob"}]},
+        )
+        assert resp.status_code == 201
+
+
+class TestWebhookUrlValidation:
+    """SSRF prevention: webhook creation must reject internal URLs."""
+
+    def test_rejects_internal_10_x_ip(self, client: TestClient) -> None:
+        _create_test_table(client)
+        resp = client.post(
+            "/v1/db/webhooks",
+            json={
+                "table_name": "webhook_test",
+                "events": ["INSERT"],
+                "url": "https://10.0.0.1/hook",
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_internal_172_16_ip(self, client: TestClient) -> None:
+        _create_test_table(client)
+        resp = client.post(
+            "/v1/db/webhooks",
+            json={
+                "table_name": "webhook_test",
+                "events": ["INSERT"],
+                "url": "https://172.16.5.1/hook",
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_internal_192_168_ip(self, client: TestClient) -> None:
+        _create_test_table(client)
+        resp = client.post(
+            "/v1/db/webhooks",
+            json={
+                "table_name": "webhook_test",
+                "events": ["INSERT"],
+                "url": "https://192.168.1.1/hook",
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_loopback_ip(self, client: TestClient) -> None:
+        _create_test_table(client)
+        resp = client.post(
+            "/v1/db/webhooks",
+            json={
+                "table_name": "webhook_test",
+                "events": ["INSERT"],
+                "url": "https://127.0.0.1/hook",
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_link_local_ip(self, client: TestClient) -> None:
+        _create_test_table(client)
+        resp = client.post(
+            "/v1/db/webhooks",
+            json={
+                "table_name": "webhook_test",
+                "events": ["INSERT"],
+                "url": "https://169.254.169.254/latest/meta-data/",
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_accepts_https_public_url(self, client: TestClient) -> None:
+        _create_test_table(client)
+        resp = client.post(
+            "/v1/db/webhooks",
+            json={
+                "table_name": "webhook_test",
+                "events": ["INSERT"],
+                "url": "https://example.com/hook",
+            },
         )
         assert resp.status_code == 201
 

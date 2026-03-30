@@ -9,8 +9,11 @@ All routes require a valid ``apikey`` header (service role).
 
 from __future__ import annotations
 
+import ipaddress
+import os
 import secrets
 from typing import Any
+from urllib.parse import urlparse
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
@@ -35,6 +38,62 @@ router = APIRouter(prefix="/v1/db", tags=["webhooks"])
 
 _VALID_EVENTS = {"INSERT", "UPDATE", "DELETE"}
 
+# RFC 1918 + loopback + link-local networks that must be blocked
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _is_internal_ip(host: str) -> bool:
+    """Check whether a hostname is an internal/blocked IP address."""
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return any(addr in net for net in _BLOCKED_NETWORKS)
+
+
+def validate_webhook_url(url: str) -> str:
+    """Validate a webhook target URL against SSRF attacks.
+
+    - Must be HTTPS (HTTP allowed only for localhost in dev/test)
+    - Must not target RFC 1918, loopback, or link-local addresses
+    """
+    parsed = urlparse(url)
+
+    if not parsed.hostname:
+        msg = "URL must include a hostname"
+        raise ValueError(msg)
+
+    is_dev = os.environ.get("PQDB_DEBUG", "").lower() in ("1", "true")
+
+    if parsed.scheme == "http":
+        if not is_dev:
+            msg = "Webhook URL must use HTTPS"
+            raise ValueError(msg)
+        # In dev mode, allow HTTP only for localhost
+        if parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+            msg = "HTTP webhooks are only allowed for localhost in dev mode"
+            raise ValueError(msg)
+    elif parsed.scheme != "https":
+        msg = "Webhook URL must use HTTPS"
+        raise ValueError(msg)
+
+    # Block internal IPs even when scheme is valid
+    if _is_internal_ip(parsed.hostname):
+        msg = "Webhook URL must not target internal network addresses"
+        raise ValueError(msg)
+
+    return url
+
 
 class CreateWebhookRequest(BaseModel):
     """Request body for POST /v1/db/webhooks."""
@@ -43,6 +102,11 @@ class CreateWebhookRequest(BaseModel):
     events: list[str]
     url: str
     secret: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        return validate_webhook_url(v)
 
     @field_validator("events")
     @classmethod

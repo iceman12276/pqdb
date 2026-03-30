@@ -6,6 +6,7 @@ Provides:
 - HTTP delivery with retry (3 attempts, exponential backoff: 1s, 5s, 25s)
 - Postgres trigger/notify SQL generation
 - Webhook config table management in project databases
+- Background NOTIFY listener that dispatches webhooks
 """
 
 from __future__ import annotations
@@ -16,10 +17,11 @@ import hmac as hmac_mod
 import json
 from datetime import datetime, timezone
 
+import asyncpg
 import httpx
 import structlog
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from pqdb_api.services.provisioner import _validate_identifier
 
@@ -323,3 +325,107 @@ async def install_trigger(
     await session.execute(_SAFE(_trigger_function_sql(table_name)))
     await session.execute(_SAFE(_trigger_sql(table_name, events)))
     await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Background NOTIFY listener
+# ---------------------------------------------------------------------------
+
+
+async def _handle_notification(
+    payload_str: str,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Parse a pg_notify payload, look up matching webhooks, deliver each."""
+    try:
+        payload = json.loads(payload_str)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("webhook_listener.invalid_payload", raw=payload_str[:200])
+        return
+
+    table_name = payload.get("table")
+    event = payload.get("event")
+    row_data = payload.get("row", {})
+
+    if not table_name or not event:
+        return
+
+    # Look up active webhook configs for this table + event
+    async with session_factory() as session:
+        await ensure_webhooks_table(session)
+        result = await session.execute(
+            text(
+                "SELECT url, secret, events FROM _pqdb_webhooks "
+                "WHERE table_name = :table_name AND active = TRUE"
+            ),
+            {"table_name": table_name},
+        )
+        configs = result.fetchall()
+
+    for row in configs:
+        url, secret, events = row[0], row[1], list(row[2])
+        if event.upper() not in [e.upper() for e in events]:
+            continue
+
+        webhook_payload = build_webhook_payload(
+            table_name=table_name,
+            event=event,
+            row_data=row_data if isinstance(row_data, dict) else {},
+        )
+
+        # Fire-and-forget delivery in background task
+        asyncio.create_task(
+            deliver_webhook(url=url, payload=webhook_payload, secret=secret)
+        )
+
+
+async def webhook_listen_loop(
+    dsn: str,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Background task: LISTEN on ``pqdb_webhooks`` channel and dispatch.
+
+    Connects via raw asyncpg (LISTEN/NOTIFY needs a persistent connection,
+    not a SQLAlchemy session). Reconnects on failure with a 5-second delay.
+    """
+    while True:
+        conn: asyncpg.Connection | None = None
+        try:
+            conn = await asyncpg.connect(dsn)
+            logger.info("webhook_listener.connected")
+
+            queue: asyncio.Queue[str] = asyncio.Queue()
+
+            def _on_notify(
+                connection: asyncpg.Connection,
+                pid: int,
+                channel: str,
+                payload: str,
+            ) -> None:
+                queue.put_nowait(payload)
+
+            await conn.add_listener("pqdb_webhooks", _on_notify)
+
+            while True:
+                try:
+                    payload_str = await asyncio.wait_for(queue.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
+
+                if isinstance(payload_str, str):
+                    await _handle_notification(payload_str, session_factory)
+
+        except asyncio.CancelledError:
+            logger.info("webhook_listener.cancelled")
+            raise
+        except Exception:
+            logger.exception("webhook_listener.error")
+        finally:
+            if conn is not None:
+                try:
+                    await conn.close()
+                except Exception:
+                    pass
+
+        # Reconnect after a delay
+        await asyncio.sleep(5)
