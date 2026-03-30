@@ -129,3 +129,39 @@ export async function fetchPublications(
   }
   return result.data as PublicationInfo[];
 }
+
+// --- Replication types (US-106) ---
+
+export interface ReplicationSlot {
+  slot_name: string;
+  slot_type: string;
+  active: boolean;
+  restart_lsn: string | null;
+  confirmed_flush_lsn: string | null;
+}
+
+export interface ReplicationStat {
+  client_addr: string | null;
+  state: string;
+  sent_lsn: string | null;
+  write_lsn: string | null;
+  replay_lsn: string | null;
+  replay_lag: string | null;
+}
+
+export interface ReplicationInfo {
+  slots: ReplicationSlot[];
+  stats: ReplicationStat[];
+}
+
+export async function fetchReplication(
+  apiKey: string,
+): Promise<ReplicationInfo> {
+  const result = await api.fetch("/v1/db/catalog/replication", {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch replication status");
+  }
+  return result.data as ReplicationInfo;
+}
