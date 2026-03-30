@@ -235,3 +235,93 @@ async def list_publications(
         }
         for row in result.fetchall()
     ]
+
+
+# ---------------------------------------------------------------------------
+# Foreign Data Wrappers (US-109)
+# ---------------------------------------------------------------------------
+
+_WRAPPERS_SQL = text("""
+    SELECT
+        fdw.fdwname AS name,
+        h.proname AS handler,
+        v.proname AS validator
+    FROM pg_catalog.pg_foreign_data_wrapper fdw
+    LEFT JOIN pg_catalog.pg_proc h ON h.oid = fdw.fdwhandler
+    LEFT JOIN pg_catalog.pg_proc v ON v.oid = fdw.fdwvalidator
+    ORDER BY fdw.fdwname
+""")
+
+_FOREIGN_SERVERS_SQL = text("""
+    SELECT
+        s.srvname AS name,
+        fdw.fdwname AS wrapper,
+        COALESCE(s.srvoptions, '{}') AS options
+    FROM pg_catalog.pg_foreign_server s
+    JOIN pg_catalog.pg_foreign_data_wrapper fdw ON fdw.oid = s.srvfdw
+    ORDER BY s.srvname
+""")
+
+_FOREIGN_TABLES_SQL = text("""
+    SELECT
+        ft.foreign_table_name AS name,
+        fs.srvname AS server,
+        ft.foreign_table_schema AS schema,
+        c.column_name AS col_name,
+        c.data_type AS col_type
+    FROM information_schema.foreign_tables ft
+    JOIN pg_catalog.pg_foreign_server fs
+        ON fs.srvname = ft.foreign_server_name
+    LEFT JOIN information_schema.columns c
+        ON c.table_name = ft.foreign_table_name
+        AND c.table_schema = ft.foreign_table_schema
+    ORDER BY ft.foreign_table_name, c.ordinal_position
+""")
+
+
+@router.get("/wrappers")
+async def list_wrappers(
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, Any]:
+    """List foreign data wrappers, servers, and foreign tables."""
+    wrappers_result = await session.execute(_WRAPPERS_SQL)
+    wrappers = [
+        {
+            "name": row[0],
+            "handler": row[1],
+            "validator": row[2],
+        }
+        for row in wrappers_result.fetchall()
+    ]
+
+    servers_result = await session.execute(_FOREIGN_SERVERS_SQL)
+    servers = [
+        {
+            "name": row[0],
+            "wrapper": row[1],
+            "options": list(row[2]) if row[2] else [],
+        }
+        for row in servers_result.fetchall()
+    ]
+
+    tables_result = await session.execute(_FOREIGN_TABLES_SQL)
+    tables_map: dict[str, dict[str, Any]] = {}
+    for row in tables_result.fetchall():
+        tbl_name = row[0]
+        if tbl_name not in tables_map:
+            tables_map[tbl_name] = {
+                "name": tbl_name,
+                "server": row[1],
+                "schema": row[2],
+                "columns": [],
+            }
+        if row[3]:  # column name present
+            tables_map[tbl_name]["columns"].append(
+                {"name": row[3], "type": row[4]}
+            )
+
+    return {
+        "wrappers": wrappers,
+        "servers": servers,
+        "tables": list(tables_map.values()),
+    }
