@@ -26,3 +26,25 @@ export async function fetchPerformanceFindings(
   }
   return result.data as PerformanceFinding[];
 }
+
+export interface SecurityFinding {
+  rule_id: string;
+  severity: "critical" | "warning" | "info";
+  category: string;
+  title: string;
+  message: string;
+  table: string | null;
+  suggestion: string | null;
+}
+
+export async function fetchSecurityFindings(
+  apiKey: string,
+): Promise<SecurityFinding[]> {
+  const result = await api.fetch("/v1/db/advisor/security", {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch security findings");
+  }
+  return result.data as SecurityFinding[];
+}
