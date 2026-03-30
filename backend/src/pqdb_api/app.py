@@ -23,6 +23,7 @@ from pqdb_api.routes.indexes import router as indexes_router
 from pqdb_api.routes.introspection import router as introspection_router
 from pqdb_api.routes.logs import router as logs_router
 from pqdb_api.routes.mfa import router as mfa_router
+from pqdb_api.routes.migrations import router as migrations_router
 from pqdb_api.routes.oauth_github import router as oauth_github_router
 from pqdb_api.routes.oauth_providers import router as oauth_providers_router
 from pqdb_api.routes.passkeys import router as passkeys_router
@@ -104,6 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(passkeys_router)
     app.include_router(policies_router)
     app.include_router(indexes_router)
+    app.include_router(migrations_router)
     app.include_router(branches_router)
     app.include_router(security_advisor_router)
     app.include_router(performance_advisor_router)

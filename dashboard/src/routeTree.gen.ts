@@ -23,6 +23,7 @@ import { Route as ProjectsProjectIdSchemaRouteImport } from './routes/projects/$
 import { Route as ProjectsProjectIdReplicationRouteImport } from './routes/projects/$projectId/replication'
 import { Route as ProjectsProjectIdRealtimeRouteImport } from './routes/projects/$projectId/realtime'
 import { Route as ProjectsProjectIdPublicationsRouteImport } from './routes/projects/$projectId/publications'
+import { Route as ProjectsProjectIdMigrationsRouteImport } from './routes/projects/$projectId/migrations'
 import { Route as ProjectsProjectIdMcpRouteImport } from './routes/projects/$projectId/mcp'
 import { Route as ProjectsProjectIdLogsRouteImport } from './routes/projects/$projectId/logs'
 import { Route as ProjectsProjectIdKeysRouteImport } from './routes/projects/$projectId.keys'
@@ -111,6 +112,12 @@ const ProjectsProjectIdPublicationsRoute =
     path: '/publications',
     getParentRoute: () => ProjectsProjectIdRoute,
   } as any)
+const ProjectsProjectIdMigrationsRoute =
+  ProjectsProjectIdMigrationsRouteImport.update({
+    id: '/migrations',
+    path: '/migrations',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdMcpRoute = ProjectsProjectIdMcpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
@@ -196,6 +203,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/migrations': typeof ProjectsProjectIdMigrationsRoute
   '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
@@ -223,6 +231,7 @@ export interface FileRoutesByTo {
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/migrations': typeof ProjectsProjectIdMigrationsRoute
   '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
@@ -252,6 +261,7 @@ export interface FileRoutesById {
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/migrations': typeof ProjectsProjectIdMigrationsRoute
   '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
   '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
@@ -282,6 +292,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/migrations'
     | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/replication'
@@ -309,6 +320,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/migrations'
     | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/replication'
@@ -337,6 +349,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/migrations'
     | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
     | '/projects/$projectId/replication'
@@ -458,6 +471,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdPublicationsRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/migrations': {
+      id: '/projects/$projectId/migrations'
+      path: '/migrations'
+      fullPath: '/projects/$projectId/migrations'
+      preLoaderRoute: typeof ProjectsProjectIdMigrationsRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
     '/projects/$projectId/mcp': {
       id: '/projects/$projectId/mcp'
       path: '/mcp'
@@ -556,6 +576,7 @@ interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdKeysRoute: typeof ProjectsProjectIdKeysRoute
   ProjectsProjectIdLogsRoute: typeof ProjectsProjectIdLogsRoute
   ProjectsProjectIdMcpRoute: typeof ProjectsProjectIdMcpRoute
+  ProjectsProjectIdMigrationsRoute: typeof ProjectsProjectIdMigrationsRoute
   ProjectsProjectIdPublicationsRoute: typeof ProjectsProjectIdPublicationsRoute
   ProjectsProjectIdRealtimeRoute: typeof ProjectsProjectIdRealtimeRoute
   ProjectsProjectIdReplicationRoute: typeof ProjectsProjectIdReplicationRoute
@@ -579,6 +600,7 @@ const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdKeysRoute: ProjectsProjectIdKeysRoute,
   ProjectsProjectIdLogsRoute: ProjectsProjectIdLogsRoute,
   ProjectsProjectIdMcpRoute: ProjectsProjectIdMcpRoute,
+  ProjectsProjectIdMigrationsRoute: ProjectsProjectIdMigrationsRoute,
   ProjectsProjectIdPublicationsRoute: ProjectsProjectIdPublicationsRoute,
   ProjectsProjectIdRealtimeRoute: ProjectsProjectIdRealtimeRoute,
   ProjectsProjectIdReplicationRoute: ProjectsProjectIdReplicationRoute,
