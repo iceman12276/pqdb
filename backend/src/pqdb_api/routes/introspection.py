@@ -235,3 +235,41 @@ async def list_publications(
         }
         for row in result.fetchall()
     ]
+
+
+_BACKUPS_SQL = text("""
+    SELECT
+        archived_count,
+        failed_count,
+        last_archived_wal,
+        last_archived_time,
+        last_failed_wal,
+        last_failed_time
+    FROM pg_catalog.pg_stat_archiver
+""")
+
+
+@router.get("/backups")
+async def get_backup_stats(
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, Any]:
+    """Get WAL archiver stats from pg_stat_archiver."""
+    result = await session.execute(_BACKUPS_SQL)
+    row = result.fetchone()
+    if row is None:
+        return {
+            "archived_count": 0,
+            "failed_count": 0,
+            "last_archived_wal": None,
+            "last_archived_time": None,
+            "last_failed_wal": None,
+            "last_failed_time": None,
+        }
+    return {
+        "archived_count": row[0] or 0,
+        "failed_count": row[1] or 0,
+        "last_archived_wal": row[2],
+        "last_archived_time": str(row[3]) if row[3] else None,
+        "last_failed_wal": row[4],
+        "last_failed_time": str(row[5]) if row[5] else None,
+    }
