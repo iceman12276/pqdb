@@ -1,5 +1,5 @@
 /**
- * Advisor API functions for performance and security endpoints.
+ * Advisor API functions for performance endpoints.
  * Calls GET /v1/db/advisor/* via the authenticated API client with project apikey header.
  */
 
@@ -15,16 +15,6 @@ export interface PerformanceFinding {
   suggestion: string;
 }
 
-export interface SecurityFinding {
-  rule_id: string;
-  severity: "critical" | "warning" | "info";
-  category: string;
-  title: string;
-  message: string;
-  table: string | null;
-  suggestion: string | null;
-}
-
 export async function fetchPerformanceFindings(
   apiKey: string,
 ): Promise<PerformanceFinding[]> {
@@ -35,6 +25,16 @@ export async function fetchPerformanceFindings(
     throw new Error("Failed to fetch performance findings");
   }
   return result.data as PerformanceFinding[];
+}
+
+export interface SecurityFinding {
+  rule_id: string;
+  severity: "critical" | "warning" | "info";
+  category: string;
+  title: string;
+  message: string;
+  table: string | null;
+  suggestion: string | null;
 }
 
 export async function fetchSecurityFindings(
