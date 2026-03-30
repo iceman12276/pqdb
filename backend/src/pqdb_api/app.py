@@ -21,9 +21,9 @@ from pqdb_api.routes.google_oauth import router as google_oauth_router
 from pqdb_api.routes.health import router as health_router
 from pqdb_api.routes.indexes import router as indexes_router
 from pqdb_api.routes.introspection import router as introspection_router
-from pqdb_api.routes.migrations import router as migrations_router
 from pqdb_api.routes.logs import router as logs_router
 from pqdb_api.routes.mfa import router as mfa_router
+from pqdb_api.routes.migrations import router as migrations_router
 from pqdb_api.routes.oauth_github import router as oauth_github_router
 from pqdb_api.routes.oauth_providers import router as oauth_providers_router
 from pqdb_api.routes.passkeys import router as passkeys_router

@@ -83,7 +83,7 @@ class TestMigrationsEndpoint:
             assert resp.status_code in (401, 403, 422)
 
     def test_migration_entries_have_required_fields(self, test_db_url: str) -> None:
-        """Each migration entry should have revision, down_revision, description, applied."""
+        """Each migration entry has revision, down_revision, description."""
         from pqdb_api.routes.migrations import router as migrations_router
 
         app = _make_platform_app(test_db_url)

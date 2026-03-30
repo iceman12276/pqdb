@@ -99,7 +99,7 @@ class TestListMigrationFiles:
                 """
 
                 revision: str = "00{i}"
-                down_revision: str | None = {"None" if i == 1 else f'"00{i-1}"'}
+                down_revision: str | None = {"None" if i == 1 else f'"00{i - 1}"'}
             ''')
             f = tmp_path / f"00{i}_migration.py"
             f.write_text(content)

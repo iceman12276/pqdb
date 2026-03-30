@@ -18,9 +18,7 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/v1/projects", tags=["migrations"])
 
 # Alembic versions directory — relative to this file
-_ALEMBIC_VERSIONS_DIR = (
-    Path(__file__).resolve().parents[3] / "alembic" / "versions"
-)
+_ALEMBIC_VERSIONS_DIR = Path(__file__).resolve().parents[3] / "alembic" / "versions"
 
 
 class MigrationEntry(BaseModel):
@@ -58,14 +56,15 @@ def _parse_migration_file(filepath: Path) -> MigrationEntry | None:
         description = doc_match.group(1).strip().split("\n")[0].strip()
 
     # Extract revision
-    rev_match = re.search(r'^revision:\s*str\s*=\s*["\'](.+?)["\']', content, re.MULTILINE)
+    rev_pat = r'^revision:\s*str\s*=\s*["\'](.+?)["\']'
+    rev_match = re.search(rev_pat, content, re.MULTILINE)
     if not rev_match:
         return None
     revision = rev_match.group(1)
 
     # Extract down_revision
     down_match = re.search(
-        r'^down_revision:\s*(?:str\s*\|\s*None)\s*=\s*(.+)',
+        r"^down_revision:\s*(?:str\s*\|\s*None)\s*=\s*(.+)",
         content,
         re.MULTILINE,
     )
