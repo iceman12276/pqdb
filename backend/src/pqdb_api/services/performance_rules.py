@@ -146,8 +146,7 @@ def evaluate_stale_stats(
                     "category": "maintenance",
                     "title": "Stale table statistics",
                     "message": (
-                        f"Table '{table_name}' has not been analyzed "
-                        f"in over 7 days."
+                        f"Table '{table_name}' has not been analyzed in over 7 days."
                         if last_analyze is not None
                         else f"Table '{table_name}' has never been analyzed."
                     ),
