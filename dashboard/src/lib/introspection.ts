@@ -129,3 +129,104 @@ export async function fetchPublications(
   }
   return result.data as PublicationInfo[];
 }
+
+// --- Backup stats types ---
+
+export interface BackupStats {
+  archived_count: number;
+  failed_count: number;
+  last_archived_wal: string | null;
+  last_archived_time: string | null;
+  last_failed_wal: string | null;
+  last_failed_time: string | null;
+}
+
+export async function fetchBackupStats(
+  apiKey: string,
+): Promise<BackupStats> {
+  const result = await api.fetch("/v1/db/catalog/backups", {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch backup stats");
+  }
+  return result.data as BackupStats;
+}
+
+// --- Foreign Data Wrapper types (US-109) ---
+
+export interface ForeignWrapper {
+  name: string;
+  handler: string | null;
+  validator: string | null;
+}
+
+export interface ForeignServer {
+  name: string;
+  wrapper: string;
+  options: string[];
+}
+
+export interface ForeignTableColumn {
+  name: string;
+  type: string;
+}
+
+export interface ForeignTable {
+  name: string;
+  server: string;
+  schema: string;
+  columns: ForeignTableColumn[];
+}
+
+export interface WrappersData {
+  wrappers: ForeignWrapper[];
+  servers: ForeignServer[];
+  tables: ForeignTable[];
+}
+
+export async function fetchWrappers(apiKey: string): Promise<WrappersData> {
+  const result = await api.fetch("/v1/db/catalog/wrappers", {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch wrappers");
+  }
+  return result.data as WrappersData;
+}
+
+// --- Replication types (US-106) ---
+
+export interface ReplicationSlot {
+  slot_name: string;
+  slot_type: string;
+  active: boolean;
+  restart_lsn: string | null;
+  confirmed_flush_lsn: string | null;
+}
+
+export interface ReplicationStat {
+  client_addr: string | null;
+  state: string;
+  sent_lsn: string | null;
+  write_lsn: string | null;
+  replay_lsn: string | null;
+  replay_lag: string | null;
+}
+
+export interface ReplicationInfo {
+  slots: ReplicationSlot[];
+  stats: ReplicationStat[];
+}
+
+export async function fetchReplication(
+  apiKey: string,
+): Promise<ReplicationInfo> {
+  const result = await api.fetch("/v1/db/catalog/replication", {
+    headers: { apikey: apiKey },
+  });
+  if (!result.ok) {
+    throw new Error("Failed to fetch replication status");
+  }
+  return result.data as ReplicationInfo;
+}

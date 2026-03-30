@@ -16,12 +16,15 @@ import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as ProjectsIndexRouteImport } from './routes/projects/index'
 import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as ProjectsProjectIdIndexRouteImport } from './routes/projects/$projectId/index'
+import { Route as ProjectsProjectIdWrappersRouteImport } from './routes/projects/$projectId/wrappers'
 import { Route as ProjectsProjectIdTriggersRouteImport } from './routes/projects/$projectId/triggers'
 import { Route as ProjectsProjectIdSqlRouteImport } from './routes/projects/$projectId/sql'
 import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects/$projectId/settings'
 import { Route as ProjectsProjectIdSchemaRouteImport } from './routes/projects/$projectId/schema'
+import { Route as ProjectsProjectIdReplicationRouteImport } from './routes/projects/$projectId/replication'
 import { Route as ProjectsProjectIdRealtimeRouteImport } from './routes/projects/$projectId/realtime'
 import { Route as ProjectsProjectIdPublicationsRouteImport } from './routes/projects/$projectId/publications'
+import { Route as ProjectsProjectIdMigrationsRouteImport } from './routes/projects/$projectId/migrations'
 import { Route as ProjectsProjectIdMcpRouteImport } from './routes/projects/$projectId/mcp'
 import { Route as ProjectsProjectIdLogsRouteImport } from './routes/projects/$projectId/logs'
 import { Route as ProjectsProjectIdKeysRouteImport } from './routes/projects/$projectId.keys'
@@ -30,6 +33,7 @@ import { Route as ProjectsProjectIdFunctionsRouteImport } from './routes/project
 import { Route as ProjectsProjectIdExtensionsRouteImport } from './routes/projects/$projectId/extensions'
 import { Route as ProjectsProjectIdEnumsRouteImport } from './routes/projects/$projectId/enums'
 import { Route as ProjectsProjectIdBranchesRouteImport } from './routes/projects/$projectId/branches'
+import { Route as ProjectsProjectIdBackupsRouteImport } from './routes/projects/$projectId/backups'
 import { Route as ProjectsProjectIdAuthRouteImport } from './routes/projects/$projectId.auth'
 import { Route as ProjectsProjectIdTablesIndexRouteImport } from './routes/projects/$projectId/tables/index'
 import { Route as ProjectsProjectIdTablesTableNameRouteImport } from './routes/projects/$projectId/tables/$tableName'
@@ -69,6 +73,12 @@ const ProjectsProjectIdIndexRoute = ProjectsProjectIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdWrappersRoute =
+  ProjectsProjectIdWrappersRouteImport.update({
+    id: '/wrappers',
+    path: '/wrappers',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdTriggersRoute =
   ProjectsProjectIdTriggersRouteImport.update({
     id: '/triggers',
@@ -91,6 +101,12 @@ const ProjectsProjectIdSchemaRoute = ProjectsProjectIdSchemaRouteImport.update({
   path: '/schema',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdReplicationRoute =
+  ProjectsProjectIdReplicationRouteImport.update({
+    id: '/replication',
+    path: '/replication',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdRealtimeRoute =
   ProjectsProjectIdRealtimeRouteImport.update({
     id: '/realtime',
@@ -101,6 +117,12 @@ const ProjectsProjectIdPublicationsRoute =
   ProjectsProjectIdPublicationsRouteImport.update({
     id: '/publications',
     path: '/publications',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
+const ProjectsProjectIdMigrationsRoute =
+  ProjectsProjectIdMigrationsRouteImport.update({
+    id: '/migrations',
+    path: '/migrations',
     getParentRoute: () => ProjectsProjectIdRoute,
   } as any)
 const ProjectsProjectIdMcpRoute = ProjectsProjectIdMcpRouteImport.update({
@@ -147,6 +169,12 @@ const ProjectsProjectIdBranchesRoute =
     path: '/branches',
     getParentRoute: () => ProjectsProjectIdRoute,
   } as any)
+const ProjectsProjectIdBackupsRoute =
+  ProjectsProjectIdBackupsRouteImport.update({
+    id: '/backups',
+    path: '/backups',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdAuthRoute = ProjectsProjectIdAuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -173,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/backups': typeof ProjectsProjectIdBackupsRoute
   '/projects/$projectId/branches': typeof ProjectsProjectIdBranchesRoute
   '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
   '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
@@ -181,12 +210,15 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/migrations': typeof ProjectsProjectIdMigrationsRoute
   '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
+  '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId/triggers': typeof ProjectsProjectIdTriggersRoute
+  '/projects/$projectId/wrappers': typeof ProjectsProjectIdWrappersRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
   '/projects/$projectId/tables/$tableName': typeof ProjectsProjectIdTablesTableNameRoute
   '/projects/$projectId/tables/': typeof ProjectsProjectIdTablesIndexRoute
@@ -198,6 +230,7 @@ export interface FileRoutesByTo {
   '/projects': typeof ProjectsIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/backups': typeof ProjectsProjectIdBackupsRoute
   '/projects/$projectId/branches': typeof ProjectsProjectIdBranchesRoute
   '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
   '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
@@ -206,12 +239,15 @@ export interface FileRoutesByTo {
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/migrations': typeof ProjectsProjectIdMigrationsRoute
   '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
+  '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId/triggers': typeof ProjectsProjectIdTriggersRoute
+  '/projects/$projectId/wrappers': typeof ProjectsProjectIdWrappersRoute
   '/projects/$projectId': typeof ProjectsProjectIdIndexRoute
   '/projects/$projectId/tables/$tableName': typeof ProjectsProjectIdTablesTableNameRoute
   '/projects/$projectId/tables': typeof ProjectsProjectIdTablesIndexRoute
@@ -225,6 +261,7 @@ export interface FileRoutesById {
   '/projects/': typeof ProjectsIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/projects/$projectId/auth': typeof ProjectsProjectIdAuthRoute
+  '/projects/$projectId/backups': typeof ProjectsProjectIdBackupsRoute
   '/projects/$projectId/branches': typeof ProjectsProjectIdBranchesRoute
   '/projects/$projectId/enums': typeof ProjectsProjectIdEnumsRoute
   '/projects/$projectId/extensions': typeof ProjectsProjectIdExtensionsRoute
@@ -233,12 +270,15 @@ export interface FileRoutesById {
   '/projects/$projectId/keys': typeof ProjectsProjectIdKeysRoute
   '/projects/$projectId/logs': typeof ProjectsProjectIdLogsRoute
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
+  '/projects/$projectId/migrations': typeof ProjectsProjectIdMigrationsRoute
   '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
+  '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
   '/projects/$projectId/triggers': typeof ProjectsProjectIdTriggersRoute
+  '/projects/$projectId/wrappers': typeof ProjectsProjectIdWrappersRoute
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
   '/projects/$projectId/tables/$tableName': typeof ProjectsProjectIdTablesTableNameRoute
   '/projects/$projectId/tables/': typeof ProjectsProjectIdTablesIndexRoute
@@ -253,6 +293,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/settings/'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/backups'
     | '/projects/$projectId/branches'
     | '/projects/$projectId/enums'
     | '/projects/$projectId/extensions'
@@ -261,12 +302,15 @@ export interface FileRouteTypes {
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/migrations'
     | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
+    | '/projects/$projectId/replication'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
     | '/projects/$projectId/triggers'
+    | '/projects/$projectId/wrappers'
     | '/projects/$projectId/'
     | '/projects/$projectId/tables/$tableName'
     | '/projects/$projectId/tables/'
@@ -278,6 +322,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/settings'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/backups'
     | '/projects/$projectId/branches'
     | '/projects/$projectId/enums'
     | '/projects/$projectId/extensions'
@@ -286,12 +331,15 @@ export interface FileRouteTypes {
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/migrations'
     | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
+    | '/projects/$projectId/replication'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
     | '/projects/$projectId/triggers'
+    | '/projects/$projectId/wrappers'
     | '/projects/$projectId'
     | '/projects/$projectId/tables/$tableName'
     | '/projects/$projectId/tables'
@@ -304,6 +352,7 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/settings/'
     | '/projects/$projectId/auth'
+    | '/projects/$projectId/backups'
     | '/projects/$projectId/branches'
     | '/projects/$projectId/enums'
     | '/projects/$projectId/extensions'
@@ -312,12 +361,15 @@ export interface FileRouteTypes {
     | '/projects/$projectId/keys'
     | '/projects/$projectId/logs'
     | '/projects/$projectId/mcp'
+    | '/projects/$projectId/migrations'
     | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
+    | '/projects/$projectId/replication'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
     | '/projects/$projectId/triggers'
+    | '/projects/$projectId/wrappers'
     | '/projects/$projectId/'
     | '/projects/$projectId/tables/$tableName'
     | '/projects/$projectId/tables/'
@@ -383,6 +435,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdIndexRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/wrappers': {
+      id: '/projects/$projectId/wrappers'
+      path: '/wrappers'
+      fullPath: '/projects/$projectId/wrappers'
+      preLoaderRoute: typeof ProjectsProjectIdWrappersRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
     '/projects/$projectId/triggers': {
       id: '/projects/$projectId/triggers'
       path: '/triggers'
@@ -411,6 +470,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdSchemaRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/replication': {
+      id: '/projects/$projectId/replication'
+      path: '/replication'
+      fullPath: '/projects/$projectId/replication'
+      preLoaderRoute: typeof ProjectsProjectIdReplicationRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
     '/projects/$projectId/realtime': {
       id: '/projects/$projectId/realtime'
       path: '/realtime'
@@ -423,6 +489,13 @@ declare module '@tanstack/react-router' {
       path: '/publications'
       fullPath: '/projects/$projectId/publications'
       preLoaderRoute: typeof ProjectsProjectIdPublicationsRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
+    '/projects/$projectId/migrations': {
+      id: '/projects/$projectId/migrations'
+      path: '/migrations'
+      fullPath: '/projects/$projectId/migrations'
+      preLoaderRoute: typeof ProjectsProjectIdMigrationsRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
     '/projects/$projectId/mcp': {
@@ -481,6 +554,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdBranchesRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/backups': {
+      id: '/projects/$projectId/backups'
+      path: '/backups'
+      fullPath: '/projects/$projectId/backups'
+      preLoaderRoute: typeof ProjectsProjectIdBackupsRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
     '/projects/$projectId/auth': {
       id: '/projects/$projectId/auth'
       path: '/auth'
@@ -507,6 +587,7 @@ declare module '@tanstack/react-router' {
 
 interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdAuthRoute: typeof ProjectsProjectIdAuthRoute
+  ProjectsProjectIdBackupsRoute: typeof ProjectsProjectIdBackupsRoute
   ProjectsProjectIdBranchesRoute: typeof ProjectsProjectIdBranchesRoute
   ProjectsProjectIdEnumsRoute: typeof ProjectsProjectIdEnumsRoute
   ProjectsProjectIdExtensionsRoute: typeof ProjectsProjectIdExtensionsRoute
@@ -515,12 +596,15 @@ interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdKeysRoute: typeof ProjectsProjectIdKeysRoute
   ProjectsProjectIdLogsRoute: typeof ProjectsProjectIdLogsRoute
   ProjectsProjectIdMcpRoute: typeof ProjectsProjectIdMcpRoute
+  ProjectsProjectIdMigrationsRoute: typeof ProjectsProjectIdMigrationsRoute
   ProjectsProjectIdPublicationsRoute: typeof ProjectsProjectIdPublicationsRoute
   ProjectsProjectIdRealtimeRoute: typeof ProjectsProjectIdRealtimeRoute
+  ProjectsProjectIdReplicationRoute: typeof ProjectsProjectIdReplicationRoute
   ProjectsProjectIdSchemaRoute: typeof ProjectsProjectIdSchemaRoute
   ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
   ProjectsProjectIdSqlRoute: typeof ProjectsProjectIdSqlRoute
   ProjectsProjectIdTriggersRoute: typeof ProjectsProjectIdTriggersRoute
+  ProjectsProjectIdWrappersRoute: typeof ProjectsProjectIdWrappersRoute
   ProjectsProjectIdIndexRoute: typeof ProjectsProjectIdIndexRoute
   ProjectsProjectIdTablesTableNameRoute: typeof ProjectsProjectIdTablesTableNameRoute
   ProjectsProjectIdTablesIndexRoute: typeof ProjectsProjectIdTablesIndexRoute
@@ -528,6 +612,7 @@ interface ProjectsProjectIdRouteChildren {
 
 const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdAuthRoute: ProjectsProjectIdAuthRoute,
+  ProjectsProjectIdBackupsRoute: ProjectsProjectIdBackupsRoute,
   ProjectsProjectIdBranchesRoute: ProjectsProjectIdBranchesRoute,
   ProjectsProjectIdEnumsRoute: ProjectsProjectIdEnumsRoute,
   ProjectsProjectIdExtensionsRoute: ProjectsProjectIdExtensionsRoute,
@@ -536,12 +621,15 @@ const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdKeysRoute: ProjectsProjectIdKeysRoute,
   ProjectsProjectIdLogsRoute: ProjectsProjectIdLogsRoute,
   ProjectsProjectIdMcpRoute: ProjectsProjectIdMcpRoute,
+  ProjectsProjectIdMigrationsRoute: ProjectsProjectIdMigrationsRoute,
   ProjectsProjectIdPublicationsRoute: ProjectsProjectIdPublicationsRoute,
   ProjectsProjectIdRealtimeRoute: ProjectsProjectIdRealtimeRoute,
+  ProjectsProjectIdReplicationRoute: ProjectsProjectIdReplicationRoute,
   ProjectsProjectIdSchemaRoute: ProjectsProjectIdSchemaRoute,
   ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,
   ProjectsProjectIdSqlRoute: ProjectsProjectIdSqlRoute,
   ProjectsProjectIdTriggersRoute: ProjectsProjectIdTriggersRoute,
+  ProjectsProjectIdWrappersRoute: ProjectsProjectIdWrappersRoute,
   ProjectsProjectIdIndexRoute: ProjectsProjectIdIndexRoute,
   ProjectsProjectIdTablesTableNameRoute: ProjectsProjectIdTablesTableNameRoute,
   ProjectsProjectIdTablesIndexRoute: ProjectsProjectIdTablesIndexRoute,
