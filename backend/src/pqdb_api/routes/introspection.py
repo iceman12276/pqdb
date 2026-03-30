@@ -273,3 +273,62 @@ async def get_backup_stats(
         "last_failed_wal": row[4],
         "last_failed_time": str(row[5]) if row[5] else None,
     }
+
+
+# --- Replication (US-106) ---
+
+_REPLICATION_SLOTS_SQL = text("""
+    SELECT
+        slot_name,
+        slot_type,
+        active,
+        restart_lsn::text,
+        confirmed_flush_lsn::text
+    FROM pg_catalog.pg_replication_slots
+    ORDER BY slot_name
+""")
+
+_REPLICATION_STATS_SQL = text("""
+    SELECT
+        client_addr::text,
+        state,
+        sent_lsn::text,
+        write_lsn::text,
+        replay_lsn::text,
+        replay_lag::text
+    FROM pg_catalog.pg_stat_replication
+    ORDER BY client_addr
+""")
+
+
+@router.get("/replication")
+async def list_replication(
+    session: AsyncSession = Depends(get_project_session),
+) -> dict[str, list[dict[str, Any]]]:
+    """List replication slots and active replication connections."""
+    slots_result = await session.execute(_REPLICATION_SLOTS_SQL)
+    slots = [
+        {
+            "slot_name": row[0],
+            "slot_type": row[1],
+            "active": bool(row[2]),
+            "restart_lsn": row[3],
+            "confirmed_flush_lsn": row[4],
+        }
+        for row in slots_result.fetchall()
+    ]
+
+    stats_result = await session.execute(_REPLICATION_STATS_SQL)
+    stats = [
+        {
+            "client_addr": row[0],
+            "state": row[1],
+            "sent_lsn": row[2],
+            "write_lsn": row[3],
+            "replay_lsn": row[4],
+            "replay_lag": row[5],
+        }
+        for row in stats_result.fetchall()
+    ]
+
+    return {"slots": slots, "stats": stats}

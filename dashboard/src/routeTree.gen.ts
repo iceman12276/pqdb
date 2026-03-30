@@ -20,6 +20,7 @@ import { Route as ProjectsProjectIdTriggersRouteImport } from './routes/projects
 import { Route as ProjectsProjectIdSqlRouteImport } from './routes/projects/$projectId/sql'
 import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects/$projectId/settings'
 import { Route as ProjectsProjectIdSchemaRouteImport } from './routes/projects/$projectId/schema'
+import { Route as ProjectsProjectIdReplicationRouteImport } from './routes/projects/$projectId/replication'
 import { Route as ProjectsProjectIdRealtimeRouteImport } from './routes/projects/$projectId/realtime'
 import { Route as ProjectsProjectIdPublicationsRouteImport } from './routes/projects/$projectId/publications'
 import { Route as ProjectsProjectIdMcpRouteImport } from './routes/projects/$projectId/mcp'
@@ -92,6 +93,12 @@ const ProjectsProjectIdSchemaRoute = ProjectsProjectIdSchemaRouteImport.update({
   path: '/schema',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdReplicationRoute =
+  ProjectsProjectIdReplicationRouteImport.update({
+    id: '/replication',
+    path: '/replication',
+    getParentRoute: () => ProjectsProjectIdRoute,
+  } as any)
 const ProjectsProjectIdRealtimeRoute =
   ProjectsProjectIdRealtimeRouteImport.update({
     id: '/realtime',
@@ -191,6 +198,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
   '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
+  '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
@@ -217,6 +225,7 @@ export interface FileRoutesByTo {
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
   '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
+  '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
@@ -245,6 +254,7 @@ export interface FileRoutesById {
   '/projects/$projectId/mcp': typeof ProjectsProjectIdMcpRoute
   '/projects/$projectId/publications': typeof ProjectsProjectIdPublicationsRoute
   '/projects/$projectId/realtime': typeof ProjectsProjectIdRealtimeRoute
+  '/projects/$projectId/replication': typeof ProjectsProjectIdReplicationRoute
   '/projects/$projectId/schema': typeof ProjectsProjectIdSchemaRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
   '/projects/$projectId/sql': typeof ProjectsProjectIdSqlRoute
@@ -274,6 +284,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/mcp'
     | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
+    | '/projects/$projectId/replication'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
@@ -300,6 +311,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/mcp'
     | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
+    | '/projects/$projectId/replication'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
@@ -327,6 +339,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/mcp'
     | '/projects/$projectId/publications'
     | '/projects/$projectId/realtime'
+    | '/projects/$projectId/replication'
     | '/projects/$projectId/schema'
     | '/projects/$projectId/settings'
     | '/projects/$projectId/sql'
@@ -422,6 +435,13 @@ declare module '@tanstack/react-router' {
       path: '/schema'
       fullPath: '/projects/$projectId/schema'
       preLoaderRoute: typeof ProjectsProjectIdSchemaRouteImport
+      parentRoute: typeof ProjectsProjectIdRoute
+    }
+    '/projects/$projectId/replication': {
+      id: '/projects/$projectId/replication'
+      path: '/replication'
+      fullPath: '/projects/$projectId/replication'
+      preLoaderRoute: typeof ProjectsProjectIdReplicationRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
     '/projects/$projectId/realtime': {
@@ -538,6 +558,7 @@ interface ProjectsProjectIdRouteChildren {
   ProjectsProjectIdMcpRoute: typeof ProjectsProjectIdMcpRoute
   ProjectsProjectIdPublicationsRoute: typeof ProjectsProjectIdPublicationsRoute
   ProjectsProjectIdRealtimeRoute: typeof ProjectsProjectIdRealtimeRoute
+  ProjectsProjectIdReplicationRoute: typeof ProjectsProjectIdReplicationRoute
   ProjectsProjectIdSchemaRoute: typeof ProjectsProjectIdSchemaRoute
   ProjectsProjectIdSettingsRoute: typeof ProjectsProjectIdSettingsRoute
   ProjectsProjectIdSqlRoute: typeof ProjectsProjectIdSqlRoute
@@ -560,6 +581,7 @@ const ProjectsProjectIdRouteChildren: ProjectsProjectIdRouteChildren = {
   ProjectsProjectIdMcpRoute: ProjectsProjectIdMcpRoute,
   ProjectsProjectIdPublicationsRoute: ProjectsProjectIdPublicationsRoute,
   ProjectsProjectIdRealtimeRoute: ProjectsProjectIdRealtimeRoute,
+  ProjectsProjectIdReplicationRoute: ProjectsProjectIdReplicationRoute,
   ProjectsProjectIdSchemaRoute: ProjectsProjectIdSchemaRoute,
   ProjectsProjectIdSettingsRoute: ProjectsProjectIdSettingsRoute,
   ProjectsProjectIdSqlRoute: ProjectsProjectIdSqlRoute,

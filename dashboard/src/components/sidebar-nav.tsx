@@ -17,6 +17,7 @@ import {
   ListTree,
   Megaphone,
   HardDrive,
+  Database,
 } from "lucide-react";
 import { Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -48,12 +49,13 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Branches", icon: GitBranch, path: "/branches" },
   { label: "MCP", icon: Bot, path: "/mcp" },
   { label: "Backups", icon: HardDrive, path: "/backups" },
+  { label: "Replication", icon: Database, path: "/replication" },
   { label: "API Keys", icon: KeyRound, path: "/keys" },
   { label: "Project Settings", icon: Settings, path: "/settings" },
 ];
 
 /** Nav items that require data access and should be disabled when paused. */
-const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/functions", "/triggers", "/enums", "/extensions", "/indexes", "/publications", "/backups"]);
+const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/functions", "/triggers", "/enums", "/extensions", "/indexes", "/publications", "/backups", "/replication"]);
 
 export function SidebarNav({ projectStatus }: { projectStatus?: string } = {}) {
   const { projectId } = useParams({ strict: false }) as {
