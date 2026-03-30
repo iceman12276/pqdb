@@ -12,6 +12,7 @@ import {
   Radio,
   ScrollText,
   Bot,
+  Bell,
   KeyRound,
   Settings,
   List,
@@ -21,7 +22,6 @@ import {
   Link2,
   HardDrive,
   Database,
-  Link2,
   Gauge,
 } from "lucide-react";
 import { Link, useParams } from "@tanstack/react-router";
@@ -59,12 +59,13 @@ export const sidebarNavItems: NavItem[] = [
   { label: "Replication", icon: Database, path: "/replication" },
   { label: "Security", icon: ShieldAlert, path: "/security" },
   { label: "Performance", icon: Gauge, path: "/performance" },
+  { label: "Webhooks", icon: Bell, path: "/webhooks" },
   { label: "API Keys", icon: KeyRound, path: "/keys" },
   { label: "Project Settings", icon: Settings, path: "/settings" },
 ];
 
 /** Nav items that require data access and should be disabled when paused. */
-const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/functions", "/triggers", "/enums", "/extensions", "/indexes", "/publications", "/wrappers", "/backups", "/replication", "/security", "/performance"]);
+const pauseDisabledPaths = new Set(["/tables", "/sql", "/schema", "/functions", "/triggers", "/enums", "/extensions", "/indexes", "/publications", "/wrappers", "/backups", "/replication", "/security", "/performance", "/webhooks"]);
 
 export function SidebarNav({ projectStatus }: { projectStatus?: string } = {}) {
   const { projectId } = useParams({ strict: false }) as {
