@@ -110,7 +110,7 @@ def list_migration_files(versions_dir: Path | None = None) -> list[MigrationEntr
 @router.get("/{project_id}/migrations", response_model=MigrationListResponse)
 async def get_migrations(
     project_id: uuid.UUID,
-    developer_id: str = Depends(get_current_developer_id),
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
     session: AsyncSession = Depends(get_session),
 ) -> MigrationListResponse:
     """List all Alembic migrations with current applied status.
@@ -122,7 +122,7 @@ async def get_migrations(
     result = await session.execute(
         select(Project).where(
             Project.id == project_id,
-            Project.developer_id == uuid.UUID(developer_id),
+            Project.developer_id == developer_id,
         )
     )
     if result.scalar_one_or_none() is None:
