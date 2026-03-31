@@ -111,9 +111,7 @@ def _make_google_oauth_app(
         app.state.vault_client = mock_vault
         app.state.settings = Settings(
             database_url=test_db_url,
-            allowed_redirect_uris_raw=(
-                "https://myapp.com,http://localhost:3000"
-            ),
+            allowed_redirect_uris_raw=("https://myapp.com,http://localhost:3000"),
         )
         yield
         await engine.dispose()
