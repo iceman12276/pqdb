@@ -1,0 +1,12 @@
+# Gitleaks configuration — allowlist test fixtures and dev scripts
+# These contain fake/test API keys, not real secrets
+
+[allowlist]
+  description = "Allow test fixtures and dev scripts with fake API keys"
+  paths = [
+    '''(^|/)tests/''',
+    '''(^|/)e2e/''',
+    '''infra/scripts/''',
+    '''mcp/tests/''',
+    '''dashboard/tests/''',
+  ]
