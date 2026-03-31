@@ -90,7 +90,7 @@ export function SidebarNav({ projectStatus }: { projectStatus?: string } = {}) {
           pqdb
         </span>
       </div>
-      <ul className="flex flex-1 flex-col gap-1">
+      <ul className="flex flex-1 flex-col gap-1 overflow-y-auto">
         {sidebarNavItems.map((item) => {
           const href = projectId
             ? `/projects/${projectId}${item.path}`

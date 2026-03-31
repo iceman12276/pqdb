@@ -644,7 +644,11 @@ async def insert_rows(
             )
             physical_row = validate_columns_for_insert(row, columns_meta)
             sql, params = build_insert_sql(table_name, physical_row)
-            result = await session.execute(text(sql), params)
+            # Table name validated via _validate_identifier;
+            # values use bind parameters.
+            result = await session.execute(  # nosemgrep
+                text(sql), params
+            )
             inserted.extend(_rows_to_dicts(result))
         await session.commit()
     except CrudError as exc:
@@ -934,7 +938,12 @@ async def execute_sql(
             # Use a read-only transaction for safety
             await session.execute(text("SET TRANSACTION READ ONLY"))
 
-        raw_result = await session.execute(text(body.query))
+        # Intentional: SQL playground endpoint executes
+        # developer-provided SQL. Access is restricted to
+        # service_role API keys only (checked above).
+        raw_result = await session.execute(  # nosemgrep
+            text(body.query)
+        )
         # Cast to Any so mypy allows attribute access on CursorResult
         result: Any = raw_result
 

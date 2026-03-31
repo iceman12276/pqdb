@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from pqdb_api.config import Settings
 from pqdb_api.database import get_session
 from pqdb_api.middleware.api_key import (
     ProjectContext,
@@ -108,6 +109,10 @@ def _make_google_oauth_app(
         app.state.mldsa65_private_key = private_key
         app.state.mldsa65_public_key = public_key
         app.state.vault_client = mock_vault
+        app.state.settings = Settings(
+            database_url=test_db_url,
+            allowed_redirect_uris_raw=("https://myapp.com,http://localhost:3000"),
+        )
         yield
         await engine.dispose()
 
