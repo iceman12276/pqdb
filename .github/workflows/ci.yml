@@ -97,9 +97,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      # SAST + Supply Chain scanning handled by Semgrep Cloud Platform GitHub App
-      # (Pro rules, runs automatically on every PR — no CI step needed)
-      # Team lead verifies via Semgrep MCP: semgrep_findings(issue_type="sast"|"sca")
+      - name: Semgrep CI (SAST + Supply Chain)
+        run: pip install semgrep && semgrep ci
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
       - name: Install gitleaks
         run: |
