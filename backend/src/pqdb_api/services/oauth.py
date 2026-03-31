@@ -10,12 +10,30 @@ import abc
 import os
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 import structlog
 
 logger = structlog.get_logger()
+
+
+def validate_redirect_uri(redirect_uri: str, allowed_origins: list[str]) -> None:
+    """Validate redirect_uri against an allowlist of origins.
+
+    Compares scheme + netloc (origin) of the redirect_uri against each
+    allowed origin. Raises ValueError if no match is found.
+    """
+    parsed = urlparse(redirect_uri)
+    request_origin = f"{parsed.scheme}://{parsed.netloc}"
+
+    for allowed in allowed_origins:
+        allowed_parsed = urlparse(allowed)
+        allowed_origin = f"{allowed_parsed.scheme}://{allowed_parsed.netloc}"
+        if request_origin == allowed_origin:
+            return
+
+    raise ValueError(f"Redirect URI origin {request_origin!r} not in allowed origins")
 
 
 @dataclass(frozen=True)

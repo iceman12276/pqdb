@@ -14,7 +14,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -38,6 +38,7 @@ from pqdb_api.services.oauth import (
     GitHubOAuthProvider,
     GoogleOAuthProvider,
     OAuthProvider,
+    validate_redirect_uri,
 )
 from pqdb_api.services.vault import VaultClient, VaultError
 
@@ -97,24 +98,11 @@ def _validate_dev_state_jwt(
 
 
 # ---------------------------------------------------------------------------
-# Redirect URI validation
+# Redirect URI validation (delegates to shared utility)
 # ---------------------------------------------------------------------------
 def _validate_redirect_uri(redirect_uri: str, allowed_origins: list[str]) -> None:
-    """Validate redirect_uri against an allowlist of origins.
-
-    Compares scheme + netloc (origin) of the redirect_uri against each
-    allowed origin. Raises ValueError if no match is found.
-    """
-    parsed = urlparse(redirect_uri)
-    request_origin = f"{parsed.scheme}://{parsed.netloc}"
-
-    for allowed in allowed_origins:
-        allowed_parsed = urlparse(allowed)
-        allowed_origin = f"{allowed_parsed.scheme}://{allowed_parsed.netloc}"
-        if request_origin == allowed_origin:
-            return
-
-    raise ValueError(f"Redirect URI origin {request_origin!r} not in allowed origins")
+    """Validate redirect_uri against an allowlist of origins."""
+    validate_redirect_uri(redirect_uri, allowed_origins)
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +220,19 @@ async def developer_oauth_callback(
         )
 
     redirect_uri = state_payload["redirect_uri"]
+
+    # Re-validate redirect_uri from state to prevent open redirects
+    settings = getattr(request.app.state, "settings", None)
+    allowed_origins = (
+        settings.allowed_redirect_uris if settings else ["http://localhost:3000"]
+    )
+    try:
+        validate_redirect_uri(redirect_uri, allowed_origins)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="redirect_uri is not in the allowed origins",
+        )
 
     # Get OAuth credentials from Vault
     vault_client: VaultClient = request.app.state.vault_client

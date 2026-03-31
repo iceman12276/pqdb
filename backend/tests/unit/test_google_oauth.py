@@ -34,6 +34,7 @@ from pqdb_api.services.oauth import (
     GoogleOAuthProvider,
     OAuthTokens,
     OAuthUserInfo,
+    validate_redirect_uri,
 )
 
 
@@ -342,3 +343,53 @@ class TestGetUserInfo:
         with patch("httpx.AsyncClient", return_value=mock_client):
             with pytest.raises(ValueError, match="user info retrieval failed"):
                 await google_provider.get_user_info(tokens)
+
+
+# ---------------------------------------------------------------------------
+# Shared redirect URI validation tests
+# ---------------------------------------------------------------------------
+class TestValidateRedirectUri:
+    """Test shared validate_redirect_uri — open redirect prevention."""
+
+    def test_accepts_allowed_localhost_uri(self) -> None:
+        allowed = ["http://localhost:3000", "https://dashboard.pqdb.io"]
+        validate_redirect_uri("http://localhost:3000/auth/callback", allowed)
+
+    def test_accepts_allowed_https_uri(self) -> None:
+        allowed = ["https://dashboard.pqdb.io"]
+        uri = "https://dashboard.pqdb.io/oauth/google/callback"
+        validate_redirect_uri(uri, allowed)
+
+    def test_rejects_external_malicious_uri(self) -> None:
+        allowed = ["http://localhost:3000"]
+        with pytest.raises(ValueError, match="not in allowed"):
+            validate_redirect_uri("https://evil.com/steal-tokens", allowed)
+
+    def test_rejects_different_port(self) -> None:
+        allowed = ["http://localhost:3000"]
+        with pytest.raises(ValueError, match="not in allowed"):
+            validate_redirect_uri("http://localhost:9999/callback", allowed)
+
+    def test_rejects_different_scheme(self) -> None:
+        allowed = ["http://localhost:3000"]
+        with pytest.raises(ValueError, match="not in allowed"):
+            validate_redirect_uri("https://localhost:3000/callback", allowed)
+
+    def test_rejects_empty_allowlist(self) -> None:
+        with pytest.raises(ValueError, match="not in allowed"):
+            validate_redirect_uri("http://localhost:3000", [])
+
+    def test_checks_origin_not_full_path(self) -> None:
+        allowed = ["http://localhost:3000"]
+        validate_redirect_uri("http://localhost:3000/any/path/here", allowed)
+        validate_redirect_uri("http://localhost:3000", allowed)
+
+    def test_rejects_subdomain_spoofing(self) -> None:
+        allowed = ["https://pqdb.io"]
+        with pytest.raises(ValueError, match="not in allowed"):
+            validate_redirect_uri("https://evil.pqdb.io/callback", allowed)
+
+    def test_rejects_javascript_uri(self) -> None:
+        allowed = ["http://localhost:3000"]
+        with pytest.raises(ValueError, match="not in allowed"):
+            validate_redirect_uri("javascript:alert(1)", allowed)
