@@ -50,7 +50,7 @@ test.describe("Passkey authentication", () => {
       await page.goto("/settings", { waitUntil: "networkidle" });
 
       // Wait for settings page to load
-      await expect(page.getByText("Security")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("main").getByText("Security")).toBeVisible({ timeout: 15_000 });
 
       // Should show "No passkeys registered"
       await expect(page.getByTestId("no-passkeys")).toBeVisible();
