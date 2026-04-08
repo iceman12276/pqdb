@@ -8,6 +8,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from starlette.routing import WebSocketRoute
 
 from pqdb_api.config import Settings
 from pqdb_api.database import dispose_engine, init_engine
@@ -143,6 +144,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(security_advisor_router)
     app.include_router(performance_advisor_router)
 
-    app.add_websocket_route("/v1/realtime", realtime_ws_endpoint)
+    app.routes.append(WebSocketRoute("/v1/realtime", realtime_ws_endpoint))
 
     return app
