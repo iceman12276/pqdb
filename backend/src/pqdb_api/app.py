@@ -7,8 +7,8 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.routing import WebSocketRoute
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from starlette.routing import WebSocketRoute
 
 from pqdb_api.config import Settings
 from pqdb_api.database import dispose_engine, init_engine
