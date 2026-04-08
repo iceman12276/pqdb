@@ -143,6 +143,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(security_advisor_router)
     app.include_router(performance_advisor_router)
 
-    app.add_websocket_route("/v1/realtime", realtime_ws_endpoint)
+    app.add_api_websocket_route("/v1/realtime", realtime_ws_endpoint)
 
     return app

@@ -165,7 +165,7 @@ def _make_ws_test_app(test_db_url: str) -> FastAPI:
                     )
                 continue
 
-    app.add_websocket_route("/v1/realtime", _test_ws_endpoint)
+    app.add_api_websocket_route("/v1/realtime", _test_ws_endpoint)
     return app
 
 
