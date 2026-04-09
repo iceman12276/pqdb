@@ -322,7 +322,7 @@ describe("pqdb_merge_branch tool", () => {
           Authorization: "Bearer dev-jwt-token-123",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ force: false }),
       },
     );
 
@@ -330,6 +330,27 @@ describe("pqdb_merge_branch tool", () => {
     const parsed = JSON.parse(text);
     expect(parsed.data).toEqual(response);
     expect(parsed.error).toBeNull();
+  });
+
+  it("forwards force=true when explicitly requested", async () => {
+    mockFetchOk({ status: "merged", branch: "feature-x" });
+
+    await client.callTool({
+      name: "pqdb_merge_branch",
+      arguments: { project_id: "proj-123", name: "feature-x", force: true },
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/v1/projects/proj-123/branches/feature-x/promote",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer dev-jwt-token-123",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ force: true }),
+      },
+    );
   });
 
   it("returns error when devToken is not set", async () => {

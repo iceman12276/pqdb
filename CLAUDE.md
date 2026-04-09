@@ -28,7 +28,7 @@ uv run pytest -k "test_name"     # Single test by name
 uv run ruff check .              # Lint
 uv run ruff format .             # Format
 uv run mypy .                    # Type check (strict)
-uv run uvicorn pqdb_api.app:create_app --factory --reload  # Dev server
+uv run uvicorn pqdb_api.app:create_app --factory --reload --host 0.0.0.0  # Dev server (0.0.0.0 required for Caddy Docker proxy)
 uv run alembic upgrade head      # Run migrations
 uv run alembic revision --autogenerate -m "description"    # Create migration
 ```
@@ -45,9 +45,35 @@ npm run typecheck                # tsc --noEmit (strict mode)
 
 ### Infrastructure
 ```bash
-docker compose -f infra/compose.yaml up -d     # Start Postgres + Vault
+docker compose -f infra/compose.yaml up -d     # Start Postgres + Vault + Caddy
 docker compose -f infra/compose.yaml down -v    # Tear down with volumes
 ```
+
+### Full Local Dev Stack
+Start everything in order:
+```bash
+# 1. Infrastructure (Postgres, Vault, Caddy TLS proxy)
+docker compose -f infra/compose.yaml up -d
+
+# 2. Backend (must use --host 0.0.0.0 for Caddy Docker to reach it)
+cd backend && uv run alembic upgrade head
+uv run uvicorn pqdb_api.app:create_app --factory --reload --host 0.0.0.0
+
+# 3. Dashboard (must use --host 0.0.0.0 for Caddy Docker to reach it)
+cd dashboard && npm run dev -- --host 0.0.0.0
+
+# 4. MCP Server (optional, set PQDB_DASHBOARD_URL if Caddy is on non-standard port)
+cd mcp && node dist/cli.js --transport http --port 3002 --project-url http://localhost:8000
+```
+
+Access via:
+- Dashboard: https://localhost (or https://localhost:8443 if port 80/443 is in use)
+- Backend API: https://localhost/v1/ (proxied by Caddy)
+- MCP Server: http://localhost:3002
+
+**Port conflicts:** If port 80/443 is in use by another container, change Caddy ports in
+`infra/compose.yaml` (e.g., `8443:443`, `8080:80`) and set `PQDB_DASHBOARD_URL=https://localhost:8443`
+when starting the MCP server. Use `pkexec ss -tlnp | grep ':80 '` to find the conflicting process.
 
 ## Architecture
 

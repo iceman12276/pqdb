@@ -17,11 +17,45 @@
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { setCurrentProjectId } from "./auth-state.js";
 
 /** Standard { data, error } response shape. */
 interface ApiResponse {
   data: unknown | null;
   error: string | null;
+}
+
+/**
+ * Extract a human-readable error detail from a non-OK Response.
+ *
+ * FastAPI returns errors in several shapes:
+ *   - { detail: "plain string" }
+ *   - { detail: { error: { code, message } } }  (structured error)
+ *   - { detail: <arbitrary object> }
+ *   - non-JSON body
+ *
+ * Previously these helpers typed detail as `string`, so structured errors
+ * were coerced to the literal "[object Object]" when thrown. This helper
+ * handles all shapes and always returns a meaningful string.
+ */
+async function extractErrorDetail(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    const d = body.detail;
+    if (typeof d === "string") {
+      return d;
+    }
+    if (d && typeof d === "object" && "error" in d) {
+      const err = (d as { error: { code?: string; message?: string } }).error;
+      return err.message ?? err.code ?? response.statusText;
+    }
+    if (d !== undefined && d !== null) {
+      return JSON.stringify(d);
+    }
+  } catch {
+    // Non-JSON body — fall through to statusText
+  }
+  return response.statusText;
 }
 
 /** Make an authenticated GET request using developer JWT. */
@@ -36,14 +70,7 @@ async function devGet<T>(
   });
 
   if (!response.ok) {
-    let detail: string;
-    try {
-      const body = (await response.json()) as { detail?: string };
-      detail = body.detail ?? response.statusText;
-    } catch {
-      detail = response.statusText;
-    }
-    throw new Error(detail);
+    throw new Error(await extractErrorDetail(response));
   }
 
   return (await response.json()) as T;
@@ -66,14 +93,7 @@ async function devPost<T>(
   });
 
   if (!response.ok) {
-    let detail: string;
-    try {
-      const errorBody = (await response.json()) as { detail?: string };
-      detail = errorBody.detail ?? response.statusText;
-    } catch {
-      detail = response.statusText;
-    }
-    throw new Error(detail);
+    throw new Error(await extractErrorDetail(response));
   }
 
   return (await response.json()) as T;
@@ -91,14 +111,7 @@ async function devDelete(
   });
 
   if (!response.ok) {
-    let detail: string;
-    try {
-      const body = (await response.json()) as { detail?: string };
-      detail = body.detail ?? response.statusText;
-    } catch {
-      detail = response.statusText;
-    }
-    throw new Error(detail);
+    throw new Error(await extractErrorDetail(response));
   }
 }
 
@@ -139,6 +152,44 @@ export function registerProjectTools(
   _apiKey: string,
   devToken: string | undefined,
 ): void {
+  // ── pqdb_select_project ─────────────────────────────────────────────
+
+  mcpServer.tool(
+    "pqdb_select_project",
+    "Switch the active project. All subsequent project-scoped operations (tables, rows, SQL) will target this project. Use pqdb_list_projects to see available projects.",
+    {
+      project_id: z.string().describe("ID of the project to select"),
+    },
+    async ({ project_id }) => {
+      const authError = requireDevToken(devToken);
+      if (authError) return authError;
+
+      try {
+        const project = await devGet<{ id: string; name: string; status: string }>(
+          projectUrl,
+          devToken!,
+          `/v1/projects/${encodeURIComponent(project_id)}`,
+        );
+
+        setCurrentProjectId(project.id);
+
+        return successResult({
+          data: {
+            message: `Switched to project "${project.name}" (${project.id})`,
+            project,
+            active_project_id: project.id,
+          },
+          error: null,
+        });
+      } catch (err) {
+        return errorResult({
+          data: null,
+          error: err instanceof Error ? err.message : "Failed to select project",
+        });
+      }
+    },
+  );
+
   // ── pqdb_get_project ────────────────────────────────────────────────
 
   mcpServer.tool(
@@ -212,12 +263,15 @@ export function registerProjectTools(
         const body: Record<string, string> = { name };
         if (region) body.region = region;
 
-        const project = await devPost<unknown>(
+        const project = await devPost<{ id: string; name: string }>(
           projectUrl,
           devToken!,
           "/v1/projects",
           body,
         );
+
+        // Auto-select the newly created project
+        setCurrentProjectId(project.id);
 
         return successResult({ data: project, error: null });
       } catch (err) {
@@ -412,12 +466,18 @@ export function registerProjectTools(
 
   mcpServer.tool(
     "pqdb_merge_branch",
-    "Promote (merge) a branch into main. Applies all branch changes to the main database. Requires PQDB_DEV_TOKEN.",
+    "Promote (merge) a branch into main. Applies all branch changes to the main database. By default the merge fails if there are active connections to main — set force=true to proceed anyway. Requires PQDB_DEV_TOKEN.",
     {
       project_id: z.string().describe("ID of the project"),
       name: z.string().describe("Name of the branch to merge into main"),
+      force: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, promote even when active connections exist on main. Use with caution — active connections will be dropped.",
+        ),
     },
-    async ({ project_id, name }) => {
+    async ({ project_id, name, force }) => {
       const authError = requireDevToken(devToken);
       if (authError) return authError;
 
@@ -426,7 +486,7 @@ export function registerProjectTools(
           projectUrl,
           devToken!,
           `/v1/projects/${encodeURIComponent(project_id)}/branches/${encodeURIComponent(name)}/promote`,
-          {},
+          { force: force ?? false },
         );
 
         return successResult({ data: result, error: null });

@@ -42,6 +42,11 @@ export function getProjectId(): string | undefined {
   return _projectId;
 }
 
+/** Switch the active project at runtime (used by pqdb_select_project). */
+export function setCurrentProjectId(projectId: string): void {
+  _projectId = projectId;
+}
+
 /** Build auth headers — uses apikey if available, otherwise developer JWT + project ID. */
 export function buildAuthHeaders(apiKey: string): Record<string, string> {
   if (apiKey) {
