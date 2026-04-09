@@ -193,6 +193,10 @@ async def _get_column_meta(
 
     Raises HTTPException 404 if the table does not exist.
     Returns list of dicts with keys: name, sensitivity, data_type, is_owner.
+
+    Includes auto-generated system columns (id, created_at, updated_at) as
+    plain columns so they can be used as filter/update targets (e.g.,
+    WHERE id = 1). These are appended after user-defined columns.
     """
     await ensure_metadata_table(session)
     result = await session.execute(
@@ -208,15 +212,40 @@ async def _get_column_meta(
             status_code=404,
             detail=f"Table {table_name!r} not found",
         )
-    return [
+    user_columns: list[dict[str, Any]] = [
         {
             "name": r[0],
             "sensitivity": r[1],
             "data_type": r[2],
             "is_owner": bool(r[3]),
+            "is_system": False,
         }
         for r in rows
     ]
+    system_columns: list[dict[str, Any]] = [
+        {
+            "name": "id",
+            "sensitivity": "plain",
+            "data_type": "bigint",
+            "is_owner": False,
+            "is_system": True,
+        },
+        {
+            "name": "created_at",
+            "sensitivity": "plain",
+            "data_type": "timestamptz",
+            "is_owner": False,
+            "is_system": True,
+        },
+        {
+            "name": "updated_at",
+            "sensitivity": "plain",
+            "data_type": "timestamptz",
+            "is_owner": False,
+            "is_system": True,
+        },
+    ]
+    return user_columns + system_columns
 
 
 def _rows_to_dicts(result: Any) -> list[dict[str, Any]]:
