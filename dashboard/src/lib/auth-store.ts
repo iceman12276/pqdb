@@ -43,12 +43,27 @@ export function setTokens(
   if (options?.persist && typeof sessionStorage !== "undefined") {
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(tokens));
   }
+
+  // Notify login listeners (e.g., KeypairProvider)
+  for (const cb of loginCallbacks) {
+    cb();
+  }
 }
 
-type LogoutCallback = () => void;
-const logoutCallbacks: Set<LogoutCallback> = new Set();
+type AuthCallback = () => void;
 
-export function onLogout(callback: LogoutCallback): () => void {
+const loginCallbacks: Set<AuthCallback> = new Set();
+
+export function onLogin(callback: AuthCallback): () => void {
+  loginCallbacks.add(callback);
+  return () => {
+    loginCallbacks.delete(callback);
+  };
+}
+
+const logoutCallbacks: Set<AuthCallback> = new Set();
+
+export function onLogout(callback: AuthCallback): () => void {
   logoutCallbacks.add(callback);
   return () => {
     logoutCallbacks.delete(callback);

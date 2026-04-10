@@ -16,7 +16,7 @@ import {
   wrapKey,
   generateEncryptionKey,
 } from "./envelope-crypto";
-import { getAccessToken, onLogout } from "./auth-store";
+import { getAccessToken, onLogin, onLogout } from "./auth-store";
 import { loadKeypair } from "./keypair-store";
 
 /* ------------------------------------------------------------------ */
@@ -137,9 +137,32 @@ export function KeypairProvider({
     error: null,
   });
 
-  // Load keypair from IndexedDB on mount
+  // Track the access token reactively so the keypair loads both on mount
+  // (page refresh with existing token) AND after a fresh login/signup.
+  const [token, setToken] = React.useState<string | null>(() =>
+    getAccessToken(),
+  );
+
+  // Subscribe to auth state changes
   React.useEffect(() => {
-    const token = getAccessToken();
+    const unsubLogin = onLogin(() => setToken(getAccessToken()));
+    const unsubLogout = onLogout(() => {
+      setToken(null);
+      setKeypairState({
+        publicKey: null,
+        privateKey: null,
+        loaded: false,
+        error: null,
+      });
+    });
+    return () => {
+      unsubLogin();
+      unsubLogout();
+    };
+  }, []);
+
+  // Load keypair from IndexedDB whenever token changes
+  React.useEffect(() => {
     if (!token) return;
 
     const developerId = developerIdFromToken(token);
@@ -179,7 +202,7 @@ export function KeypairProvider({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [token]);
 
   /* --- Legacy envelope-key state --- */
   const [wrappingKey, setWrappingKeyState] = React.useState<CryptoKey | null>(
@@ -196,18 +219,12 @@ export function KeypairProvider({
     }
   }, [encryptionKeys]);
 
-  // Clear keys on logout
+  // Clear legacy envelope keys on logout
   React.useEffect(() => {
     return onLogout(() => {
       setWrappingKeyState(null);
       setEncryptionKeys(new Map());
       clearKeysFromStorage();
-      setKeypairState({
-        publicKey: null,
-        privateKey: null,
-        loaded: false,
-        error: null,
-      });
     });
   }, []);
 
