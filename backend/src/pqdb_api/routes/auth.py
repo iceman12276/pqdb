@@ -237,6 +237,61 @@ async def get_my_public_key(
     return PublicKeyResponse(public_key=pk_b64)
 
 
+class UpdatePublicKeyRequest(BaseModel):
+    """Request body for PUT /v1/auth/me/public-key (key rotation)."""
+
+    public_key: str
+
+    @field_validator("public_key")
+    @classmethod
+    def _validate_b64(cls, v: str) -> str:
+        try:
+            decoded = base64.b64decode(v, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            msg = f"public_key must be valid base64: {exc}"
+            raise ValueError(msg) from exc
+        if len(decoded) != ML_KEM_768_PUBLIC_KEY_BYTES:
+            msg = (
+                "public_key must decode to exactly "
+                f"{ML_KEM_768_PUBLIC_KEY_BYTES} bytes "
+                f"(ML-KEM-768 public key size), got {len(decoded)}"
+            )
+            raise ValueError(msg)
+        return v
+
+
+class UpdatePublicKeyResponse(BaseModel):
+    """Response body for PUT /v1/auth/me/public-key."""
+
+    ok: bool
+
+
+@router.put("/me/public-key", response_model=UpdatePublicKeyResponse)
+async def update_my_public_key(
+    body: UpdatePublicKeyRequest,
+    developer_id: uuid.UUID = Depends(get_current_developer_id),
+    session: AsyncSession = Depends(get_session),
+) -> UpdatePublicKeyResponse:
+    """Replace the authenticated developer's ML-KEM-768 public key.
+
+    Used during key rotation / recovery: the client generates a new
+    keypair and uploads the new public key here.
+    """
+    result = await session.execute(
+        select(Developer).where(Developer.id == developer_id)
+    )
+    developer = result.scalar_one_or_none()
+    if developer is None:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    developer.ml_kem_public_key = base64.b64decode(
+        body.public_key, validate=True
+    )
+    await session.commit()
+    logger.info("developer_public_key_updated", developer_id=str(developer_id))
+    return UpdatePublicKeyResponse(ok=True)
+
+
 class ChangePasswordRequest(BaseModel):
     """Request body for changing password."""
 
