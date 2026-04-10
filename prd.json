@@ -112,8 +112,8 @@
         "CI passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Merged via PR #150 (caf70e42) after 1 fix cycle. Original had useEffect([]) race — after fresh login the keypair never loaded because the effect ran before the token existed and never retried. Fixed by adding onLogin() callback to auth-store (mirrors onLogout), tracking token in useState, depending on [token]. All 8 consumers migrated from envelope-key-context to keypair-context. E2E test added for signup→create project happy path."
     },
     {
       "id": "US-005b",
