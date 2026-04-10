@@ -284,9 +284,7 @@ async def update_my_public_key(
     if developer is None:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    developer.ml_kem_public_key = base64.b64decode(
-        body.public_key, validate=True
-    )
+    developer.ml_kem_public_key = base64.b64decode(body.public_key, validate=True)
     await session.commit()
     logger.info("developer_public_key_updated", developer_id=str(developer_id))
     return UpdatePublicKeyResponse(ok=True)

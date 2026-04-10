@@ -141,9 +141,7 @@ class TestPutPublicKey:
         assert get_resp.status_code == 200
         assert get_resp.json()["public_key"] == VALID_PUBLIC_KEY_2
 
-    def test_put_public_key_rejects_wrong_length(
-        self, client: TestClient
-    ) -> None:
+    def test_put_public_key_rejects_wrong_length(self, client: TestClient) -> None:
         token = _signup(client, email="badlen@test.com")
 
         resp = client.put(
@@ -153,9 +151,7 @@ class TestPutPublicKey:
         )
         assert resp.status_code == 422
 
-    def test_put_public_key_rejects_invalid_base64(
-        self, client: TestClient
-    ) -> None:
+    def test_put_public_key_rejects_invalid_base64(self, client: TestClient) -> None:
         token = _signup(client, email="badb64@test.com")
 
         resp = client.put(
@@ -165,9 +161,7 @@ class TestPutPublicKey:
         )
         assert resp.status_code == 422
 
-    def test_put_public_key_rejects_missing_body(
-        self, client: TestClient
-    ) -> None:
+    def test_put_public_key_rejects_missing_body(self, client: TestClient) -> None:
         token = _signup(client, email="nobody@test.com")
 
         resp = client.put(
