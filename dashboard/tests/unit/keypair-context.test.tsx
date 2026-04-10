@@ -44,7 +44,7 @@ vi.mock("~/lib/envelope-crypto", () => ({
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-import { KeypairProvider, useKeypair } from "~/lib/keypair-context";
+import { KeypairProvider, useKeypair, useProjectKeys } from "~/lib/keypair-context";
 
 /**
  * Build a fake JWT access token with the given `sub` claim.
@@ -240,5 +240,92 @@ describe("keypair-context", () => {
     });
     expect(result.current.publicKey).toEqual(keypair2.publicKey);
     expect(result.current.privateKey).toEqual(keypair2.secretKey);
+  });
+});
+
+describe("useProjectKeys — per-project shared secret storage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetch.mockReset();
+    loginCallbacks.clear();
+    logoutCallbacks.clear();
+    globalThis.indexedDB = new IDBFactory();
+    sessionStorage.clear();
+  });
+
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return <KeypairProvider>{children}</KeypairProvider>;
+  }
+
+  it("stores a shared secret via setProjectKey and retrieves it via getProjectKey", () => {
+    mockGetAccessToken.mockReturnValue(null);
+    mockFetch.mockResolvedValue({ ok: false });
+
+    const { result } = renderHook(() => useProjectKeys(), {
+      wrapper: Wrapper,
+    });
+
+    const projectId = "proj-111";
+    const sharedSecret = new Uint8Array([10, 20, 30, 40, 50]);
+
+    act(() => {
+      result.current.setProjectKey(projectId, sharedSecret);
+    });
+
+    const retrieved = result.current.getProjectKey(projectId);
+    expect(retrieved).toEqual(sharedSecret);
+  });
+
+  it("returns null for a project ID that has no stored key", () => {
+    mockGetAccessToken.mockReturnValue(null);
+    mockFetch.mockResolvedValue({ ok: false });
+
+    const { result } = renderHook(() => useProjectKeys(), {
+      wrapper: Wrapper,
+    });
+
+    expect(result.current.getProjectKey("nonexistent")).toBeNull();
+  });
+
+  it("stores keys for multiple projects independently", () => {
+    mockGetAccessToken.mockReturnValue(null);
+    mockFetch.mockResolvedValue({ ok: false });
+
+    const { result } = renderHook(() => useProjectKeys(), {
+      wrapper: Wrapper,
+    });
+
+    const secret1 = new Uint8Array([1, 2, 3]);
+    const secret2 = new Uint8Array([4, 5, 6]);
+
+    act(() => {
+      result.current.setProjectKey("proj-a", secret1);
+      result.current.setProjectKey("proj-b", secret2);
+    });
+
+    expect(result.current.getProjectKey("proj-a")).toEqual(secret1);
+    expect(result.current.getProjectKey("proj-b")).toEqual(secret2);
+  });
+
+  it("overwrites a previously stored key for the same project", () => {
+    mockGetAccessToken.mockReturnValue(null);
+    mockFetch.mockResolvedValue({ ok: false });
+
+    const { result } = renderHook(() => useProjectKeys(), {
+      wrapper: Wrapper,
+    });
+
+    const original = new Uint8Array([1, 1, 1]);
+    const replacement = new Uint8Array([9, 9, 9]);
+
+    act(() => {
+      result.current.setProjectKey("proj-x", original);
+    });
+    expect(result.current.getProjectKey("proj-x")).toEqual(original);
+
+    act(() => {
+      result.current.setProjectKey("proj-x", replacement);
+    });
+    expect(result.current.getProjectKey("proj-x")).toEqual(replacement);
   });
 });
