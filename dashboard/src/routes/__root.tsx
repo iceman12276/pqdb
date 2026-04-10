@@ -7,22 +7,26 @@ import {
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "~/lib/theme";
-import { KeypairProvider, useKeypair } from "~/lib/keypair-context";
+import {
+  KeypairProvider,
+  useKeypair,
+  developerIdFromToken,
+} from "~/lib/keypair-context";
+import { getAccessToken } from "~/lib/auth-store";
 import { SidebarNav } from "~/components/sidebar-nav";
 import { TopBar } from "~/components/top-bar";
+import { RecoverKeypairModal } from "~/components/recover-keypair-modal";
 import appCss from "~/styles/app.css?url";
 
-function KeypairBanner() {
-  const { error } = useKeypair();
+function KeypairRecovery() {
+  const { error, reload } = useKeypair();
   if (error !== "missing") return null;
-  return (
-    <div
-      role="status"
-      className="bg-yellow-900/30 border-b border-yellow-700/50 px-4 py-2 text-sm text-yellow-200"
-    >
-      Encryption key not loaded. Keypair recovery coming soon.
-    </div>
-  );
+
+  const token = getAccessToken();
+  const developerId = token ? developerIdFromToken(token) : null;
+  if (!developerId) return null;
+
+  return <RecoverKeypairModal developerId={developerId} onReload={reload} />;
 }
 
 const AUTH_ROUTES = ["/login", "/signup"];
@@ -64,7 +68,7 @@ function RootComponent() {
                   <SidebarNav />
                   <div className="flex flex-1 flex-col overflow-hidden">
                     <TopBar />
-                    <KeypairBanner />
+                    <KeypairRecovery />
                     <main className="flex-1 overflow-auto p-6">
                       <Outlet />
                     </main>

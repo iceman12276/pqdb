@@ -28,6 +28,8 @@ export interface KeypairState {
   privateKey: Uint8Array | null;
   loaded: boolean;
   error: string | null;
+  /** Re-trigger keypair load from IndexedDB (e.g. after recovery). */
+  reload: () => void;
 }
 
 const KeypairContext = React.createContext<KeypairState>({
@@ -35,13 +37,14 @@ const KeypairContext = React.createContext<KeypairState>({
   privateKey: null,
   loaded: false,
   error: null,
+  reload: () => {},
 });
 
 /**
  * Decode the `sub` claim from a JWT without verifying the signature.
  * Only used to key the IndexedDB lookup — the token is already server-issued.
  */
-function developerIdFromToken(token: string): string | null {
+export function developerIdFromToken(token: string): string | null {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
@@ -130,12 +133,19 @@ export function KeypairProvider({
   children: React.ReactNode;
 }) {
   /* --- Keypair state (new) --- */
-  const [keypairState, setKeypairState] = React.useState<KeypairState>({
+  const [kpCore, setKpCore] = React.useState<Omit<KeypairState, "reload">>({
     publicKey: null,
     privateKey: null,
     loaded: false,
     error: null,
   });
+
+  // Bump to retrigger the IndexedDB load (used by reload callback).
+  const [loadGeneration, setLoadGeneration] = React.useState(0);
+
+  const reload = React.useCallback(() => {
+    setLoadGeneration((g) => g + 1);
+  }, []);
 
   // Track the access token reactively so the keypair loads both on mount
   // (page refresh with existing token) AND after a fresh login/signup.
@@ -148,7 +158,7 @@ export function KeypairProvider({
     const unsubLogin = onLogin(() => setToken(getAccessToken()));
     const unsubLogout = onLogout(() => {
       setToken(null);
-      setKeypairState({
+      setKpCore({
         publicKey: null,
         privateKey: null,
         loaded: false,
@@ -161,7 +171,7 @@ export function KeypairProvider({
     };
   }, []);
 
-  // Load keypair from IndexedDB whenever token changes
+  // Load keypair from IndexedDB whenever token or loadGeneration changes
   React.useEffect(() => {
     if (!token) return;
 
@@ -174,14 +184,14 @@ export function KeypairProvider({
       .then((stored) => {
         if (cancelled) return;
         if (stored) {
-          setKeypairState({
+          setKpCore({
             publicKey: stored.publicKey,
             privateKey: stored.secretKey,
             loaded: true,
             error: null,
           });
         } else {
-          setKeypairState({
+          setKpCore({
             publicKey: null,
             privateKey: null,
             loaded: true,
@@ -191,7 +201,7 @@ export function KeypairProvider({
       })
       .catch(() => {
         if (cancelled) return;
-        setKeypairState({
+        setKpCore({
           publicKey: null,
           privateKey: null,
           loaded: true,
@@ -202,7 +212,12 @@ export function KeypairProvider({
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, loadGeneration]);
+
+  const keypairState: KeypairState = React.useMemo(
+    () => ({ ...kpCore, reload }),
+    [kpCore, reload],
+  );
 
   /* --- Legacy envelope-key state --- */
   const [wrappingKey, setWrappingKeyState] = React.useState<CryptoKey | null>(
