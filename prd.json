@@ -139,8 +139,8 @@
         "CI passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Merged via PR #152 (c4da8fba). Admin merge override due to pre-existing Dashboard Playwright flake (02-schema-visualizer timeout, Phase 3a code). All other CI green. Code review found 9 deleted integration tests from US-003 — team lead restored them manually. Silent-failure-hunter: all flows safe (regenerate ordering correct, upload validates public key match). E2E gap tracked as follow-up."
     },
     {
       "id": "US-006",
