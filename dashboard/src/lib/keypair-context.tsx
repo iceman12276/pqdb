@@ -56,6 +56,20 @@ function developerIdFromToken(token: string): string | null {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Per-project key context (PQC shared secrets from decapsulate)     */
+/* ------------------------------------------------------------------ */
+
+export interface ProjectKeysState {
+  setProjectKey: (projectId: string, sharedSecret: Uint8Array) => void;
+  getProjectKey: (projectId: string) => Uint8Array | null;
+}
+
+const ProjectKeysContext = React.createContext<ProjectKeysState>({
+  setProjectKey: () => {},
+  getProjectKey: () => null,
+});
+
+/* ------------------------------------------------------------------ */
 /*  Legacy envelope-key context (backward compat)                     */
 /* ------------------------------------------------------------------ */
 
@@ -205,6 +219,31 @@ export function KeypairProvider({
       cancelled = true;
     };
   }, [token]);
+
+  /* --- Per-project key state (PQC decapsulate results) --- */
+  const projectKeysRef = React.useRef<Map<string, Uint8Array>>(new Map());
+  const [projectKeysVersion, setProjectKeysVersion] = React.useState(0);
+
+  const setProjectKey = React.useCallback(
+    (projectId: string, sharedSecret: Uint8Array) => {
+      projectKeysRef.current.set(projectId, sharedSecret);
+      setProjectKeysVersion((v) => v + 1);
+    },
+    [],
+  );
+
+  const getProjectKey = React.useCallback(
+    (projectId: string): Uint8Array | null => {
+      return projectKeysRef.current.get(projectId) ?? null;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projectKeysVersion],
+  );
+
+  const projectKeysValue = React.useMemo(
+    () => ({ setProjectKey, getProjectKey }),
+    [setProjectKey, getProjectKey],
+  );
 
   /* --- Legacy envelope-key state --- */
   const [wrappingKey, setWrappingKeyState] = React.useState<CryptoKey | null>(
@@ -392,9 +431,11 @@ export function KeypairProvider({
 
   return (
     <KeypairContext.Provider value={keypairState}>
-      <EnvelopeKeyContext.Provider value={envelopeValue}>
-        {children}
-      </EnvelopeKeyContext.Provider>
+      <ProjectKeysContext.Provider value={projectKeysValue}>
+        <EnvelopeKeyContext.Provider value={envelopeValue}>
+          {children}
+        </EnvelopeKeyContext.Provider>
+      </ProjectKeysContext.Provider>
     </KeypairContext.Provider>
   );
 }
@@ -406,6 +447,11 @@ export function KeypairProvider({
 /** New PQC keypair hook: {publicKey, privateKey, loaded, error}. */
 export function useKeypair(): KeypairState {
   return React.useContext(KeypairContext);
+}
+
+/** Per-project PQC key hook: {setProjectKey, getProjectKey}. */
+export function useProjectKeys(): ProjectKeysState {
+  return React.useContext(ProjectKeysContext);
 }
 
 /** Legacy envelope-key hook — backward compat for existing consumers. */
