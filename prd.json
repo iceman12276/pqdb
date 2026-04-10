@@ -163,8 +163,12 @@
         "CI passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Merged via PR #151 (28bc29c0). All 3 reviewers APPROVE/CLEAN. envelope-crypto.ts NOT deleted (4 remaining consumers — deferred). E2E gap noted (covered by SDK e2e suite). No fix cycles needed.",
+      "followUps": [
+        "Delete envelope-crypto.ts once login-page, signup-page, change-password-dialog, and keypair-context stop importing from it",
+        "Add dashboard E2E test for full create-project → insert → query → decrypt round-trip"
+      ]
     },
     {
       "id": "US-007",
