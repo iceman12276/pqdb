@@ -5,7 +5,7 @@ import { AuthGuard } from "~/components/auth-guard";
 import { TableDataViewer } from "~/components/table-data-viewer";
 import { Skeleton } from "~/components/ui/skeleton";
 import { EncryptionProvider, useEncryption } from "~/lib/encryption-context";
-import { useEnvelopeKeys } from "~/lib/envelope-key-context";
+import { useEnvelopeKeys } from "~/lib/keypair-context";
 import { ProjectProvider, useProjectContext } from "~/lib/project-context";
 
 export const Route = createFileRoute(

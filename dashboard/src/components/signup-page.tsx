@@ -6,7 +6,7 @@ import { useNavigate } from "~/lib/navigation";
 import { isValidEmail } from "~/lib/validation";
 import { handleMcpRedirect } from "~/lib/mcp-callback";
 import { deriveWrappingKey } from "~/lib/envelope-crypto";
-import { useEnvelopeKeys } from "~/lib/envelope-key-context";
+import { useEnvelopeKeys } from "~/lib/keypair-context";
 import { saveKeypair } from "~/lib/keypair-store";
 import { RecoveryFileModal } from "~/components/recovery-file-modal";
 import { Button } from "~/components/ui/button";

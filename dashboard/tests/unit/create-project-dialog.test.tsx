@@ -17,7 +17,7 @@ const { mockUseEnvelopeKeys, mockGenerateEncryptionKey, mockWrapKey } =
     mockWrapKey: vi.fn(),
   }));
 
-vi.mock("~/lib/envelope-key-context", () => ({
+vi.mock("~/lib/keypair-context", () => ({
   useEnvelopeKeys: mockUseEnvelopeKeys,
   uint8ArrayToBase64: (bytes: Uint8Array) =>
     btoa(String.fromCharCode(...bytes)),

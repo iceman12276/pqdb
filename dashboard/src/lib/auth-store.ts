@@ -74,7 +74,7 @@ export function clearTokens(): void {
     }
   }
 
-  // Notify logout listeners (e.g., EnvelopeKeyProvider)
+  // Notify logout listeners (e.g., KeypairProvider)
   for (const cb of logoutCallbacks) {
     cb();
   }

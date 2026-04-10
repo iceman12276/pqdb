@@ -1,9 +1,13 @@
 /**
- * EnvelopeKeyContext — React context for envelope encryption key management.
+ * KeypairContext — React context for ML-KEM-768 keypair management.
  *
- * Holds the wrapping key (derived from password via PBKDF2) and a map of
- * per-project encryption keys. When projects are loaded, wrapped blobs are
- * auto-unwrapped. Projects without a wrapped key get one auto-generated.
+ * Loads the developer's keypair from IndexedDB on mount and exposes it via
+ * useKeypair(). Also preserves the legacy envelope-key API surface so that
+ * existing consumers (create-project, reveal-encryption-key, table routes,
+ * login, signup, change-password) continue to work during the migration to
+ * full PQC encapsulate/decapsulate (US-006, US-007).
+ *
+ * Replaces envelope-key-context.tsx.
  */
 
 import * as React from "react";
@@ -13,6 +17,47 @@ import {
   generateEncryptionKey,
 } from "./envelope-crypto";
 import { getAccessToken, onLogout } from "./auth-store";
+import { loadKeypair } from "./keypair-store";
+
+/* ------------------------------------------------------------------ */
+/*  Keypair context (new PQC API)                                     */
+/* ------------------------------------------------------------------ */
+
+export interface KeypairState {
+  publicKey: Uint8Array | null;
+  privateKey: Uint8Array | null;
+  loaded: boolean;
+  error: string | null;
+}
+
+const KeypairContext = React.createContext<KeypairState>({
+  publicKey: null,
+  privateKey: null,
+  loaded: false,
+  error: null,
+});
+
+/**
+ * Decode the `sub` claim from a JWT without verifying the signature.
+ * Only used to key the IndexedDB lookup — the token is already server-issued.
+ */
+function developerIdFromToken(token: string): string | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = parts[1]!.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
+    const decoded = atob(padded);
+    const claims = JSON.parse(decoded) as { sub?: string };
+    return claims.sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Legacy envelope-key context (backward compat)                     */
+/* ------------------------------------------------------------------ */
 
 function base64ToUint8Array(base64: string): Uint8Array {
   const binary = atob(base64);
@@ -75,11 +120,68 @@ function clearKeysFromStorage(): void {
   sessionStorage.removeItem(ENVELOPE_KEYS_STORAGE_KEY);
 }
 
-export function EnvelopeKeyProvider({
+/* ------------------------------------------------------------------ */
+/*  Combined provider                                                 */
+/* ------------------------------------------------------------------ */
+
+export function KeypairProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  /* --- Keypair state (new) --- */
+  const [keypairState, setKeypairState] = React.useState<KeypairState>({
+    publicKey: null,
+    privateKey: null,
+    loaded: false,
+    error: null,
+  });
+
+  // Load keypair from IndexedDB on mount
+  React.useEffect(() => {
+    const token = getAccessToken();
+    if (!token) return;
+
+    const developerId = developerIdFromToken(token);
+    if (!developerId) return;
+
+    let cancelled = false;
+
+    loadKeypair(developerId)
+      .then((stored) => {
+        if (cancelled) return;
+        if (stored) {
+          setKeypairState({
+            publicKey: stored.publicKey,
+            privateKey: stored.secretKey,
+            loaded: true,
+            error: null,
+          });
+        } else {
+          setKeypairState({
+            publicKey: null,
+            privateKey: null,
+            loaded: true,
+            error: "missing",
+          });
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setKeypairState({
+          publicKey: null,
+          privateKey: null,
+          loaded: true,
+          error: "missing",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* --- Legacy envelope-key state --- */
   const [wrappingKey, setWrappingKeyState] = React.useState<CryptoKey | null>(
     null,
   );
@@ -100,14 +202,18 @@ export function EnvelopeKeyProvider({
       setWrappingKeyState(null);
       setEncryptionKeys(new Map());
       clearKeysFromStorage();
+      setKeypairState({
+        publicKey: null,
+        privateKey: null,
+        loaded: false,
+        error: null,
+      });
     });
   }, []);
 
-  // Use a ref to access wrappingKey in callbacks without stale closures
   const wrappingKeyRef = React.useRef<CryptoKey | null>(null);
   wrappingKeyRef.current = wrappingKey;
 
-  // Use a ref for encryptionKeys to avoid stale closures
   const encryptionKeysRef = React.useRef<Map<string, string>>(encryptionKeys);
   encryptionKeysRef.current = encryptionKeys;
 
@@ -149,17 +255,14 @@ export function EnvelopeKeyProvider({
       const newEntries: Array<[string, string]> = [];
 
       for (const project of projects) {
-        // Skip projects already in the map
         if (currentKeys.has(project.id)) continue;
 
         try {
           if (project.wrapped_encryption_key) {
-            // Unwrap existing wrapped key
             const blob = base64ToUint8Array(project.wrapped_encryption_key);
             const decryptedKey = await unwrapKey(blob, wk);
             newEntries.push([project.id, decryptedKey]);
           } else {
-            // Auto-generate a key, wrap it, PATCH to server
             const encKey = generateEncryptionKey();
             const wrappedBlob = await wrapKey(encKey, wk);
             const wrappedBase64 = uint8ArrayToBase64(wrappedBlob);
@@ -233,7 +336,7 @@ export function EnvelopeKeyProvider({
     };
   }, [wrappingKey, unwrapProjectKeys]);
 
-  const value = React.useMemo(
+  const envelopeValue = React.useMemo(
     () => ({
       wrappingKey,
       encryptionKeys,
@@ -255,12 +358,27 @@ export function EnvelopeKeyProvider({
   );
 
   return (
-    <EnvelopeKeyContext.Provider value={value}>
-      {children}
-    </EnvelopeKeyContext.Provider>
+    <KeypairContext.Provider value={keypairState}>
+      <EnvelopeKeyContext.Provider value={envelopeValue}>
+        {children}
+      </EnvelopeKeyContext.Provider>
+    </KeypairContext.Provider>
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Hooks                                                             */
+/* ------------------------------------------------------------------ */
+
+/** New PQC keypair hook: {publicKey, privateKey, loaded, error}. */
+export function useKeypair(): KeypairState {
+  return React.useContext(KeypairContext);
+}
+
+/** Legacy envelope-key hook — backward compat for existing consumers. */
 export function useEnvelopeKeys(): EnvelopeKeyState {
   return React.useContext(EnvelopeKeyContext);
 }
+
+// Re-export EnvelopeKeyProvider as an alias so __root.tsx migration is clear
+export { KeypairProvider as EnvelopeKeyProvider };

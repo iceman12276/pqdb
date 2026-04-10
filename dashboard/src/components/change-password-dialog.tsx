@@ -2,7 +2,7 @@ import * as React from "react";
 import { api } from "~/lib/api-client";
 import { setTokens } from "~/lib/auth-store";
 import { deriveWrappingKey, unwrapKey, wrapKey } from "~/lib/envelope-crypto";
-import { useEnvelopeKeys } from "~/lib/envelope-key-context";
+import { useEnvelopeKeys } from "~/lib/keypair-context";
 import { fetchProjects } from "~/lib/projects";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";

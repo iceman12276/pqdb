@@ -11,7 +11,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { createProject, type ProjectCreateResponse } from "~/lib/projects";
-import { useEnvelopeKeys, uint8ArrayToBase64 } from "~/lib/envelope-key-context";
+import { useEnvelopeKeys, uint8ArrayToBase64 } from "~/lib/keypair-context";
 import { generateEncryptionKey, wrapKey } from "~/lib/envelope-crypto";
 
 interface CreateProjectDialogProps {
