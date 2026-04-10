@@ -152,9 +152,6 @@ jobs:
   sdk:
     name: SDK (TypeScript)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: sdk
     steps:
       - uses: actions/checkout@v4
 
@@ -163,19 +160,19 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: sdk/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
+      - name: Install workspace dependencies
         run: npm ci
 
       - name: Type check
-        run: npm run typecheck
+        run: npm run typecheck -w sdk
 
       - name: Unit tests
-        run: npm test
+        run: npm test -w sdk
 
       - name: Build
-        run: npm run build
+        run: npm run build -w sdk
 
   e2e:
     name: E2E Tests
@@ -249,16 +246,16 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: sdk/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Install SDK dependencies
-        run: cd sdk && npm ci
+      - name: Install workspace dependencies
+        run: npm ci
 
       - name: Build SDK
-        run: cd sdk && npm run build
+        run: npm run build -w sdk
 
       - name: Run SDK E2E tests
-        run: cd sdk && npm run test:e2e
+        run: npm run test:e2e -w sdk
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pqdb_platform
           PQDB_VAULT_ADDR: http://localhost:8200
@@ -339,8 +336,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: dashboard/package-lock.json
 
-      - name: Install SDK dependencies and build
-        run: cd sdk && npm ci && npm run build
+      - name: Install workspace dependencies and build SDK
+        run: npm ci && npm run build -w sdk
 
       - name: Install Dashboard dependencies
         run: cd dashboard && npm ci
