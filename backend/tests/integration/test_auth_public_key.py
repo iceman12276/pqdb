@@ -294,3 +294,96 @@ class TestGetPublicKey:
         # Critical: keys are NOT crossed.
         assert base64.b64decode(get_a.json()["public_key"]) != pk_b
         assert base64.b64decode(get_b.json()["public_key"]) != pk_a
+
+
+class TestPutPublicKey:
+    """Tests for PUT /v1/auth/me/public-key (key rotation)."""
+
+    def _signup_and_auth(
+        self,
+        client: TestClient,
+        email: str,
+    ) -> tuple[str, dict[str, str]]:
+        """Sign up and return (token, auth headers)."""
+        resp = client.post(
+            "/v1/auth/signup",
+            json={"email": email, "password": "securepass123"},
+        )
+        assert resp.status_code == 201, resp.text
+        token: str = resp.json()["access_token"]
+        return token, {"Authorization": f"Bearer {token}"}
+
+    def test_put_public_key_requires_auth(self, client: TestClient) -> None:
+        pk_b64 = base64.b64encode(_real_ml_kem_pk()).decode("ascii")
+        resp = client.put(
+            "/v1/auth/me/public-key",
+            json={"public_key": pk_b64},
+        )
+        assert resp.status_code == 401
+
+    def test_put_public_key_success(self, client: TestClient) -> None:
+        pk_bytes = _real_ml_kem_pk()
+        pk_b64 = base64.b64encode(pk_bytes).decode("ascii")
+        _, headers = self._signup_and_auth(client, _unique_email("put"))
+
+        resp = client.put(
+            "/v1/auth/me/public-key",
+            json={"public_key": pk_b64},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+
+        get_resp = client.get("/v1/auth/me/public-key", headers=headers)
+        assert get_resp.status_code == 200
+        assert base64.b64decode(get_resp.json()["public_key"]) == pk_bytes
+
+    def test_put_public_key_replaces_existing(self, client: TestClient) -> None:
+        """PUT overwrites a previously stored key (key rotation)."""
+        pk_a = _real_ml_kem_pk()
+        pk_b = _real_ml_kem_pk()
+        assert pk_a != pk_b
+        _, headers = self._signup_and_auth(client, _unique_email("rotate"))
+
+        client.put(
+            "/v1/auth/me/public-key",
+            json={"public_key": base64.b64encode(pk_a).decode("ascii")},
+            headers=headers,
+        )
+        client.put(
+            "/v1/auth/me/public-key",
+            json={"public_key": base64.b64encode(pk_b).decode("ascii")},
+            headers=headers,
+        )
+
+        get_resp = client.get("/v1/auth/me/public-key", headers=headers)
+        assert base64.b64decode(get_resp.json()["public_key"]) == pk_b
+
+    def test_put_public_key_rejects_wrong_length(self, client: TestClient) -> None:
+        _, headers = self._signup_and_auth(client, _unique_email("putbadlen"))
+        short_b64 = base64.b64encode(b"x" * 100).decode("ascii")
+        resp = client.put(
+            "/v1/auth/me/public-key",
+            json={"public_key": short_b64},
+            headers=headers,
+        )
+        assert resp.status_code == 422
+        assert "1184" in resp.text
+
+    def test_put_public_key_rejects_invalid_base64(self, client: TestClient) -> None:
+        _, headers = self._signup_and_auth(client, _unique_email("putbadb64"))
+        resp = client.put(
+            "/v1/auth/me/public-key",
+            json={"public_key": "not!!valid##base64@@"},
+            headers=headers,
+        )
+        assert resp.status_code == 422
+
+    def test_put_public_key_rejects_missing_body(self, client: TestClient) -> None:
+        _, headers = self._signup_and_auth(client, _unique_email("putnobody"))
+        resp = client.put(
+            "/v1/auth/me/public-key",
+            json={},
+            headers=headers,
+        )
+        assert resp.status_code == 422
