@@ -35,7 +35,7 @@ vi.mock("~/lib/projects", () => ({
   fetchProjects: mockFetchProjects,
 }));
 
-vi.mock("~/lib/envelope-key-context", () => ({
+vi.mock("~/lib/keypair-context", () => ({
   useEnvelopeKeys: () => ({
     setWrappingKey: mockSetWrappingKey,
     encryptionKeys: new Map(),

@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { render, act, renderHook } from "@testing-library/react";
 import * as React from "react";
 import {
-  EnvelopeKeyProvider,
+  KeypairProvider,
   useEnvelopeKeys,
-} from "~/lib/envelope-key-context";
+} from "~/lib/keypair-context";
 import * as envelopeCrypto from "~/lib/envelope-crypto";
 
 // Mock envelope-crypto module
@@ -12,6 +12,11 @@ vi.mock("~/lib/envelope-crypto", () => ({
   unwrapKey: vi.fn(),
   wrapKey: vi.fn(),
   generateEncryptionKey: vi.fn(),
+}));
+
+// Mock keypair-store (KeypairProvider calls loadKeypair on mount)
+vi.mock("~/lib/keypair-store", () => ({
+  loadKeypair: vi.fn().mockResolvedValue(null),
 }));
 
 // Mock global fetch
@@ -31,7 +36,7 @@ describe("EnvelopeKeyContext", () => {
 
   it("provides default state with null wrapping key and empty encryption keys", () => {
     const { result } = renderHook(() => useEnvelopeKeys(), {
-      wrapper: EnvelopeKeyProvider,
+      wrapper: KeypairProvider,
     });
 
     expect(result.current.wrappingKey).toBeNull();
@@ -42,7 +47,7 @@ describe("EnvelopeKeyContext", () => {
     const fakeKey = {} as CryptoKey;
 
     const { result } = renderHook(() => useEnvelopeKeys(), {
-      wrapper: EnvelopeKeyProvider,
+      wrapper: KeypairProvider,
     });
 
     await act(async () => {
@@ -56,7 +61,7 @@ describe("EnvelopeKeyContext", () => {
     const fakeKey = {} as CryptoKey;
 
     const { result } = renderHook(() => useEnvelopeKeys(), {
-      wrapper: EnvelopeKeyProvider,
+      wrapper: KeypairProvider,
     });
 
     await act(async () => {
@@ -77,7 +82,7 @@ describe("EnvelopeKeyContext", () => {
 
   it("getEncryptionKey returns null for unknown project", () => {
     const { result } = renderHook(() => useEnvelopeKeys(), {
-      wrapper: EnvelopeKeyProvider,
+      wrapper: KeypairProvider,
     });
 
     expect(result.current.getEncryptionKey("unknown")).toBeNull();
@@ -85,7 +90,7 @@ describe("EnvelopeKeyContext", () => {
 
   it("addEncryptionKey stores and retrieves a key for a project", async () => {
     const { result } = renderHook(() => useEnvelopeKeys(), {
-      wrapper: EnvelopeKeyProvider,
+      wrapper: KeypairProvider,
     });
 
     await act(async () => {
@@ -100,7 +105,7 @@ describe("EnvelopeKeyContext", () => {
     (envelopeCrypto.unwrapKey as Mock).mockResolvedValue("decrypted-key-1");
 
     const { result } = renderHook(() => useEnvelopeKeys(), {
-      wrapper: EnvelopeKeyProvider,
+      wrapper: KeypairProvider,
     });
 
     await act(async () => {
@@ -124,7 +129,7 @@ describe("EnvelopeKeyContext", () => {
     (envelopeCrypto.unwrapKey as Mock).mockResolvedValue("decrypted-key-2");
 
     const { result } = renderHook(() => useEnvelopeKeys(), {
-      wrapper: EnvelopeKeyProvider,
+      wrapper: KeypairProvider,
     });
 
     await act(async () => {
@@ -161,7 +166,7 @@ describe("EnvelopeKeyContext", () => {
     });
 
     const { result } = renderHook(() => useEnvelopeKeys(), {
-      wrapper: EnvelopeKeyProvider,
+      wrapper: KeypairProvider,
     });
 
     await act(async () => {
@@ -198,7 +203,7 @@ describe("EnvelopeKeyContext", () => {
       .mockResolvedValueOnce("decrypted-key-2");
 
     const { result } = renderHook(() => useEnvelopeKeys(), {
-      wrapper: EnvelopeKeyProvider,
+      wrapper: KeypairProvider,
     });
 
     await act(async () => {
@@ -222,7 +227,7 @@ describe("EnvelopeKeyContext", () => {
 
   it("unwrapProjectKeys does nothing without a wrapping key", async () => {
     const { result } = renderHook(() => useEnvelopeKeys(), {
-      wrapper: EnvelopeKeyProvider,
+      wrapper: KeypairProvider,
     });
 
     const projects = [

@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-import { useEnvelopeKeys } from "~/lib/envelope-key-context";
+import { useEnvelopeKeys } from "~/lib/keypair-context";
 
 interface RevealEncryptionKeyProps {
   projectId: string;

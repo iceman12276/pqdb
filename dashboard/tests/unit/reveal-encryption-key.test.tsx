@@ -7,7 +7,7 @@ const { mockGetEncryptionKey } = vi.hoisted(() => ({
   mockGetEncryptionKey: vi.fn(),
 }));
 
-vi.mock("~/lib/envelope-key-context", () => ({
+vi.mock("~/lib/keypair-context", () => ({
   useEnvelopeKeys: () => ({
     getEncryptionKey: mockGetEncryptionKey,
   }),

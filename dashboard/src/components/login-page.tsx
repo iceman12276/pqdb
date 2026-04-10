@@ -6,7 +6,7 @@ import { isValidEmail } from "~/lib/validation";
 import { startPasskeyAuthentication } from "~/lib/passkey";
 import { getMcpCallbackParams, handleMcpRedirect } from "~/lib/mcp-callback";
 import { deriveWrappingKey, unwrapKey } from "~/lib/envelope-crypto";
-import { useEnvelopeKeys } from "~/lib/envelope-key-context";
+import { useEnvelopeKeys } from "~/lib/keypair-context";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";

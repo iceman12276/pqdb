@@ -4,7 +4,7 @@ import { AuthGuard } from "~/components/auth-guard";
 import { TableListPage } from "~/components/table-list-page";
 import { Skeleton } from "~/components/ui/skeleton";
 import { EncryptionProvider, useEncryption } from "~/lib/encryption-context";
-import { useEnvelopeKeys } from "~/lib/envelope-key-context";
+import { useEnvelopeKeys } from "~/lib/keypair-context";
 import { ProjectProvider, useProjectContext } from "~/lib/project-context";
 
 export const Route = createFileRoute("/projects/$projectId/tables/")({
