@@ -40,8 +40,8 @@
         "CI passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Merged via PR #145 (51273ecd). 5/5 CI green after one-line asyncio.run() fix in test_roles_policies.py (pre-existing Python 3.12 latent bug exposed by test ordering). 0 SAST, 3 reviewers APPROVE/CLEAN. LSP: migration chains 010→011 cleanly, downgrade is inverse, model field is mypy-strict Mapped[bytes | None]."
     },
     {
       "id": "US-003",
