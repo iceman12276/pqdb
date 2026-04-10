@@ -16,6 +16,27 @@ vi.mock("~/lib/navigation", () => ({
   useNavigate: () => mockNavigate,
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    to,
+    children,
+    className,
+    onClick,
+    ...rest
+  }: {
+    to?: string;
+    children: React.ReactNode;
+    className?: string;
+    onClick?: (e: React.MouseEvent) => void;
+    [key: string]: unknown;
+  }) => (
+    <a href={to} className={className} onClick={onClick} {...rest}>
+      {children}
+    </a>
+  ),
+}));
+
+import * as React from "react";
 import { ProjectSelector } from "~/components/project-selector";
 
 const mockProjects = [
@@ -86,6 +107,61 @@ describe("ProjectSelector", () => {
     await waitFor(() => {
       expect(screen.getByText("My App")).toBeInTheDocument();
     });
+  });
+
+  it("renders 'All Projects' as the first item linking to /projects (US-009)", async () => {
+    const user = userEvent.setup();
+    mockFetchProjects.mockResolvedValueOnce(mockProjects);
+    const { wrapper } = createQueryWrapper();
+
+    render(
+      <ProjectSelector
+        selectedProjectId="p1"
+        onProjectSelect={vi.fn()}
+      />,
+      { wrapper },
+    );
+
+    // Open dropdown
+    await waitFor(() => expect(mockFetchProjects).toHaveBeenCalled());
+    const button = await screen.findByRole("button", { name: /My App/i });
+    await user.click(button);
+
+    // "All Projects" entry exists as a link to /projects
+    const allProjects = await screen.findByText("All Projects");
+    const link = allProjects.closest("a");
+    expect(link).not.toBeNull();
+    expect(link).toHaveAttribute("href", "/projects");
+
+    // Divider exists below "All Projects"
+    const divider = screen.getByTestId("all-projects-divider");
+    expect(divider).toBeInTheDocument();
+  });
+
+  it("'All Projects' appears before any individual project in the dropdown (US-009)", async () => {
+    const user = userEvent.setup();
+    mockFetchProjects.mockResolvedValueOnce(mockProjects);
+    const { wrapper } = createQueryWrapper();
+
+    render(
+      <ProjectSelector
+        selectedProjectId={null}
+        onProjectSelect={vi.fn()}
+      />,
+      { wrapper },
+    );
+
+    await waitFor(() => expect(mockFetchProjects).toHaveBeenCalled());
+    const button = await screen.findByRole("button", { name: /select project/i });
+    await user.click(button);
+
+    const allProjects = await screen.findByText("All Projects");
+    // Find the dropdown project button by role (button, not anchor)
+    const firstApp = await screen.findByRole("button", { name: "My App" });
+
+    // Document order: All Projects must appear before the first project entry.
+    const position = allProjects.compareDocumentPosition(firstApp);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("calls onProjectSelect when a project is chosen", async () => {
