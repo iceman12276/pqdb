@@ -219,6 +219,11 @@
       "title": "Dashboard navigation back to projects list — comprehensive fix",
       "description": "As a dashboard user inside a project, I want at least three ways to navigate back to the projects list (clickable logo, 'All Projects' in the project switcher dropdown, clickable breadcrumb) so that I can always find my way back regardless of which UI convention I'm used to.",
       "dependsOn": [],
+      "followUps": [
+        "Breadcrumb shows raw project UUID briefly while useQuery resolves / silently on fetch error — add a loading skeleton and an error state (toast or '(name unavailable)' label). Navigation still works because the Link's `to` uses activeProjectId, but the UX is rough.",
+        "Add unit tests for top-bar breadcrumb pending and error states (gap noted by silent-failure-hunter on PR #144).",
+        "Remove dead page.goto(/projects/{id}/schema) in nav-back-to-projects.spec.ts test #5 — selector is only rendered outside a project by design, so the intermediate navigation asserts nothing."
+      ],
       "acceptanceCriteria": [
         "dashboard/src/components/sidebar-nav.tsx wraps the 'pqdb' logo span in a <Link to=\"/projects\"> — hovering shows cursor-pointer, clicking navigates to /projects",
         "dashboard/src/components/project-selector.tsx (or equivalent) adds 'All Projects' as the first item in the Select project popover, separated from the project list by a divider — clicking navigates to /projects",
@@ -237,8 +242,8 @@
         "CI passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Merged via PR #144 (3c451990). 5/5 CI green, 0 SAST, 2 reviewers APPROVE + 1 non-blocking silent-failure finding tracked in followUps. LSP: all 3 nav paths resolve to real @tanstack/react-router Links."
     }
   ]
 }
