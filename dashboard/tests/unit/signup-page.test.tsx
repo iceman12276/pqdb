@@ -9,11 +9,15 @@ const {
   mockNavigate,
   mockGenerateKeyPair,
   mockSaveKeypair,
+  mockSetTokens,
+  mockClearTokens,
 } = vi.hoisted(() => ({
   mockSignup: vi.fn(),
   mockNavigate: vi.fn(),
   mockGenerateKeyPair: vi.fn(),
   mockSaveKeypair: vi.fn(),
+  mockSetTokens: vi.fn(),
+  mockClearTokens: vi.fn(),
 }));
 
 vi.mock("~/lib/api-client", () => ({
@@ -32,6 +36,14 @@ vi.mock("~/lib/keypair-store", () => ({
   saveKeypair: mockSaveKeypair,
   loadKeypair: vi.fn(),
   deleteKeypair: vi.fn(),
+}));
+
+vi.mock("~/lib/auth-store", () => ({
+  setTokens: mockSetTokens,
+  clearTokens: mockClearTokens,
+  getAccessToken: vi.fn(),
+  getRefreshToken: vi.fn(),
+  onLogout: vi.fn(() => () => undefined),
 }));
 
 import { SignupPage } from "~/components/signup-page";
@@ -275,6 +287,102 @@ describe("SignupPage", () => {
     resolveSignup!({
       data: { access_token: FAKE_JWT, refresh_token: "rt" },
       error: null,
+    });
+
+    // Wait for the post-signup async flow (saveKeypair, setTokens,
+    // modal render) to fully drain so it doesn't leak into the next
+    // test's assertions.
+    await screen.findByRole("dialog", { name: /save your recovery file/i });
+  });
+
+  describe("post-signup error handling (US-004 fix)", () => {
+    it("shows error and does not navigate when generateKeyPair fails", async () => {
+      const user = userEvent.setup();
+      mockGenerateKeyPair.mockRejectedValueOnce(new Error("WASM init failed"));
+
+      render(<SignupPage />);
+      await user.type(screen.getByLabelText(/email/i), "test@example.com");
+      await user.type(screen.getByLabelText(/password/i), "password123");
+      await user.click(
+        screen.getByRole("button", { name: /create account/i }),
+      );
+
+      expect(
+        await screen.findByText(/wasm init failed/i),
+      ).toBeInTheDocument();
+      // No network call, no persistence, no auth — fully aborted.
+      expect(mockSignup).not.toHaveBeenCalled();
+      expect(mockSaveKeypair).not.toHaveBeenCalled();
+      expect(mockSetTokens).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(
+        screen.queryByRole("dialog", { name: /save your recovery file/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows error and does not commit tokens when saveKeypair fails after signup succeeds", async () => {
+      const user = userEvent.setup();
+      mockSignup.mockResolvedValueOnce({
+        data: {
+          access_token: FAKE_JWT,
+          refresh_token: "rt",
+          token_type: "bearer",
+        },
+        error: null,
+      });
+      mockSaveKeypair.mockRejectedValueOnce(new Error("QuotaExceededError"));
+
+      render(<SignupPage />);
+      await user.type(screen.getByLabelText(/email/i), "test@example.com");
+      await user.type(screen.getByLabelText(/password/i), "password123");
+      await user.click(
+        screen.getByRole("button", { name: /create account/i }),
+      );
+
+      expect(
+        await screen.findByText(/quotaexceedederror/i),
+      ).toBeInTheDocument();
+      // Critical: tokens were NEVER committed because saveKeypair runs
+      // BEFORE setTokens in the new ordering. No half-authenticated
+      // zombie account.
+      expect(mockSetTokens).not.toHaveBeenCalled();
+      // No rollback needed because we never set tokens in the first place.
+      expect(mockClearTokens).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(
+        screen.queryByRole("dialog", { name: /save your recovery file/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows error and does not navigate when access token is malformed", async () => {
+      const user = userEvent.setup();
+      // developerIdFromAccessToken will throw on a token that's not a
+      // 3-part JWT — this must abort the flow before any persistence.
+      mockSignup.mockResolvedValueOnce({
+        data: {
+          access_token: "not.a.valid.jwt",
+          refresh_token: "rt",
+          token_type: "bearer",
+        },
+        error: null,
+      });
+
+      render(<SignupPage />);
+      await user.type(screen.getByLabelText(/email/i), "test@example.com");
+      await user.type(screen.getByLabelText(/password/i), "password123");
+      await user.click(
+        screen.getByRole("button", { name: /create account/i }),
+      );
+
+      expect(
+        await screen.findByText(/signup failed/i),
+      ).toBeInTheDocument();
+      expect(mockSaveKeypair).not.toHaveBeenCalled();
+      expect(mockSetTokens).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(
+        screen.queryByRole("dialog", { name: /save your recovery file/i }),
+      ).not.toBeInTheDocument();
     });
   });
 });

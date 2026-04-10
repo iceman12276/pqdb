@@ -1,7 +1,7 @@
 import * as React from "react";
 import { generateKeyPair, type KeyPair } from "@pqdb/client";
 import { api } from "~/lib/api-client";
-import { setTokens } from "~/lib/auth-store";
+import { setTokens, clearTokens } from "~/lib/auth-store";
 import { useNavigate } from "~/lib/navigation";
 import { isValidEmail } from "~/lib/validation";
 import { handleMcpRedirect } from "~/lib/mcp-callback";
@@ -92,16 +92,21 @@ export function SignupPage() {
     }
 
     setLoading(true);
+    // Track whether we already committed auth tokens so the catch block
+    // can roll them back if a later step throws. Belt-and-suspenders:
+    // the reordered flow already persists the keypair BEFORE setTokens,
+    // so this rollback only fires if an unforeseen throw happens after
+    // we've committed auth (e.g. setWrappingKey or setPostSignup).
+    let tokensSet = false;
     try {
-      // Generate the ML-KEM-768 keypair BEFORE the signup call so the
-      // server can persist the public key atomically with the account.
-      // Running keypair generation + PBKDF2 derivation in parallel with
-      // the network request would be nice, but we need the public key
-      // before the POST body exists, so sequence it first and then race
-      // the PBKDF2 against the network RTT.
+      // 1. Generate the ML-KEM-768 keypair (pure crypto, no side effects).
+      //    Must happen before the signup call so the server can persist
+      //    the public key atomically with the account.
       const keypair = await generateKeyPair();
       const publicKeyB64 = bytesToBase64(keypair.publicKey);
 
+      // 2. POST /v1/auth/signup with the public key. Derive the wrapping
+      //    key in parallel to race PBKDF2 against the network RTT.
       const [result, wrappingKeyResult] = await Promise.all([
         api.signup(email, password, publicKeyB64),
         deriveWrappingKey(password, email).catch((err) => {
@@ -115,6 +120,21 @@ export function SignupPage() {
         return;
       }
 
+      // 3. Parse the developer id from the access token (pure function,
+      //    no side effects). If the token is malformed this throws and
+      //    we abort BEFORE authenticating the user.
+      const developerId = developerIdFromAccessToken(result.data.access_token);
+
+      // 4. Persist the private key to IndexedDB FIRST — this is the
+      //    critical durability step. If it throws (IDB quota, private
+      //    mode, transaction abort) we abort BEFORE committing auth so
+      //    the user is never left authenticated without a private key.
+      await saveKeypair(developerId, {
+        publicKey: keypair.publicKey,
+        secretKey: keypair.secretKey,
+      });
+
+      // 5. Only NOW commit auth tokens — the keypair is durable.
       setTokens(
         {
           access_token: result.data.access_token,
@@ -122,29 +142,35 @@ export function SignupPage() {
         },
         { persist: true },
       );
+      tokensSet = true;
 
       if (wrappingKeyResult) {
         setWrappingKey(wrappingKeyResult);
       }
 
-      // Persist the private key to IndexedDB keyed by developer id so it
-      // survives reloads. The id must come from the newly issued access
-      // token — the server is the only authority on the developer's UUID.
-      const developerId = developerIdFromAccessToken(result.data.access_token);
-      await saveKeypair(developerId, {
-        publicKey: keypair.publicKey,
-        secretKey: keypair.secretKey,
-      });
-
-      // Show the recovery modal instead of navigating immediately. The
-      // user has exactly one chance to save an offline backup of the
-      // private key; navigation happens after they dismiss the modal.
+      // 6. Show the recovery modal instead of navigating immediately.
+      //    The user has exactly one chance to save an offline backup of
+      //    the private key; navigation happens after they dismiss it.
       setPostSignup({
         developerId,
         email,
         keypair,
         accessToken: result.data.access_token,
       });
+    } catch (err) {
+      // Roll back authentication if we already committed it. This only
+      // fires for throws AFTER setTokens — throws before (generateKeyPair,
+      // api.signup, developerIdFromAccessToken, saveKeypair) leave the
+      // user cleanly un-authenticated.
+      if (tokensSet) {
+        clearTokens();
+      }
+      const message =
+        err instanceof Error
+          ? `Signup failed: ${err.message}`
+          : "Signup failed: an unexpected error occurred";
+      setError(message);
+      // Don't re-throw — error is now contained in component state.
     } finally {
       setLoading(false);
     }
