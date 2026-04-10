@@ -49,6 +49,7 @@ export function RecoverKeypairModal({
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [acknowledged, setAcknowledged] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   async function handleFileUpload(
     event: React.ChangeEvent<HTMLInputElement>,
@@ -200,18 +201,27 @@ export function RecoverKeypairModal({
 
         {mode === "upload" && (
           <div className="mt-6 flex flex-col gap-3">
-            <Label htmlFor="recovery-file-input" className="text-sm">
+            <Label className="text-sm">
               Select your recovery file (.json)
             </Label>
             <input
+              ref={fileInputRef}
               id="recovery-file-input"
               data-testid="recovery-file-input"
               type="file"
               accept=".json,application/json"
               onChange={handleFileUpload}
               disabled={loading}
-              className="text-sm"
+              className="sr-only"
             />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+            >
+              Choose file...
+            </Button>
             <Button
               type="button"
               variant="outline"
