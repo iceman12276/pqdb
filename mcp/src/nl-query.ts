@@ -356,7 +356,11 @@ export function translateNaturalLanguage(
   };
 }
 
-import { authFetch as pqdbFetch, authPost as pqdbPost } from "./auth-state.js";
+import {
+  authFetch as pqdbFetch,
+  authPost as pqdbPost,
+  getCurrentEncryptionKeyString,
+} from "./auth-state.js";
 /**
  * Register the natural language query tool on the MCP server.
  */
@@ -368,6 +372,16 @@ export function registerNlQueryTool(
   devToken?: string,
   projectId?: string,
 ): void {
+  // Evaluate encryption availability dynamically at tool-invocation
+  // time: the per-project shared secret (US-008) can be populated AFTER
+  // server construction by `pqdb_create_project` / `pqdb_select_project`,
+  // so capturing `encryptionEnabled` at construction would make NL
+  // queries permanently mask encrypted columns even after a project is
+  // selected with a working key.
+  function isEncryptionAvailable(): boolean {
+    if (getCurrentEncryptionKeyString() !== null) return true;
+    return encryptionEnabled;
+  }
   mcpServer.tool(
     "pqdb_natural_language_query",
     "Execute a natural language query against the database. Translates to a pqdb query using schema metadata, respecting column sensitivity constraints. Examples: 'show all users', 'get posts where title = Hello', 'first 10 users'",
@@ -435,8 +449,11 @@ export function registerNlQueryTool(
           body,
         );
 
-        // Mask encrypted values if no encryption key
-        const data = encryptionEnabled
+        // Mask encrypted values if no encryption key available. Checked
+        // dynamically so the per-project shared secret populated by
+        // pqdb_create_project/pqdb_select_project takes effect without
+        // server restart.
+        const data = isEncryptionAvailable()
           ? result.data
           : result.data.map((row) => {
               const masked: Record<string, unknown> = {};

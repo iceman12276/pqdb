@@ -19,10 +19,11 @@ import {
   deriveKeyPair,
   transformInsertRows,
   transformSelectResponse,
+  transformFilters,
   defineTableSchema,
   ColumnDef,
 } from "@pqdb/client";
-import type { KeyPair, SchemaColumns, TableSchema } from "@pqdb/client";
+import type { FilterClause, KeyPair, SchemaColumns, TableSchema } from "@pqdb/client";
 
 /** Filter schema matching the backend's FilterSchema. */
 const FilterZod = z.object({
@@ -246,9 +247,27 @@ export function registerCrudTools(
     },
     async ({ table, columns, filters, limit, offset, order_by, order_dir, similar_to, branch }) => {
       try {
+        // When encryption is available and the table has encrypted
+        // columns, rewrite filters targeting searchable columns so the
+        // values become blind-index HMAC digests. Without this, the
+        // backend's WHERE {col}_index = '<plaintext>' never matches the
+        // hex digests stored by transformInsertRows at write time.
+        let outgoingFilters: FilterClause[] = (filters ?? []) as FilterClause[];
+        let schemaForDecrypt: TableSchema | null = null;
+        if (isEncryptionAvailable()) {
+          const schema = await getTableSchema(table);
+          if (tableHasEncryptedColumns(schema)) {
+            schemaForDecrypt = schema;
+            if (outgoingFilters.length > 0) {
+              const { hmacKey } = await getCryptoState();
+              outgoingFilters = transformFilters(outgoingFilters, schema, hmacKey);
+            }
+          }
+        }
+
         const body: Record<string, unknown> = {
           columns: columns ?? ["*"],
-          filters: filters ?? [],
+          filters: outgoingFilters,
           modifiers: {
             limit: limit ?? null,
             offset: offset ?? null,
@@ -275,12 +294,11 @@ export function registerCrudTools(
         }
 
         // Decrypt encrypted columns
-        const schema = await getTableSchema(table);
-        if (tableHasEncryptedColumns(schema)) {
+        if (schemaForDecrypt) {
           const { keyPair } = await getCryptoState();
           const decrypted = await transformSelectResponse(
             result.data,
-            schema,
+            schemaForDecrypt,
             keyPair.secretKey,
           );
           return successResult({ data: decrypted, error: null });
@@ -381,6 +399,7 @@ export function registerCrudTools(
     async ({ table, values, filters, branch }) => {
       try {
         let transformedValues = values;
+        let outgoingFilters: FilterClause[] = (filters ?? []) as FilterClause[];
 
         if (isEncryptionAvailable()) {
           const schema = await getTableSchema(table);
@@ -394,6 +413,10 @@ export function registerCrudTools(
               hmacKey,
             );
             transformedValues = transformed;
+            // Rewrite filters targeting searchable columns into blind-index lookups.
+            if (outgoingFilters.length > 0) {
+              outgoingFilters = transformFilters(outgoingFilters, schema, hmacKey);
+            }
           }
         } else {
           const schema = await getTableSchema(table);
@@ -416,7 +439,7 @@ export function registerCrudTools(
           projectUrl,
           apiKey,
           `/v1/db/${encodeURIComponent(table)}/update`,
-          { values: transformedValues, filters: filters ?? [] },
+          { values: transformedValues, filters: outgoingFilters },
           branchHeaders,
         );
 
@@ -447,12 +470,25 @@ export function registerCrudTools(
     },
     async ({ table, filters, branch }) => {
       try {
+        // Rewrite filters targeting searchable columns into blind-index
+        // lookups when encryption is active; otherwise rows inserted via
+        // the encrypted path (hex HMAC digests in {col}_index) would
+        // never be matched by raw plaintext filter values.
+        let outgoingFilters: FilterClause[] = filters as FilterClause[];
+        if (isEncryptionAvailable() && outgoingFilters.length > 0) {
+          const schema = await getTableSchema(table);
+          if (tableHasEncryptedColumns(schema)) {
+            const { hmacKey } = await getCryptoState();
+            outgoingFilters = transformFilters(outgoingFilters, schema, hmacKey);
+          }
+        }
+
         const branchHeaders = branch ? { "x-branch": branch } : undefined;
         const result = await pqdbPost<{ data: unknown[] }>(
           projectUrl,
           apiKey,
           `/v1/db/${encodeURIComponent(table)}/delete`,
-          { filters },
+          { filters: outgoingFilters },
           branchHeaders,
         );
 
