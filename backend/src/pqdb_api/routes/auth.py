@@ -28,6 +28,11 @@ logger = structlog.get_logger()
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
+# ML-KEM-768 public key size in bytes (NIST FIPS 203). This is the canonical
+# length the server accepts — any other length is a data-integrity bug and
+# must be rejected at the API boundary, not persisted silently.
+ML_KEM_768_PUBLIC_KEY_BYTES = 1184
+
 
 class AuthRequest(BaseModel):
     """Request body for login (email + password only)."""
@@ -52,19 +57,29 @@ class SignupRequest(BaseModel):
     @field_validator("ml_kem_public_key")
     @classmethod
     def _validate_b64(cls, v: str | None) -> str | None:
-        """Reject malformed base64 with a clear 422 error.
+        """Reject malformed or wrong-length base64 with a clear 422 error.
 
         Stores NULL only when the field is absent or explicitly null —
-        never when the client sent garbage.
+        never when the client sent garbage. Enforces the ML-KEM-768
+        public-key length invariant at the API boundary so a bad value
+        cannot be persisted and surface later as a cryptic encapsulation
+        error in downstream crypto code.
         """
         if v is None:
             return None
         try:
             # validate=True rejects characters outside the base64 alphabet.
-            base64.b64decode(v, validate=True)
+            decoded = base64.b64decode(v, validate=True)
         except (binascii.Error, ValueError) as exc:
             msg = f"ml_kem_public_key must be valid base64: {exc}"
             raise ValueError(msg) from exc
+        if len(decoded) != ML_KEM_768_PUBLIC_KEY_BYTES:
+            msg = (
+                "ml_kem_public_key must decode to exactly "
+                f"{ML_KEM_768_PUBLIC_KEY_BYTES} bytes "
+                f"(ML-KEM-768 public key size), got {len(decoded)}"
+            )
+            raise ValueError(msg)
         return v
 
 

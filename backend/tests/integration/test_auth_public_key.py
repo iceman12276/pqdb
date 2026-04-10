@@ -16,7 +16,6 @@ Boots the real FastAPI app with a real Postgres database. Verifies:
 from __future__ import annotations
 
 import base64
-import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
@@ -37,7 +36,7 @@ from pqdb_api.services.auth import generate_mldsa65_keypair
 
 # Skip if liboqs is not available (matches test_auth.py pattern)
 try:
-    import oqs  # noqa: F401
+    import oqs
 
     HAS_OQS = True
 except (ImportError, SystemExit, RuntimeError):
@@ -48,14 +47,17 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-# ML-KEM-768 public keys are 1184 bytes. We generate a deterministic
-# fake of the correct length so the server doesn't need to validate
-# cryptographic structure at this layer — that is the SDK's job.
+# ML-KEM-768 public keys are 1184 bytes (NIST FIPS 203). The server now
+# enforces this length at the API boundary, so tests must use real keys
+# of the correct length.
 ML_KEM_768_PK_LEN = 1184
 
 
-def _fake_ml_kem_pk() -> bytes:
-    return os.urandom(ML_KEM_768_PK_LEN)
+def _real_ml_kem_pk() -> bytes:
+    """Generate a real ML-KEM-768 public key via liboqs."""
+    with oqs.KeyEncapsulation("ML-KEM-768") as kem:
+        pk: bytes = kem.generate_keypair()
+        return pk
 
 
 def _create_test_app(test_db_url: str) -> FastAPI:
@@ -101,7 +103,8 @@ class TestSignupWithPublicKey:
 
     def test_signup_with_public_key_stores_bytes(self, client: TestClient) -> None:
         """Signup WITH public key -> stored, GET endpoint returns it (bytes match)."""
-        pk_bytes = _fake_ml_kem_pk()
+        pk_bytes = _real_ml_kem_pk()
+        assert len(pk_bytes) == ML_KEM_768_PK_LEN
         pk_b64 = base64.b64encode(pk_bytes).decode("ascii")
         email = _unique_email("withkey")
 
@@ -171,13 +174,65 @@ class TestSignupWithPublicKey:
         )
         assert resp.status_code == 422, resp.text
 
+    def test_signup_with_wrong_length_key_returns_422(self, client: TestClient) -> None:
+        """Bad-length base64 must be rejected at the boundary, not silently stored.
+
+        100 bytes is valid base64 but not a valid ML-KEM-768 public key.
+        The invariant is "if developers.ml_kem_public_key is non-NULL,
+        it holds exactly 1184 bytes" — the API must enforce it.
+        """
+        short_b64 = base64.b64encode(b"x" * 100).decode("ascii")
+        resp = client.post(
+            "/v1/auth/signup",
+            json={
+                "email": _unique_email("shortkey"),
+                "password": "testpassword123",
+                "ml_kem_public_key": short_b64,
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        # Error message must name the required length so clients know what to fix.
+        assert "1184" in resp.text
+
+    def test_signup_with_empty_string_key_returns_422(self, client: TestClient) -> None:
+        """Empty base64 string must be rejected — empty bytes is not a valid key.
+
+        This is the most important edge case: an empty string decodes
+        cleanly to b"" and the old validator would happily persist it.
+        """
+        resp = client.post(
+            "/v1/auth/signup",
+            json={
+                "email": _unique_email("emptykey"),
+                "password": "testpassword123",
+                "ml_kem_public_key": "",
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
+    def test_signup_with_oversized_key_returns_422(self, client: TestClient) -> None:
+        """Oversized base64 must be rejected at the boundary."""
+        long_b64 = base64.b64encode(b"x" * 2000).decode("ascii")
+        resp = client.post(
+            "/v1/auth/signup",
+            json={
+                "email": _unique_email("longkey"),
+                "password": "testpassword123",
+                "ml_kem_public_key": long_b64,
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
 
 class TestGetPublicKey:
     """Tests for GET /v1/auth/me/public-key."""
 
     def test_get_public_key_without_token_returns_401(self, client: TestClient) -> None:
         resp = client.get("/v1/auth/me/public-key")
-        assert resp.status_code in (401, 403)
+        # Strict 401 per the AC — missing credentials is an authentication
+        # failure, not an authorization failure. The middleware now uses
+        # HTTPBearer(auto_error=False) to raise 401 explicitly.
+        assert resp.status_code == 401
 
     def test_get_public_key_with_invalid_token_returns_401(
         self, client: TestClient
@@ -187,3 +242,55 @@ class TestGetPublicKey:
             headers={"Authorization": "Bearer not.a.real.token"},
         )
         assert resp.status_code == 401
+
+    def test_two_developers_get_isolated_keys(self, client: TestClient) -> None:
+        """Cross-tenant safety: each developer's GET returns ONLY their own key.
+
+        This is the most important test for the read path. A silent
+        cross-tenant leak would be catastrophic in a multi-tenant system,
+        so verify both developers get their own key and that the keys
+        are NOT crossed.
+        """
+        pk_a = _real_ml_kem_pk()
+        pk_b = _real_ml_kem_pk()
+        assert pk_a != pk_b  # sanity: keypairs are random
+
+        resp_a = client.post(
+            "/v1/auth/signup",
+            json={
+                "email": _unique_email("isolation_a"),
+                "password": "testpassword123",
+                "ml_kem_public_key": base64.b64encode(pk_a).decode("ascii"),
+            },
+        )
+        assert resp_a.status_code == 201, resp_a.text
+        token_a = resp_a.json()["access_token"]
+
+        resp_b = client.post(
+            "/v1/auth/signup",
+            json={
+                "email": _unique_email("isolation_b"),
+                "password": "testpassword123",
+                "ml_kem_public_key": base64.b64encode(pk_b).decode("ascii"),
+            },
+        )
+        assert resp_b.status_code == 201, resp_b.text
+        token_b = resp_b.json()["access_token"]
+
+        get_a = client.get(
+            "/v1/auth/me/public-key",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert get_a.status_code == 200
+        assert base64.b64decode(get_a.json()["public_key"]) == pk_a
+
+        get_b = client.get(
+            "/v1/auth/me/public-key",
+            headers={"Authorization": f"Bearer {token_b}"},
+        )
+        assert get_b.status_code == 200
+        assert base64.b64decode(get_b.json()["public_key"]) == pk_b
+
+        # Critical: keys are NOT crossed.
+        assert base64.b64decode(get_a.json()["public_key"]) != pk_b
+        assert base64.b64decode(get_b.json()["public_key"]) != pk_a
