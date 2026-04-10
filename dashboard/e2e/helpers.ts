@@ -24,7 +24,14 @@ export async function signUp(page: Page, email: string, password: string): Promi
   await expect(emailInput).toHaveValue(email);
   await expect(passwordInput).toHaveValue(password);
   await page.getByRole("button", { name: "Create account" }).click();
-  // Wait for redirect to /projects
+  // Signup now pops a recovery-file modal that blocks navigation until
+  // the user either downloads the file or acknowledges the warning. For
+  // E2E tests that don't care about the recovery flow we acknowledge
+  // and close, then continue to /projects as before.
+  const modal = page.getByRole("dialog", { name: /save your recovery file/i });
+  await modal.waitFor({ state: "visible", timeout: 15_000 });
+  await page.getByRole("checkbox", { name: /i understand/i }).check();
+  await page.getByRole("button", { name: /^close$/i }).click();
   await expect(page).toHaveURL(/\/projects/, { timeout: 15_000 });
 }
 
