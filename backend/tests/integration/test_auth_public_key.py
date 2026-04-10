@@ -300,7 +300,9 @@ class TestPutPublicKey:
     """Tests for PUT /v1/auth/me/public-key (key rotation)."""
 
     def _signup_and_auth(
-        self, client: TestClient, email: str,
+        self,
+        client: TestClient,
+        email: str,
     ) -> tuple[str, dict[str, str]]:
         """Sign up and return (token, auth headers)."""
         resp = client.post(
