@@ -89,8 +89,8 @@
         "CI passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Merged via PR #148 (62ba41c6) after 1 fix cycle. Original commit had no try/catch around handleSubmit AND wrong ordering (setTokens BEFORE saveKeypair). If saveKeypair threw on IDB quota / private mode, the user was authenticated with no private key — exactly the failure mode US-004 exists to prevent. Fix: reordered (saveKeypair → setTokens), added catch with tokensSet rollback flag, 3 new tests for the failure paths (generateKeyPair reject, saveKeypair reject, malformed JWT). Re-review CLEAN."
     },
     {
       "id": "US-005a",
