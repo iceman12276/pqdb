@@ -12,6 +12,11 @@ import { registerNlQueryTool } from "./nl-query.js";
 import { registerProjectTools } from "./project-tools.js";
 import { registerAdminTools } from "./admin-tools.js";
 import { registerDocsTools } from "./docs-tools.js";
+import {
+  clearCurrentPrivateKey,
+  clearCurrentSharedSecret,
+  setCurrentPrivateKey,
+} from "./auth-state.js";
 
 export const SERVER_NAME = "pqdb-mcp";
 export const SERVER_VERSION = "0.1.0";
@@ -46,6 +51,17 @@ export function createPqdbMcpServer(config: ServerConfig): PqdbMcpServer {
   );
 
   const encryptionEnabled = !!config.encryptionKey;
+
+  // Load the developer's ML-KEM private key into auth-state (US-008).
+  // Always reset both the private key and the shared secret on server
+  // construction — they are per-developer / per-project values and must
+  // not leak between server instances in tests or between restarts in
+  // production.
+  clearCurrentPrivateKey();
+  clearCurrentSharedSecret();
+  if (config.privateKey !== undefined) {
+    setCurrentPrivateKey(config.privateKey);
+  }
 
   const pqdbClient = createClient(config.projectUrl, config.apiKey, {
     encryptionKey: config.encryptionKey,

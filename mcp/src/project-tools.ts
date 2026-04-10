@@ -17,7 +17,13 @@
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { setCurrentProjectId } from "./auth-state.js";
+import { encapsulate, decapsulate } from "@pqdb/client";
+import {
+  clearCurrentSharedSecret,
+  getCurrentPrivateKey,
+  setCurrentProjectId,
+  setCurrentSharedSecret,
+} from "./auth-state.js";
 
 /** Standard { data, error } response shape. */
 interface ApiResponse {
@@ -143,6 +149,17 @@ function requireDevToken(devToken: string | undefined): ReturnType<typeof errorR
   return null;
 }
 
+/** Encode Uint8Array to standard base64. */
+function bytesToBase64(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("base64");
+}
+
+/** Decode standard base64 to Uint8Array. */
+function base64ToBytes(b64: string): Uint8Array {
+  const buf = Buffer.from(b64, "base64");
+  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+}
+
 /**
  * Register project management tools on the MCP server.
  */
@@ -165,7 +182,12 @@ export function registerProjectTools(
       if (authError) return authError;
 
       try {
-        const project = await devGet<{ id: string; name: string; status: string }>(
+        const project = await devGet<{
+          id: string;
+          name: string;
+          status: string;
+          wrapped_encryption_key?: string | null;
+        }>(
           projectUrl,
           devToken!,
           `/v1/projects/${encodeURIComponent(project_id)}`,
@@ -173,11 +195,40 @@ export function registerProjectTools(
 
         setCurrentProjectId(project.id);
 
+        // Reset any prior shared secret before deriving a new one.
+        clearCurrentSharedSecret();
+
+        // Unwrap the per-project encryption key if both a configured
+        // private key AND a server-stored wrapped key are present.
+        const privKey = getCurrentPrivateKey();
+        let encryptionActive = false;
+        if (privKey && project.wrapped_encryption_key) {
+          try {
+            const wrapped = base64ToBytes(project.wrapped_encryption_key);
+            const sharedSecret = await decapsulate(wrapped, privKey);
+            setCurrentSharedSecret(sharedSecret);
+            encryptionActive = true;
+          } catch (decapErr) {
+            return errorResult({
+              data: null,
+              error:
+                "Failed to decapsulate wrapped_encryption_key with the configured PQDB_PRIVATE_KEY: " +
+                (decapErr instanceof Error
+                  ? decapErr.message
+                  : String(decapErr)),
+            });
+          }
+        }
+
+        // Project object is returned as-is (wrapped_encryption_key is
+        // already ciphertext, and the decapsulated shared secret is
+        // intentionally NOT included in the response).
         return successResult({
           data: {
             message: `Switched to project "${project.name}" (${project.id})`,
             project,
             active_project_id: project.id,
+            encryption_active: encryptionActive,
           },
           error: null,
         });
@@ -250,7 +301,7 @@ export function registerProjectTools(
 
   mcpServer.tool(
     "pqdb_create_project",
-    "Create a new pqdb project. Requires PQDB_DEV_TOKEN.",
+    "Create a new pqdb project. Requires PQDB_DEV_TOKEN. When PQDB_PRIVATE_KEY is also set, the project is created with a ML-KEM-768 wrapped encryption key so searchable/private columns can be used immediately.",
     {
       name: z.string().describe("Name of the project"),
       region: z.string().optional().describe("Region for the project (e.g. us-east-1)"),
@@ -263,17 +314,61 @@ export function registerProjectTools(
         const body: Record<string, string> = { name };
         if (region) body.region = region;
 
-        const project = await devPost<{ id: string; name: string }>(
-          projectUrl,
-          devToken!,
-          "/v1/projects",
-          body,
-        );
+        const privKey = getCurrentPrivateKey();
+        let warning: string | null = null;
+        let wrappedEncryptionKeyPresent = false;
+        // Always reset any prior shared secret before creating a new project.
+        clearCurrentSharedSecret();
+
+        if (privKey) {
+          // Fetch the developer's stored ML-KEM public key.
+          const pkResp = await devGet<{ public_key: string | null }>(
+            projectUrl,
+            devToken!,
+            "/v1/auth/me/public-key",
+          );
+          if (!pkResp.public_key) {
+            return errorResult({
+              data: null,
+              error:
+                "Developer has no ML-KEM public key on file. Upload one before " +
+                "creating an encrypted project (see the dashboard signup/key-management flow).",
+            });
+          }
+
+          const publicKey = base64ToBytes(pkResp.public_key);
+          const { ciphertext, sharedSecret } = await encapsulate(publicKey);
+
+          // Send the wrapped encryption key in the create body.
+          body.wrapped_encryption_key = bytesToBase64(ciphertext);
+
+          // Store the shared secret in process memory only — never
+          // serialize it into the tool response.
+          setCurrentSharedSecret(sharedSecret);
+          wrappedEncryptionKeyPresent = true;
+        } else {
+          warning =
+            "No PQDB_PRIVATE_KEY set — project created without encryption. " +
+            "Set PQDB_PRIVATE_KEY to enable searchable/private columns.";
+        }
+
+        const project = await devPost<{
+          id: string;
+          name: string;
+          wrapped_encryption_key?: string | null;
+        }>(projectUrl, devToken!, "/v1/projects", body);
 
         // Auto-select the newly created project
         setCurrentProjectId(project.id);
 
-        return successResult({ data: project, error: null });
+        return successResult({
+          data: {
+            project,
+            encryption_active: wrappedEncryptionKeyPresent,
+            warning,
+          },
+          error: null,
+        });
       } catch (err) {
         return errorResult({
           data: null,

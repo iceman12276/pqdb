@@ -12,6 +12,20 @@ let _projectId: string | undefined;
 let _refreshToken: string | undefined;
 let _projectUrl: string | undefined;
 
+/**
+ * ML-KEM-768 private key loaded from PQDB_PRIVATE_KEY. Used to unwrap
+ * per-project encryption keys during pqdb_select_project. Kept in
+ * process memory only — never serialized into tool responses or logs.
+ */
+let _privateKey: Uint8Array | undefined;
+
+/**
+ * Current active per-project shared secret, recovered via decapsulate
+ * in pqdb_select_project or produced via encapsulate in pqdb_create_project.
+ * Used by subsequent CRUD tools to encrypt/decrypt sensitive columns.
+ */
+let _sharedSecret: Uint8Array | undefined;
+
 /** Whether the dev token has been refreshed at least once. */
 let _tokenRefreshed = false;
 
@@ -45,6 +59,44 @@ export function getProjectId(): string | undefined {
 /** Switch the active project at runtime (used by pqdb_select_project). */
 export function setCurrentProjectId(projectId: string): void {
   _projectId = projectId;
+}
+
+/**
+ * Store the developer's ML-KEM-768 private key in memory.
+ * The raw bytes never leave process memory and must never be
+ * serialized into tool responses or logs.
+ */
+export function setCurrentPrivateKey(key: Uint8Array): void {
+  _privateKey = key;
+}
+
+/** Return the in-memory ML-KEM private key, or undefined if none configured. */
+export function getCurrentPrivateKey(): Uint8Array | undefined {
+  return _privateKey;
+}
+
+/** Clear the in-memory private key (primarily for tests). */
+export function clearCurrentPrivateKey(): void {
+  _privateKey = undefined;
+}
+
+/**
+ * Store the active per-project shared secret (32 bytes for ML-KEM-768).
+ * Populated by pqdb_create_project (encapsulate) and pqdb_select_project
+ * (decapsulate).
+ */
+export function setCurrentSharedSecret(secret: Uint8Array): void {
+  _sharedSecret = secret;
+}
+
+/** Return the current active shared secret, if any. */
+export function getCurrentSharedSecret(): Uint8Array | undefined {
+  return _sharedSecret;
+}
+
+/** Clear the active shared secret (e.g. when selecting a plaintext project). */
+export function clearCurrentSharedSecret(): void {
+  _sharedSecret = undefined;
 }
 
 /** Build auth headers — uses apikey if available, otherwise developer JWT + project ID. */

@@ -261,6 +261,7 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
           encryptionKey: resolvedEncryptionKey,
           devToken: devJwt,
           projectId,
+          privateKey: undefined,
         };
 
         const { mcpServer } = createPqdbMcpServer(config);
