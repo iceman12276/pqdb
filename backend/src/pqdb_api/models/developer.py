@@ -34,6 +34,7 @@ class Developer(Base):
     email_verified: Mapped[bool] = mapped_column(
         Boolean, server_default="false", nullable=False
     )
+    ml_kem_public_key: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
