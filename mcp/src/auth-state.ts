@@ -99,6 +99,30 @@ export function clearCurrentSharedSecret(): void {
   _sharedSecret = undefined;
 }
 
+/**
+ * Return the current active shared secret encoded as a base64url string
+ * (no padding), suitable for passing to the SDK's `deriveKeyPair(string)`.
+ * Returns `null` when no shared secret is set.
+ *
+ * This is the bridge between the per-project shared secret recovered in
+ * `pqdb_create_project` / `pqdb_select_project` and the CRUD-tool key
+ * derivation path, which consumes a string.
+ */
+export function getCurrentEncryptionKeyString(): string | null {
+  if (!_sharedSecret) return null;
+  return bytesToBase64UrlNoPad(_sharedSecret);
+}
+
+/** Encode bytes to base64url without padding. */
+function bytesToBase64UrlNoPad(bytes: Uint8Array): string {
+  // Buffer is available in Node (MCP server runtime); use it for correctness.
+  return Buffer.from(bytes)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
 /** Build auth headers — uses apikey if available, otherwise developer JWT + project ID. */
 export function buildAuthHeaders(apiKey: string): Record<string, string> {
   if (apiKey) {

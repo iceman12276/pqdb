@@ -204,7 +204,7 @@ describe("US-008 — MCP server + PQDB_PRIVATE_KEY integration", () => {
     // 2 — Round-trip on a searchable column using the SDK + service API key
     // (obtained via platform API since MCP create_project echoes api_keys).
     const serviceApiKey = parsed.data.project.api_keys.find(
-      (k) => k.role === "service",
+      (k) => k.role === "service_role" || k.role === "service",
     )?.key;
     expect(serviceApiKey).toBeTruthy();
 
@@ -223,25 +223,6 @@ describe("US-008 — MCP server + PQDB_PRIVATE_KEY integration", () => {
     );
     expect(createTable.status).toBe(201);
 
-    // Insert a row via the SDK (with the derived shared secret encryption)
-    const sharedSecretB64 = "placeholder"; // not used here; SDK derives its own
-    expect(sharedSecretB64).toBeTruthy();
-
-    // Minimal plaintext insert via raw endpoint to verify the project is
-    // addressable; encrypted round-trips with the shared secret are
-    // validated in the unit tests and the SDK's own e2e suite. The key
-    // US-008 assertion is that wrapped_encryption_key != null, which we
-    // already checked above.
-    const insertResp = await apiCall(
-      "POST",
-      "/v1/db/us008_contacts/insert",
-      {
-        rows: [{ name: "Alice" }],
-      },
-      { apikey: serviceApiKey! },
-    );
-    expect([200, 201]).toContain(insertResp.status);
-
     // 3 — pqdb_select_project should decapsulate without error
     const selectResult = await mcpClient.callTool({
       name: "pqdb_select_project",
@@ -255,6 +236,139 @@ describe("US-008 — MCP server + PQDB_PRIVATE_KEY integration", () => {
     };
     expect(selParsed.data.encryption_active).toBe(true);
   }, 60_000);
+
+  it("encrypted insert/query round-trip on a searchable column uses the per-project shared secret", async () => {
+    // Regression test for PR #149 defect: the shared secret produced by
+    // pqdb_create_project was never consumed by pqdb_insert_rows /
+    // pqdb_query_rows, so an AI agent that set PQDB_PRIVATE_KEY would see
+    // "encryption_active: true" and then fail on the first CRUD call.
+    //
+    // This test exercises the full wiring: create encrypted project → create
+    // a table with a searchable column → insert via MCP → query via MCP with
+    // an `.eq` filter on the searchable column → assert the row round-trips.
+    // Success implies the blind-index HMAC and the encrypt/decrypt keypair
+    // are all derived from the SAME per-project shared secret. Any drift
+    // (e.g., deriving from a legacy env var instead) would cause the
+    // HMAC-indexed eq filter to return zero rows.
+
+    // Use a separate MCP client that also has the service API key, so CRUD
+    // calls authenticate as the project (not the developer). The private
+    // key is required so pqdb_create_project can encapsulate.
+    const keypair2 = await generateKeyPair();
+    const privateKey2 = keypair2.secretKey;
+    const publicKeyB64_2 = Buffer.from(keypair2.publicKey).toString("base64");
+
+    // Sign up a fresh developer for this test so we don't interfere with
+    // the public key registered in beforeAll.
+    const email2 = `us008-mcp-rt-${RUN_ID}@test.pqdb.dev`;
+    const signup2 = await apiCall("POST", "/v1/auth/signup", {
+      email: email2,
+      password: DEV_PASSWORD,
+      ml_kem_public_key: publicKeyB64_2,
+    });
+    expect(signup2.status).toBe(201);
+    const devToken2 = (signup2.json as { access_token: string }).access_token;
+
+    // Phase A: create the encrypted project via MCP (no apiKey yet).
+    const mcpCreate = await createMcpClient("", devToken2, privateKey2);
+    const createResult = await mcpCreate.callTool({
+      name: "pqdb_create_project",
+      arguments: { name: `us008-mcp-rt-${RUN_ID}`, region: "us-east-1" },
+    });
+    expect(createResult.isError).toBeFalsy();
+    const created = JSON.parse(
+      (createResult.content as Array<{ text: string }>)[0].text,
+    ) as {
+      data: {
+        project: {
+          id: string;
+          api_keys: Array<{ role: string; key: string }>;
+          wrapped_encryption_key: string | null;
+        };
+        encryption_active: boolean;
+      };
+    };
+    expect(created.data.encryption_active).toBe(true);
+    expect(created.data.project.wrapped_encryption_key).toBeTruthy();
+
+    const serviceApiKey = created.data.project.api_keys.find(
+      (k) => k.role === "service_role" || k.role === "service",
+    )?.key;
+    expect(serviceApiKey).toBeTruthy();
+
+    // Create the table (needs service key). Do this via the platform API;
+    // table DDL isn't the MCP tool we're exercising here.
+    const createTable = await apiCall(
+      "POST",
+      "/v1/db/tables",
+      {
+        name: "us008_rt_contacts",
+        columns: [
+          { name: "name", data_type: "text", sensitivity: "plain" },
+          { name: "email", data_type: "text", sensitivity: "searchable" },
+        ],
+      },
+      { apikey: serviceApiKey! },
+    );
+    expect(createTable.status).toBe(201);
+
+    // Phase B: spin up a SECOND MCP client that carries the service API
+    // key (so CRUD tools authenticate as the project) AND the private key
+    // (so pqdb_select_project can decapsulate and populate the shared
+    // secret). Creating the client does NOT call create_project, so we
+    // must explicitly select the project to populate the shared secret.
+    const mcpCrud = await createMcpClient(
+      serviceApiKey!,
+      devToken2,
+      privateKey2,
+    );
+    const selectResult = await mcpCrud.callTool({
+      name: "pqdb_select_project",
+      arguments: { project_id: created.data.project.id },
+    });
+    expect(selectResult.isError).toBeFalsy();
+    const selParsed = JSON.parse(
+      (selectResult.content as Array<{ text: string }>)[0].text,
+    ) as { data: { encryption_active: boolean } };
+    expect(selParsed.data.encryption_active).toBe(true);
+
+    // INSERT via MCP — this path runs transformInsertRows which encrypts
+    // the `email` column AND computes its blind-index HMAC using the
+    // per-project shared secret derived keypair + HMAC key.
+    const insertResult = await mcpCrud.callTool({
+      name: "pqdb_insert_rows",
+      arguments: {
+        table: "us008_rt_contacts",
+        rows: [{ name: "Alice", email: "alice@us008.test" }],
+      },
+    });
+    expect(insertResult.isError).toBeFalsy();
+
+    // QUERY via MCP with an .eq filter on the searchable `email` column.
+    // The SDK rewrites this into an HMAC equality lookup on `email_index`.
+    // If the HMAC key used on insert and the HMAC key used on query are
+    // different — which would happen if CRUD was still reading the legacy
+    // PQDB_ENCRYPTION_KEY env var — the lookup would return zero rows.
+    const queryResult = await mcpCrud.callTool({
+      name: "pqdb_query_rows",
+      arguments: {
+        table: "us008_rt_contacts",
+        filters: [{ column: "email", op: "eq", value: "alice@us008.test" }],
+      },
+    });
+    expect(queryResult.isError).toBeFalsy();
+    const queryParsed = JSON.parse(
+      (queryResult.content as Array<{ text: string }>)[0].text,
+    ) as { data: Array<{ name?: string; email?: string }>; error: string | null };
+    expect(queryParsed.error).toBeNull();
+    expect(queryParsed.data).toBeDefined();
+    expect(queryParsed.data.length).toBe(1);
+    expect(queryParsed.data[0].name).toBe("Alice");
+    // The decrypted email column must round-trip back to the plaintext.
+    // This proves the ML-KEM keypair used to encrypt was derived from the
+    // same shared secret that's available for decryption.
+    expect(queryParsed.data[0].email).toBe("alice@us008.test");
+  }, 90_000);
 
   it("pqdb_create_project without PQDB_PRIVATE_KEY creates a plaintext project with a warning", async () => {
     const mcpClient = await createMcpClient(

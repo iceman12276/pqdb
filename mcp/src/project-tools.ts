@@ -320,6 +320,11 @@ export function registerProjectTools(
         // Always reset any prior shared secret before creating a new project.
         clearCurrentSharedSecret();
 
+        // Hold the freshly-encapsulated shared secret locally until the
+        // create POST succeeds. If devPost throws, we must NOT leave a
+        // stale shared secret pointing at a project that doesn't exist.
+        let pendingSharedSecret: Uint8Array | null = null;
+
         if (privKey) {
           // Fetch the developer's stored ML-KEM public key.
           const pkResp = await devGet<{ public_key: string | null }>(
@@ -342,10 +347,8 @@ export function registerProjectTools(
           // Send the wrapped encryption key in the create body.
           body.wrapped_encryption_key = bytesToBase64(ciphertext);
 
-          // Store the shared secret in process memory only — never
-          // serialize it into the tool response.
-          setCurrentSharedSecret(sharedSecret);
-          wrappedEncryptionKeyPresent = true;
+          // Defer committing the shared secret until AFTER the POST succeeds.
+          pendingSharedSecret = sharedSecret;
         } else {
           warning =
             "No PQDB_PRIVATE_KEY set — project created without encryption. " +
@@ -357,6 +360,13 @@ export function registerProjectTools(
           name: string;
           wrapped_encryption_key?: string | null;
         }>(projectUrl, devToken!, "/v1/projects", body);
+
+        // POST succeeded — now commit the shared secret to auth-state so
+        // subsequent CRUD tools can derive per-project encryption keys.
+        if (pendingSharedSecret) {
+          setCurrentSharedSecret(pendingSharedSecret);
+          wrappedEncryptionKeyPresent = true;
+        }
 
         // Auto-select the newly created project
         setCurrentProjectId(project.id);

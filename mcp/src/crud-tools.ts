@@ -49,7 +49,11 @@ interface IntrospectTable {
   columns: IntrospectColumn[];
 }
 
-import { authFetch as pqdbGet, authPost as pqdbPost } from "./auth-state.js";
+import {
+  authFetch as pqdbGet,
+  authPost as pqdbPost,
+  getCurrentEncryptionKeyString,
+} from "./auth-state.js";
 
 /**
  * Replace values in _encrypted columns with "[encrypted]" when
@@ -113,24 +117,62 @@ export function registerCrudTools(
   _devToken?: string,
   _projectId?: string,
 ): void {
-  // Lazy crypto state — derived on first encrypted operation
+  // Lazy crypto state — cached ONLY for the legacy static-encryptionKey
+  // path. When the dynamic per-project shared secret (US-008) is active,
+  // we derive fresh on every call so `pqdb_select_project` can switch
+  // projects without leaking stale crypto state across them.
   let cryptoState: CryptoState | null = null;
 
-  async function getCryptoState(): Promise<CryptoState> {
-    if (cryptoState) return cryptoState;
-    if (!encryptionKey) throw new Error("Encryption key not available");
+  /**
+   * Whether encryption is currently available from any source:
+   * the dynamic per-project shared secret (US-008) or the legacy
+   * PQDB_ENCRYPTION_KEY env var. Must be evaluated dynamically because
+   * the shared secret can be populated AFTER server construction by
+   * `pqdb_create_project` / `pqdb_select_project`.
+   */
+  function isEncryptionAvailable(): boolean {
+    if (getCurrentEncryptionKeyString() !== null) return true;
+    return encryptionEnabled;
+  }
 
-    const keyPair = await deriveKeyPair(encryptionKey);
-
-    // Fetch HMAC key for blind indexes
+  /** Fetch the current HMAC key from the backend for blind-index computation. */
+  async function fetchHmacKey(): Promise<Uint8Array> {
     const hmacResponse = await pqdbGet<{
       current_version: number;
       keys: Record<string, string>;
     }>(projectUrl, apiKey, "/v1/db/hmac-key");
 
     const currentKey = hmacResponse.keys[String(hmacResponse.current_version)];
-    const hmacKey = hexToBytes(currentKey);
+    return hexToBytes(currentKey);
+  }
 
+  async function getCryptoState(): Promise<CryptoState> {
+    // Prefer the dynamic per-project shared secret (US-008) over the static
+    // legacy encryptionKey. When it's set, we MUST NOT use the cache: the
+    // shared secret can change between `pqdb_select_project` calls when the
+    // user switches projects, and a cached keypair from the previous project
+    // would silently corrupt data.
+    const dynamicKey = getCurrentEncryptionKeyString();
+    if (dynamicKey !== null) {
+      const keyPair = await deriveKeyPair(dynamicKey);
+      const hmacKey = await fetchHmacKey();
+      return { keyPair, hmacKey };
+    }
+
+    // Legacy static-key path — cache is safe because encryptionKey is
+    // immutable for the lifetime of the server instance.
+    if (cryptoState) return cryptoState;
+    if (!encryptionKey) {
+      throw new Error(
+        "Encryption key not available. Either set PQDB_PRIVATE_KEY and call " +
+          "pqdb_create_project or pqdb_select_project to derive a per-project " +
+          "key, or set PQDB_ENCRYPTION_KEY in the environment for the legacy " +
+          "path.",
+      );
+    }
+
+    const keyPair = await deriveKeyPair(encryptionKey);
+    const hmacKey = await fetchHmacKey();
     cryptoState = { keyPair, hmacKey };
     return cryptoState;
   }
@@ -228,7 +270,7 @@ export function registerCrudTools(
           branchHeaders,
         );
 
-        if (!encryptionEnabled) {
+        if (!isEncryptionAvailable()) {
           return successResult({ data: maskEncryptedValues(result.data), error: null });
         }
 
@@ -273,7 +315,7 @@ export function registerCrudTools(
       try {
         let transformedRows = rows;
 
-        if (encryptionEnabled) {
+        if (isEncryptionAvailable()) {
           const schema = await getTableSchema(table);
           if (tableHasEncryptedColumns(schema)) {
             const { keyPair, hmacKey } = await getCryptoState();
@@ -340,7 +382,7 @@ export function registerCrudTools(
       try {
         let transformedValues = values;
 
-        if (encryptionEnabled) {
+        if (isEncryptionAvailable()) {
           const schema = await getTableSchema(table);
           if (tableHasEncryptedColumns(schema)) {
             const { keyPair, hmacKey } = await getCryptoState();
