@@ -140,6 +140,7 @@ describe("buildConfig", () => {
   it("builds complete config from args + env", () => {
     process.env.PQDB_API_KEY = "pqdb_service_key456";
     process.env.PQDB_ENCRYPTION_KEY = "enc-key";
+    delete process.env.PQDB_PRIVATE_KEY;
     const config = buildConfig({
       projectUrl: "http://localhost:8000",
       transport: "sse",
@@ -152,6 +153,8 @@ describe("buildConfig", () => {
       apiKey: "pqdb_service_key456",
       encryptionKey: "enc-key",
       devToken: undefined,
+      projectId: undefined,
+      privateKey: undefined,
     });
   });
 
@@ -213,5 +216,105 @@ describe("buildConfig", () => {
       port: 3001,
     });
     expect(config.projectUrl).toBe("https://localhost");
+  });
+
+  // ── PQDB_PRIVATE_KEY (US-008) ─────────────────────────────────────────
+
+  describe("PQDB_PRIVATE_KEY parsing", () => {
+    // ML-KEM-768 secret key = 2400 bytes
+    const VALID_KEY_SIZE = 2400;
+
+    function makeKeyBase64(length: number): string {
+      const bytes = new Uint8Array(length);
+      for (let i = 0; i < length; i++) {
+        bytes[i] = i % 256;
+      }
+      return Buffer.from(bytes).toString("base64");
+    }
+
+    function makeKeyBase64Url(length: number): string {
+      const bytes = new Uint8Array(length);
+      for (let i = 0; i < length; i++) {
+        bytes[i] = i % 256;
+      }
+      return Buffer.from(bytes).toString("base64url");
+    }
+
+    it("privateKey is undefined when PQDB_PRIVATE_KEY is not set", () => {
+      process.env.PQDB_API_KEY = "pqdb_anon_testkey123";
+      delete process.env.PQDB_PRIVATE_KEY;
+      const config = buildConfig({
+        projectUrl: "http://localhost:8000",
+        transport: "stdio",
+        port: 3001,
+      });
+      expect(config.privateKey).toBeUndefined();
+    });
+
+    it("decodes a valid standard base64 PQDB_PRIVATE_KEY into a Uint8Array of 2400 bytes", () => {
+      process.env.PQDB_API_KEY = "pqdb_anon_testkey123";
+      process.env.PQDB_PRIVATE_KEY = makeKeyBase64(VALID_KEY_SIZE);
+      const config = buildConfig({
+        projectUrl: "http://localhost:8000",
+        transport: "stdio",
+        port: 3001,
+      });
+      expect(config.privateKey).toBeInstanceOf(Uint8Array);
+      expect(config.privateKey!.length).toBe(VALID_KEY_SIZE);
+      // Verify round-trip: first byte should be 0, second 1, ...
+      expect(config.privateKey![0]).toBe(0);
+      expect(config.privateKey![1]).toBe(1);
+      expect(config.privateKey![255]).toBe(255);
+    });
+
+    it("decodes a valid base64url PQDB_PRIVATE_KEY into a Uint8Array of 2400 bytes", () => {
+      process.env.PQDB_API_KEY = "pqdb_anon_testkey123";
+      process.env.PQDB_PRIVATE_KEY = makeKeyBase64Url(VALID_KEY_SIZE);
+      const config = buildConfig({
+        projectUrl: "http://localhost:8000",
+        transport: "stdio",
+        port: 3001,
+      });
+      expect(config.privateKey).toBeInstanceOf(Uint8Array);
+      expect(config.privateKey!.length).toBe(VALID_KEY_SIZE);
+      expect(config.privateKey![0]).toBe(0);
+      expect(config.privateKey![1]).toBe(1);
+    });
+
+    it("throws a clear error when PQDB_PRIVATE_KEY decodes to the wrong length", () => {
+      process.env.PQDB_API_KEY = "pqdb_anon_testkey123";
+      process.env.PQDB_PRIVATE_KEY = makeKeyBase64(100); // too small
+      expect(() =>
+        buildConfig({
+          projectUrl: "http://localhost:8000",
+          transport: "stdio",
+          port: 3001,
+        }),
+      ).toThrow(/PQDB_PRIVATE_KEY.*2400/);
+    });
+
+    it("throws a clear error when PQDB_PRIVATE_KEY is not valid base64", () => {
+      process.env.PQDB_API_KEY = "pqdb_anon_testkey123";
+      process.env.PQDB_PRIVATE_KEY = "!!!not valid base64!!!";
+      expect(() =>
+        buildConfig({
+          projectUrl: "http://localhost:8000",
+          transport: "stdio",
+          port: 3001,
+        }),
+      ).toThrow(/PQDB_PRIVATE_KEY/);
+    });
+
+    it("rejects an oversized PQDB_PRIVATE_KEY with a clear error", () => {
+      process.env.PQDB_API_KEY = "pqdb_anon_testkey123";
+      process.env.PQDB_PRIVATE_KEY = makeKeyBase64(5000);
+      expect(() =>
+        buildConfig({
+          projectUrl: "http://localhost:8000",
+          transport: "stdio",
+          port: 3001,
+        }),
+      ).toThrow(/PQDB_PRIVATE_KEY/);
+    });
   });
 });

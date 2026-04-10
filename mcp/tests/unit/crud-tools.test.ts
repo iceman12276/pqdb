@@ -595,3 +595,128 @@ describe("pqdb_delete_rows tool", () => {
     );
   });
 });
+
+// ── US-008 wiring: CRUD consumes the per-project shared secret ─────────────
+
+describe("US-008 — crud-tools consume the per-project shared secret", () => {
+  it("pqdb_insert_rows uses the base64url-encoded shared secret, not PQDB_ENCRYPTION_KEY", async () => {
+    // This is the regression test for the defect found in PR #149 review:
+    // pqdb_create_project set a shared secret in auth-state, but CRUD tools
+    // continued to derive keys from the legacy PQDB_ENCRYPTION_KEY env var.
+    // After the fix, when a shared secret is present, crud-tools MUST pass
+    // its base64url-encoded form to deriveKeyPair — even when no legacy
+    // encryptionKey is configured.
+    const { deriveKeyPair, transformInsertRows } = await import("@pqdb/client");
+    const deriveKeyPairMock = vi.mocked(deriveKeyPair);
+    const transformInsertRowsMock = vi.mocked(transformInsertRows);
+    const {
+      setCurrentSharedSecret,
+      clearCurrentSharedSecret,
+      getCurrentEncryptionKeyString,
+    } = await import("../../src/auth-state.js");
+
+    vi.clearAllMocks();
+    clearCurrentSharedSecret();
+
+    // Pretend deriveKeyPair returned something usable; actual bytes don't matter
+    deriveKeyPairMock.mockResolvedValue({
+      publicKey: new Uint8Array(1184),
+      secretKey: new Uint8Array(2400),
+    });
+    transformInsertRowsMock.mockResolvedValue([{ email_encrypted: "X", email_index: "Y" }]);
+
+    // Start a client with NO legacy encryptionKey — the only key source
+    // should be the dynamic shared secret from auth-state. createPqdbMcpServer
+    // clears both the private key and shared secret during construction, so
+    // we MUST set the shared secret AFTER creating the client, not before.
+    const client = await createTestClient({ encryptionKey: undefined });
+
+    // Deterministic 32-byte shared secret (US-008 uses ML-KEM-768 shared secrets)
+    const ss = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) ss[i] = i;
+    setCurrentSharedSecret(ss);
+
+    // 1st mocked fetch: introspect (table has a searchable column)
+    mockFetchOk({
+      tables: [{
+        name: "users",
+        columns: [
+          { name: "email", type: "text", sensitivity: "searchable" },
+        ],
+      }],
+    });
+    // 2nd mocked fetch: HMAC key retrieval for blind-index HMAC
+    mockFetchOk({
+      current_version: 1,
+      keys: { "1": "aa".repeat(32) }, // 64 hex chars = 32 bytes
+    });
+    // 3rd mocked fetch: the actual insert POST
+    mockFetchOk({ data: [{ id: "row-1" }] });
+
+    const result = await client.callTool({
+      name: "pqdb_insert_rows",
+      arguments: {
+        table: "users",
+        rows: [{ email: "alice@test.com" }],
+      },
+    });
+
+    expect(result.isError).toBeFalsy();
+
+    // CORE ASSERTION: deriveKeyPair must have been called with the
+    // base64url-encoded shared secret, NOT with the legacy env var.
+    expect(deriveKeyPairMock).toHaveBeenCalled();
+    const expectedKeyString = getCurrentEncryptionKeyString();
+    expect(expectedKeyString).not.toBeNull();
+    expect(expectedKeyString!.length).toBe(43); // 32 bytes -> base64url-no-pad
+    expect(deriveKeyPairMock).toHaveBeenCalledWith(expectedKeyString);
+
+    // And the input string must NOT be the legacy env var — the test
+    // configures the client with encryptionKey: undefined, so any passed
+    // value is by definition the dynamic one. Defense in depth:
+    const callArgs = deriveKeyPairMock.mock.calls.map((c) => c[0]);
+    for (const arg of callArgs) {
+      expect(arg).toBe(expectedKeyString);
+    }
+
+    // And transformInsertRows must have been called — the encrypted write
+    // path actually ran, rather than being rejected with "encryption not
+    // available".
+    expect(transformInsertRowsMock).toHaveBeenCalled();
+
+    clearCurrentSharedSecret();
+  });
+
+  it("without a shared secret AND without PQDB_ENCRYPTION_KEY, encrypted columns are rejected", async () => {
+    const {
+      clearCurrentSharedSecret,
+    } = await import("../../src/auth-state.js");
+
+    vi.clearAllMocks();
+    clearCurrentSharedSecret();
+
+    const client = await createTestClient({ encryptionKey: undefined });
+
+    // Introspect returns a table with a searchable column
+    mockFetchOk({
+      tables: [{
+        name: "users",
+        columns: [
+          { name: "email", type: "text", sensitivity: "searchable" },
+        ],
+      }],
+    });
+
+    const result = await client.callTool({
+      name: "pqdb_insert_rows",
+      arguments: {
+        table: "users",
+        rows: [{ email: "alice@test.com" }],
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    const text = (result.content[0] as { type: string; text: string }).text;
+    expect(text).toContain("encryption");
+  });
+});

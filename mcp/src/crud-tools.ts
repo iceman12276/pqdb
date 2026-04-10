@@ -19,10 +19,11 @@ import {
   deriveKeyPair,
   transformInsertRows,
   transformSelectResponse,
+  transformFilters,
   defineTableSchema,
   ColumnDef,
 } from "@pqdb/client";
-import type { KeyPair, SchemaColumns, TableSchema } from "@pqdb/client";
+import type { FilterClause, KeyPair, SchemaColumns, TableSchema } from "@pqdb/client";
 
 /** Filter schema matching the backend's FilterSchema. */
 const FilterZod = z.object({
@@ -49,7 +50,11 @@ interface IntrospectTable {
   columns: IntrospectColumn[];
 }
 
-import { authFetch as pqdbGet, authPost as pqdbPost } from "./auth-state.js";
+import {
+  authFetch as pqdbGet,
+  authPost as pqdbPost,
+  getCurrentEncryptionKeyString,
+} from "./auth-state.js";
 
 /**
  * Replace values in _encrypted columns with "[encrypted]" when
@@ -113,24 +118,62 @@ export function registerCrudTools(
   _devToken?: string,
   _projectId?: string,
 ): void {
-  // Lazy crypto state — derived on first encrypted operation
+  // Lazy crypto state — cached ONLY for the legacy static-encryptionKey
+  // path. When the dynamic per-project shared secret (US-008) is active,
+  // we derive fresh on every call so `pqdb_select_project` can switch
+  // projects without leaking stale crypto state across them.
   let cryptoState: CryptoState | null = null;
 
-  async function getCryptoState(): Promise<CryptoState> {
-    if (cryptoState) return cryptoState;
-    if (!encryptionKey) throw new Error("Encryption key not available");
+  /**
+   * Whether encryption is currently available from any source:
+   * the dynamic per-project shared secret (US-008) or the legacy
+   * PQDB_ENCRYPTION_KEY env var. Must be evaluated dynamically because
+   * the shared secret can be populated AFTER server construction by
+   * `pqdb_create_project` / `pqdb_select_project`.
+   */
+  function isEncryptionAvailable(): boolean {
+    if (getCurrentEncryptionKeyString() !== null) return true;
+    return encryptionEnabled;
+  }
 
-    const keyPair = await deriveKeyPair(encryptionKey);
-
-    // Fetch HMAC key for blind indexes
+  /** Fetch the current HMAC key from the backend for blind-index computation. */
+  async function fetchHmacKey(): Promise<Uint8Array> {
     const hmacResponse = await pqdbGet<{
       current_version: number;
       keys: Record<string, string>;
     }>(projectUrl, apiKey, "/v1/db/hmac-key");
 
     const currentKey = hmacResponse.keys[String(hmacResponse.current_version)];
-    const hmacKey = hexToBytes(currentKey);
+    return hexToBytes(currentKey);
+  }
 
+  async function getCryptoState(): Promise<CryptoState> {
+    // Prefer the dynamic per-project shared secret (US-008) over the static
+    // legacy encryptionKey. When it's set, we MUST NOT use the cache: the
+    // shared secret can change between `pqdb_select_project` calls when the
+    // user switches projects, and a cached keypair from the previous project
+    // would silently corrupt data.
+    const dynamicKey = getCurrentEncryptionKeyString();
+    if (dynamicKey !== null) {
+      const keyPair = await deriveKeyPair(dynamicKey);
+      const hmacKey = await fetchHmacKey();
+      return { keyPair, hmacKey };
+    }
+
+    // Legacy static-key path — cache is safe because encryptionKey is
+    // immutable for the lifetime of the server instance.
+    if (cryptoState) return cryptoState;
+    if (!encryptionKey) {
+      throw new Error(
+        "Encryption key not available. Either set PQDB_PRIVATE_KEY and call " +
+          "pqdb_create_project or pqdb_select_project to derive a per-project " +
+          "key, or set PQDB_ENCRYPTION_KEY in the environment for the legacy " +
+          "path.",
+      );
+    }
+
+    const keyPair = await deriveKeyPair(encryptionKey);
+    const hmacKey = await fetchHmacKey();
     cryptoState = { keyPair, hmacKey };
     return cryptoState;
   }
@@ -204,9 +247,27 @@ export function registerCrudTools(
     },
     async ({ table, columns, filters, limit, offset, order_by, order_dir, similar_to, branch }) => {
       try {
+        // When encryption is available and the table has encrypted
+        // columns, rewrite filters targeting searchable columns so the
+        // values become blind-index HMAC digests. Without this, the
+        // backend's WHERE {col}_index = '<plaintext>' never matches the
+        // hex digests stored by transformInsertRows at write time.
+        let outgoingFilters: FilterClause[] = (filters ?? []) as FilterClause[];
+        let schemaForDecrypt: TableSchema | null = null;
+        if (isEncryptionAvailable()) {
+          const schema = await getTableSchema(table);
+          if (tableHasEncryptedColumns(schema)) {
+            schemaForDecrypt = schema;
+            if (outgoingFilters.length > 0) {
+              const { hmacKey } = await getCryptoState();
+              outgoingFilters = transformFilters(outgoingFilters, schema, hmacKey);
+            }
+          }
+        }
+
         const body: Record<string, unknown> = {
           columns: columns ?? ["*"],
-          filters: filters ?? [],
+          filters: outgoingFilters,
           modifiers: {
             limit: limit ?? null,
             offset: offset ?? null,
@@ -228,17 +289,16 @@ export function registerCrudTools(
           branchHeaders,
         );
 
-        if (!encryptionEnabled) {
+        if (!isEncryptionAvailable()) {
           return successResult({ data: maskEncryptedValues(result.data), error: null });
         }
 
         // Decrypt encrypted columns
-        const schema = await getTableSchema(table);
-        if (tableHasEncryptedColumns(schema)) {
+        if (schemaForDecrypt) {
           const { keyPair } = await getCryptoState();
           const decrypted = await transformSelectResponse(
             result.data,
-            schema,
+            schemaForDecrypt,
             keyPair.secretKey,
           );
           return successResult({ data: decrypted, error: null });
@@ -273,7 +333,7 @@ export function registerCrudTools(
       try {
         let transformedRows = rows;
 
-        if (encryptionEnabled) {
+        if (isEncryptionAvailable()) {
           const schema = await getTableSchema(table);
           if (tableHasEncryptedColumns(schema)) {
             const { keyPair, hmacKey } = await getCryptoState();
@@ -339,8 +399,9 @@ export function registerCrudTools(
     async ({ table, values, filters, branch }) => {
       try {
         let transformedValues = values;
+        let outgoingFilters: FilterClause[] = (filters ?? []) as FilterClause[];
 
-        if (encryptionEnabled) {
+        if (isEncryptionAvailable()) {
           const schema = await getTableSchema(table);
           if (tableHasEncryptedColumns(schema)) {
             const { keyPair, hmacKey } = await getCryptoState();
@@ -352,6 +413,10 @@ export function registerCrudTools(
               hmacKey,
             );
             transformedValues = transformed;
+            // Rewrite filters targeting searchable columns into blind-index lookups.
+            if (outgoingFilters.length > 0) {
+              outgoingFilters = transformFilters(outgoingFilters, schema, hmacKey);
+            }
           }
         } else {
           const schema = await getTableSchema(table);
@@ -374,7 +439,7 @@ export function registerCrudTools(
           projectUrl,
           apiKey,
           `/v1/db/${encodeURIComponent(table)}/update`,
-          { values: transformedValues, filters: filters ?? [] },
+          { values: transformedValues, filters: outgoingFilters },
           branchHeaders,
         );
 
@@ -405,12 +470,25 @@ export function registerCrudTools(
     },
     async ({ table, filters, branch }) => {
       try {
+        // Rewrite filters targeting searchable columns into blind-index
+        // lookups when encryption is active; otherwise rows inserted via
+        // the encrypted path (hex HMAC digests in {col}_index) would
+        // never be matched by raw plaintext filter values.
+        let outgoingFilters: FilterClause[] = filters as FilterClause[];
+        if (isEncryptionAvailable() && outgoingFilters.length > 0) {
+          const schema = await getTableSchema(table);
+          if (tableHasEncryptedColumns(schema)) {
+            const { hmacKey } = await getCryptoState();
+            outgoingFilters = transformFilters(outgoingFilters, schema, hmacKey);
+          }
+        }
+
         const branchHeaders = branch ? { "x-branch": branch } : undefined;
         const result = await pqdbPost<{ data: unknown[] }>(
           projectUrl,
           apiKey,
           `/v1/db/${encodeURIComponent(table)}/delete`,
-          { filters },
+          { filters: outgoingFilters },
           branchHeaders,
         );
 

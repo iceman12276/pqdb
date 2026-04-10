@@ -236,7 +236,11 @@ describe("pqdb_create_project tool", () => {
 
     const text = (result.content[0] as { type: string; text: string }).text;
     const parsed = JSON.parse(text);
-    expect(parsed.data).toEqual(created);
+    // US-008: data is now { project, encryption_active, warning } so tools
+    // can surface the "no PQDB_PRIVATE_KEY" warning to the AI agent.
+    expect(parsed.data.project).toEqual(created);
+    expect(parsed.data.encryption_active).toBe(false);
+    expect(parsed.data.warning).toContain("No PQDB_PRIVATE_KEY set");
     expect(parsed.error).toBeNull();
   });
 
