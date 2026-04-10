@@ -77,7 +77,8 @@ def _signup(client: TestClient, email: str = "dev@test.com") -> str:
         json={"email": email, "password": "testpass123"},
     )
     assert resp.status_code == 201
-    return resp.json()["access_token"]
+    token: str = resp.json()["access_token"]
+    return token
 
 
 def _auth(token: str) -> dict[str, str]:
