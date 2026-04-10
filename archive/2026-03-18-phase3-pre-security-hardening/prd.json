@@ -1,0 +1,53 @@
+{
+  "project": "pqdb",
+  "branchName": "main",
+  "description": "Phase 3-pre — Security Hardening: Verify Phase 2b auth rate limits and expand rate limiting middleware to all auth + CRUD endpoints before Phase 3a adds new attack surface (Dashboard, MCP, WebSocket)",
+  "userStories": [
+    {
+      "id": "US-PRE-1",
+      "title": "Verify Phase 2b auth rate limits",
+      "description": "As a platform operator, I want to verify that all Phase 2b PRD-specified rate limits are implemented so that existing auth endpoints are protected before adding new attack surface.",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Audit backend/src/pqdb_api/routes/user_auth.py for signup rate limit (10/min per IP) and login rate limit (20/min per IP)",
+        "Audit backend/src/pqdb_api/routes/verification.py for email verification resend rate limit (3/min per email)",
+        "Audit backend/src/pqdb_api/routes/mfa.py for MFA challenge rate limit",
+        "Audit magic link endpoint for rate limit (5/min per email)",
+        "Audit password reset endpoint for rate limit (5/min per email)",
+        "For each missing rate limit: implement it matching the Phase 2b PRD specification",
+        "Rate limit responses return HTTP 429 with {\"error\": {\"code\": \"rate_limited\", \"message\": \"...\"}}",
+        "Unit tests pass (rate limit enforcement, 429 response format)",
+        "Integration tests pass (rate limit triggers after threshold, resets after window)",
+        "Service responds to health check",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "PR #55 merged. Fixed: rate limit response format (429 JSON), MFA challenge rate limit (missing), resend-verification/reset-password email keying, magic-link ordering."
+    },
+    {
+      "id": "US-PRE-2",
+      "title": "Expand rate limiting middleware",
+      "description": "As a platform operator, I want rate limiting on all CRUD and auth endpoints so that the platform is protected against flooding before Phase 3 adds new attack surface.",
+      "dependsOn": ["US-PRE-1"],
+      "acceptanceCriteria": [
+        "New RateLimiter middleware class supporting both per-IP and per-project limiting strategies",
+        "CRUD endpoints (/v1/db/*) rate limited: 1000 requests/min per project",
+        "Developer auth endpoints (/v1/auth/signup, /v1/auth/login, /v1/auth/refresh) rate limited: 20/min per IP",
+        "Rate limiter uses sliding window algorithm (same as HMAC endpoint)",
+        "Rate limiter is configurable via environment variables (PQDB_RATE_LIMIT_CRUD, PQDB_RATE_LIMIT_AUTH)",
+        "Rate limit headers returned on all responses: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset",
+        "Existing HMAC key rate limit migrated to use new RateLimiter class (consolidate implementations)",
+        "Unit tests pass (sliding window, per-IP vs per-project, header format, env var override)",
+        "Integration tests pass (rate limit enforcement on CRUD endpoints, auth endpoints, header verification)",
+        "Service responds to health check",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "PR #56 merged. New RateLimitMiddleware (ASGI), CRUD 1000/min per project, auth 20/min per IP, X-RateLimit headers, env var config, HMAC migrated. 40 new tests."
+    }
+  ]
+}

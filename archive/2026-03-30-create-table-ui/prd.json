@@ -1,0 +1,34 @@
+{
+  "project": "pqdb",
+  "branchName": "main",
+  "description": "Create Table UI — add a New Table dialog to the dashboard Table Editor page so developers can create tables with columns and sensitivity levels directly from the UI",
+  "userStories": [
+    {
+      "id": "US-101",
+      "title": "Create Table dialog in Table Editor",
+      "description": "As a developer using the dashboard, I want to create tables from the Table Editor so I don't need the SDK or API.",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "New Table button on the Table Editor page (top right, next to heading)",
+        "Clicking opens a Dialog with form: table name input + column builder",
+        "Column builder: add/remove columns, each with name (text input), data type (select: text, integer, bigint, boolean, uuid, timestamptz, jsonb, vector), sensitivity (select: plain, searchable, private), owner toggle",
+        "At least one column required before submit",
+        "Table name validated: lowercase, alphanumeric + underscores, starts with letter",
+        "Submit calls POST /v1/db/tables with {name, columns} via new createTable() in table-data.ts",
+        "Success: dialog closes, table list refreshes (invalidate query cache), success feedback",
+        "Error: shows error message in dialog (e.g., Table already exists)",
+        "Paused projects: button disabled when project is paused",
+        "Unit tests for form validation logic",
+        "Unit tests for createTable API function",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Verify in browser: create table with mixed sensitivities, verify it appears in list"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

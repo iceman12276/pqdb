@@ -1,0 +1,346 @@
+{
+  "project": "pqdb",
+  "branchName": "main",
+  "description": "Phase 3a \u2014 Dashboard + Developer Auth: TanStack Start Dashboard UI (Supabase-style), schema visualizer, table editor with client-side decryption, query playground, Developer OAuth (Google/GitHub), Passkey/WebAuthn, encryption key management UX",
+  "userStories": [
+    {
+      "id": "US-043",
+      "title": "Dashboard scaffolding",
+      "description": "As a developer, I want a Dashboard application scaffolded so that the team can build pages on a solid foundation.",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "/dashboard directory with TanStack Start + React 19 project",
+        "TanStack Router with file-based routing configured",
+        "TanStack Query configured for data fetching/caching",
+        "shadcn/ui installed with Tailwind CSS",
+        "Dark theme by default with theme toggle",
+        "Layout shell: top bar (account selector, project selector, Connect button, Cmd+K search, settings gear) + left sidebar navigation",
+        "Sidebar items: Project Overview, Table Editor, Query Playground, Schema, Authentication, Realtime (grayed out), Logs, MCP (grayed out), Project Settings",
+        "App served on localhost:3000",
+        "npm run dev starts the Dashboard with hot reload",
+        "npm run build produces production build",
+        "npm run typecheck passes with zero errors",
+        "Unit tests pass (layout renders, sidebar items present, theme toggle works)",
+        "Verify in browser",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "PR #57 merged. TanStack Start + React 19, shadcn/ui + Tailwind, dark theme, sidebar with 9 items, top bar. 19 tests."
+    },
+    {
+      "id": "US-044",
+      "title": "Dashboard login/signup pages",
+      "description": "As a developer, I want login and signup pages so that I can authenticate with the pqdb platform via the Dashboard.",
+      "dependsOn": [
+        "US-043"
+      ],
+      "acceptanceCriteria": [
+        "/login page with email/password form calling existing POST /v1/auth/login endpoint",
+        "/signup page with email/password form calling existing POST /v1/auth/signup endpoint",
+        "Login page includes placeholder buttons for Sign in with Google, Sign in with GitHub, Sign in with Passkey (wired in US-053)",
+        "Developer JWTs stored in memory (TanStack Query cache) with optional sessionStorage for tab-persistence; cleared on tab close",
+        "JWT auto-attached to all API requests via Authorization: Bearer header",
+        "Token refresh handled automatically when access token expires (reuse existing refresh endpoint)",
+        "Unauthenticated users redirected to /login",
+        "Successful login redirects to /projects",
+        "Error handling: 401 shows Invalid credentials, 409 shows Email already registered",
+        "Unit tests pass (form validation, token storage, redirect logic)",
+        "Verify in browser",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "PR #59 merged. Login/signup forms, JWT auth store, API client with auto-refresh, AuthGuard, Vite proxy, shadcn/ui components. 57 tests."
+    },
+    {
+      "id": "US-045",
+      "title": "Project list + create project pages",
+      "description": "As a developer, I want to see my projects and create new ones from the Dashboard so that I can manage my pqdb projects visually.",
+      "dependsOn": [
+        "US-044"
+      ],
+      "acceptanceCriteria": [
+        "/projects page lists all projects for the authenticated developer (calls GET /v1/projects)",
+        "Each project card shows: name, status badge (active/archived), region, created date",
+        "Create Project button opens a modal/form (name required, region optional)",
+        "Creating a project calls POST /v1/projects and redirects to project overview on success",
+        "Empty state shown when developer has no projects",
+        "Project selector dropdown in top bar populated from project list",
+        "Selecting a project from the dropdown navigates to /projects/:id",
+        "Connect button in top bar shows a popup with API keys (masked) + SDK connection snippet",
+        "Unit tests pass (project list rendering, create form validation, empty state)",
+        "Verify in browser",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "PR #60 merged. Project list with cards, create dialog, project selector, Connect popup. TanStack Query, shadcn/ui components. 82 tests."
+    },
+    {
+      "id": "US-046",
+      "title": "Project overview page + logs page",
+      "description": "As a developer, I want to see my project's status and logs so that I can monitor its health and activity.",
+      "dependsOn": [
+        "US-045"
+      ],
+      "acceptanceCriteria": [
+        "/projects/:id page shows project overview with status cards: STATUS, TABLES count, ENCRYPTION (ML-KEM-768), HMAC KEY version, AUTH USERS count, RLS POLICIES count",
+        "Overview page shows project URL and connection info",
+        "Total Requests section with breakdown cards: DATABASE REQUESTS, AUTH REQUESTS, REALTIME REQUESTS (placeholder 0), MCP REQUESTS (placeholder 0)",
+        "/projects/:id/logs page shows read-only audit log viewer",
+        "Backend: new _pqdb_audit_log table auto-created per project DB by ensure_audit_table(): (id UUID PK, event_type TEXT, method TEXT, path TEXT, status_code INTEGER, project_id UUID, user_id UUID NULL, ip_address TEXT, created_at TIMESTAMPTZ)",
+        "Backend: audit logging middleware writes API request logs to _pqdb_audit_log",
+        "Logs page paginates and filters by event type, status code, time range",
+        "Unit tests pass (status card rendering, log list rendering, filter logic)",
+        "Integration tests pass (audit log middleware writes entries, log retrieval endpoint works)",
+        "Service responds to health check",
+        "Verify in browser",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "PR #65 merged. Project overview (6 status cards), audit log table + middleware, logs page with filters. 37 tests."
+    },
+    {
+      "id": "US-047",
+      "title": "API key management page",
+      "description": "As a developer, I want to manage API keys from the Dashboard so that I can view, rotate, and copy connection info.",
+      "dependsOn": [
+        "US-045"
+      ],
+      "acceptanceCriteria": [
+        "/projects/:id/keys page shows anon and service API keys in masked format (pqdb_anon_****...****)",
+        "Rotate Keys button calls POST /v1/projects/{id}/keys/rotate, shows new keys in a one-time display modal",
+        "Copy-to-clipboard button for each key and for SDK connection snippet",
+        "SDK connection snippet format: createClient('http://localhost:8000', 'pqdb_anon_...')",
+        "Warning displayed: Keys are shown only once. Store them securely.",
+        "Unit tests pass (masked display, copy button, rotation flow)",
+        "Verify in browser",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "PR #63 merged. API key management: masked display, rotation modal, copy-to-clipboard, SDK snippet. 9 tests."
+    },
+    {
+      "id": "US-048",
+      "title": "Schema browser + schema visualizer",
+      "description": "As a developer, I want to browse my schema and see it as a visual ERD so that I can understand my database structure at a glance.",
+      "dependsOn": [
+        "US-045"
+      ],
+      "acceptanceCriteria": [
+        "/projects/:id/schema page with two views: list view (table list with columns) and ERD view (React Flow)",
+        "ERD view: each table rendered as a node with columns listed inside",
+        "Foreign key relationships shown as connecting lines between table nodes",
+        "Color-coded sensitivity badges: plain (gray), searchable (blue), private (purple)",
+        "Owner columns marked with a key icon",
+        "Logical view (default): shows developer-facing column names (email, name)",
+        "Physical view (toggle): shows actual Postgres columns (email_encrypted, email_index)",
+        "Interactive: drag, zoom, auto-layout",
+        "Data source: GET /v1/db/introspect endpoint (no new backend work)",
+        "Column management: Add Column form with name, type, sensitivity dropdown",
+        "Calls POST /v1/db/tables/{name}/columns to add columns",
+        "React Flow dependency: npm install @xyflow/react",
+        "Unit tests pass (ERD renders tables, sensitivity badges correct, toggle switches view)",
+        "Verify in browser",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "PR #62 merged. Schema browser + ERD visualizer with React Flow, sensitivity badges, logical/physical toggle, Add Column form. 13 tests."
+    },
+    {
+      "id": "US-049",
+      "title": "Table editor with data viewer + client-side decryption",
+      "description": "As a developer, I want to view and edit table data in the Dashboard with the ability to decrypt sensitive columns so that I can see my actual data.",
+      "dependsOn": [
+        "US-048"
+      ],
+      "acceptanceCriteria": [
+        "/projects/:id/tables page lists all tables with row counts",
+        "/projects/:id/tables/:name page shows paginated rows with column headers",
+        "Plain columns display values directly; encrypted columns display [encrypted] by default",
+        "Unlock button prompts developer to enter their encryption key",
+        "Encryption key loaded into @pqdb/client SDK running in the browser",
+        "SDK fetches ciphertext from API, decrypts client-side, displays plaintext",
+        "Key held in memory only \u2014 never sent to server, never persisted to localStorage/sessionStorage/cookies",
+        "Lock button clears the key from memory and reverts to [encrypted] display",
+        "Closing the tab clears the key automatically",
+        "Row insert form: creates new rows via POST /v1/db/{table}/insert",
+        "Row delete: deletes rows via POST /v1/db/{table}/delete",
+        "Unit tests pass (table renders, encrypted columns show placeholder, unlock/lock flow)",
+        "Verify in browser",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "PR #67 merged. Table editor + client-side decryption: EncryptionContext, PQC decrypt, Unlock/Lock, row CRUD. 16 tests."
+    },
+    {
+      "id": "US-050",
+      "title": "Query playground",
+      "description": "As a developer, I want a query playground so that I can build and execute queries visually with decrypted results.",
+      "dependsOn": [
+        "US-048"
+      ],
+      "acceptanceCriteria": [
+        "/projects/:id/sql page with query builder interface",
+        "Query builder uses SDK query builder syntax: select table, choose columns, add filters (.eq, .gt, .lt, etc.), set limit/offset/order",
+        "Execute button runs the query via POST /v1/db/{table}/select",
+        "Results displayed in table format below the builder",
+        "Encrypted columns show [encrypted] unless Unlock is active (shares key state with Table Editor via context)",
+        "When unlocked, SDK decrypts results client-side before display",
+        "Query history (in-memory, lost on tab close)",
+        "Error display: shows API error messages clearly",
+        "Unit tests pass (query builder produces correct payloads, results render, error handling)",
+        "Verify in browser",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "PR #66 merged. Query playground: query builder, results table, EncryptionContext, query history. 24 tests."
+    },
+    {
+      "id": "US-051",
+      "title": "Auth settings page",
+      "description": "As a developer, I want to configure auth settings from the Dashboard so that I can manage OAuth providers, roles, RLS policies, and verification settings visually.",
+      "dependsOn": [
+        "US-045"
+      ],
+      "acceptanceCriteria": [
+        "/projects/:id/auth page with tabs: Providers, Roles, Policies, Settings",
+        "Providers tab: lists configured OAuth providers (from GET /v1/projects/{id}/auth/providers), with Add Provider form",
+        "Roles tab: lists roles (from GET /v1/projects/{id}/auth/roles), with Create Role form and delete buttons (built-in roles cannot be deleted)",
+        "Policies tab: per-table policy viewer and editor (from GET /v1/db/tables/{name}/policies), with Add Policy form (operation, role, condition dropdowns)",
+        "Settings tab: auth settings form (require_email_verification, password_min_length, mfa_enabled, webhook URL)",
+        "All forms call existing Phase 2b API endpoints \u2014 no new backend work",
+        "Unit tests pass (tab rendering, form validation, API call payloads)",
+        "Verify in browser",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "PR #64 merged. Auth settings page: Providers/Roles/Policies/Settings tabs. 21 tests."
+    },
+    {
+      "id": "US-052",
+      "title": "Developer OAuth backend",
+      "description": "As a platform operator, I want Developer OAuth login endpoints so that developers can sign in with Google or GitHub.",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Alembic migration adds email_verified BOOLEAN DEFAULT FALSE to developers table",
+        "Alembic migration creates developer_oauth_identities table: (id UUID PK, developer_id UUID FK, provider TEXT NOT NULL, provider_uid TEXT NOT NULL, email TEXT, metadata JSONB DEFAULT '{}', created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, UNIQUE(provider, provider_uid))",
+        "GET /v1/auth/oauth/{provider}/authorize generates state JWT (10-min expiry), redirects to provider consent screen",
+        "GET /v1/auth/oauth/{provider}/callback validates state JWT, exchanges code, finds-or-creates developer, issues developer JWT",
+        "Account linking: matches by email only when existing developer has email_verified = true",
+        "New developer created via OAuth gets email_verified = true automatically",
+        "VaultClient gains store_platform_oauth_credentials(), get_platform_oauth_credentials(), delete_platform_oauth_credentials() for path secret/pqdb/platform/oauth/{provider}",
+        "Platform operator configures credentials via env vars or admin endpoint",
+        "Reuses existing OAuthProvider ABC from Phase 2b \u2014 GoogleOAuthProvider and GitHubOAuthProvider work with platform credential source",
+        "Returns 400 if provider not configured",
+        "Returns 400 if state JWT invalid or expired",
+        "Unit tests pass (state JWT generation, callback validation, account linking logic, Vault storage)",
+        "Integration tests pass (full authorize \u2192 callback \u2192 developer created/linked \u2192 JWT issued)",
+        "Service responds to health check",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "PR #58 merged. Developer OAuth (Google/GitHub), Alembic migrations, Vault platform credentials, account linking, open redirect fix (allowlist). 39 tests."
+    },
+    {
+      "id": "US-053",
+      "title": "Developer OAuth + Passkey/WebAuthn Dashboard integration",
+      "description": "As a developer, I want to sign in with Google, GitHub, or a passkey from the Dashboard so that I have multiple secure login options.",
+      "dependsOn": [
+        "US-044",
+        "US-052"
+      ],
+      "acceptanceCriteria": [
+        "Login page Sign in with Google and Sign in with GitHub buttons wired to GET /v1/auth/oauth/{provider}/authorize?redirect_uri=...",
+        "OAuth callback handling: Dashboard extracts tokens from redirect, stores in memory",
+        "Alembic migration creates developer_credentials table: (id UUID PK, developer_id UUID FK, credential_id BYTEA UNIQUE NOT NULL, public_key BYTEA NOT NULL, sign_count INTEGER DEFAULT 0, name TEXT, created_at TIMESTAMPTZ, last_used_at TIMESTAMPTZ)",
+        "Backend: GET /v1/auth/passkeys/challenge returns registration or authentication options",
+        "Backend: POST /v1/auth/passkeys/register validates attestation via py_webauthn, stores credential",
+        "Backend: POST /v1/auth/passkeys/authenticate validates assertion, issues developer JWT",
+        "Passkey login uses discoverable credentials (empty allowCredentials list)",
+        "Login page Sign in with Passkey button triggers navigator.credentials.get()",
+        "/settings page: Security section with Add Passkey button triggering navigator.credentials.create()",
+        "/settings page: list registered passkeys with names and Delete button",
+        "/settings page: list linked OAuth accounts with Unlink button",
+        "WebAuthn Relying Party ID configurable via PQDB_WEBAUTHN_RP_ID env var (default: localhost)",
+        "py_webauthn added as backend dependency via uv add py-webauthn",
+        "Unit tests pass (challenge generation, attestation validation mock, assertion validation mock, credential CRUD)",
+        "Integration tests pass (register passkey \u2192 authenticate with passkey \u2192 JWT issued; OAuth login flow)",
+        "Service responds to health check",
+        "Verify in browser",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "PR #61 merged. Passkey endpoints (py_webauthn), OAuth button wiring, settings page, Alembic migration. 55 tests (36 backend + 19 dashboard)."
+    },
+    {
+      "id": "US-054",
+      "title": "Encryption key management UX",
+      "description": "As a developer, I want clear guidance on encryption key management so that I understand the zero-knowledge model and don't accidentally lose my key.",
+      "dependsOn": [
+        "US-049"
+      ],
+      "acceptanceCriteria": [
+        "Dashboard: Unlock modal includes a dismissable warning: Your encryption key is never sent to the server. If you lose this key, your encrypted data is permanently unrecoverable. Store it securely.",
+        "Dashboard: /projects/:id/settings page gains an Encryption section explaining the zero-knowledge model and key backup best practices",
+        "Encryption section shows: key type (ML-KEM-768), what it protects, what happens if lost",
+        "Encryption section includes backup recommendations: password manager, secure vault, offline backup",
+        "SDK: createClient() with an encryptionKey logs a one-time console warning (via console.warn) about key backup responsibility",
+        "SDK warning only logs once per client instance (not on every query)",
+        "Unit tests pass (warning renders in Dashboard, SDK warning fires once, settings page content)",
+        "Verify in browser",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "PR #68 merged. Unlock warning, settings Encryption section, SDK one-time console.warn."
+    },
+    {
+      "id": "US-055",
+      "title": "Phase 3a E2E tests",
+      "description": "As the engineering team, we need end-to-end tests proving all Phase 3a capabilities work: Dashboard pages, data viewer with decryption, developer OAuth, and passkey login.",
+      "dependsOn": [
+        "US-054",
+        "US-053",
+        "US-051"
+      ],
+      "acceptanceCriteria": [
+        "Test setup: Docker Compose starts Postgres + Vault, FastAPI backend runs, Dashboard dev server runs, Playwright configured for headless browser testing",
+        "Test 1 \u2014 Dashboard flow: Login with email/password \u2192 create project \u2192 view in project list \u2192 navigate to project overview \u2192 see status cards",
+        "Test 2 \u2014 Schema visualizer: Create tables with mixed sensitivity \u2192 navigate to schema page \u2192 ERD renders with correct sensitivity badges and relationships",
+        "Test 3 \u2014 Data viewer + decryption: Insert data via SDK \u2192 navigate to table editor \u2192 encrypted columns show [encrypted] \u2192 unlock with encryption key \u2192 plaintext visible \u2192 lock \u2192 reverts to [encrypted]",
+        "Test 4 \u2014 Developer OAuth: Configure Google OAuth (mock) \u2192 click Sign in with Google \u2192 simulate callback \u2192 developer account linked \u2192 Dashboard access",
+        "Test 5 \u2014 Passkey: Register passkey (WebAuthn mock via Playwright virtual authenticator) \u2192 sign out \u2192 sign in with passkey \u2192 Dashboard access",
+        "Test 6 \u2014 Key management UX: Encryption key warning appears in SDK console, Dashboard settings page shows encryption section",
+        "All 6 tests pass",
+        "CI passes (Playwright tests run headless in GitHub Actions)",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "PR #69 merged. 12 Playwright E2E tests across 6 suites. Phase 3a COMPLETE."
+    }
+  ]
+}

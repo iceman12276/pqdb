@@ -1,0 +1,188 @@
+{
+  "project": "pqdb",
+  "branchName": "main",
+  "description": "Envelope Encryption — auto-generate per-project encryption keys, wrap with PBKDF2-derived key from developer password, auto-decrypt in dashboard on login",
+  "userStories": [
+    {
+      "id": "US-070",
+      "title": "Database migration — add wrapped_encryption_key column",
+      "description": "As the system, I need a wrapped_encryption_key column on the projects table so that wrapped encryption key blobs can be stored per-project.",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "Alembic migration adds nullable bytea column wrapped_encryption_key to projects",
+        "Project SQLAlchemy model includes wrapped_encryption_key: Mapped[bytes | None]",
+        "Existing projects have NULL for this column (backward compatible)",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "PR #98 merged. Migration 007 + model column."
+    },
+    {
+      "id": "US-071",
+      "title": "Dashboard envelope crypto module",
+      "description": "As a developer, I need client-side crypto functions (PBKDF2 key derivation, AES-256-GCM wrap/unwrap, random key generation) so the dashboard can manage envelope encryption entirely in the browser.",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "New module dashboard/src/lib/envelope-crypto.ts with deriveWrappingKey, generateEncryptionKey, wrapKey, unwrapKey",
+        "deriveWrappingKey uses PBKDF2-SHA256 with 600K iterations and salt pqdb-envelope-v1:email",
+        "generateEncryptionKey generates random 32 bytes as base64url string",
+        "wrapKey/unwrapKey use AES-256-GCM with 12-byte nonce prefix",
+        "All crypto uses WebCrypto API (crypto.subtle) — no new dependencies",
+        "Round-trip test: generate → wrap → unwrap → verify equality",
+        "Wrong password fails unwrap (throws DOMException)",
+        "Different emails produce different wrapping keys",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "PR #99 merged. envelope-crypto.ts with 7 unit tests."
+    },
+    {
+      "id": "US-072",
+      "title": "Backend API — store and return wrapped encryption key",
+      "description": "As the dashboard, I need backend endpoints to store and retrieve the wrapped encryption key blob so it persists across sessions and devices.",
+      "dependsOn": ["US-070"],
+      "acceptanceCriteria": [
+        "POST /v1/projects accepts optional wrapped_encryption_key (base64 string)",
+        "GET /v1/projects and GET /v1/projects/{id} return wrapped_encryption_key (base64 string or null)",
+        "New endpoint PATCH /v1/projects/{id}/encryption-key updates the wrapped blob (requires developer JWT)",
+        "New endpoint POST /v1/auth/change-password accepts current_password and new_password, verifies old password, updates hash, returns new token pair",
+        "Base64 encoding/decoding handled at API boundary (bytea in DB, base64 string in JSON)",
+        "Integration tests: create project with wrapped key, verify returned in GET",
+        "Integration tests: PATCH updates blob correctly",
+        "Integration tests: change-password verifies old password, rejects wrong password",
+        "Unit tests pass",
+        "Integration tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Service responds to health check"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "PR #100 merged. API endpoints + change-password + base64 validation fix."
+    },
+    {
+      "id": "US-073",
+      "title": "Dashboard — auto-decrypt on login",
+      "description": "As a developer logging in with a password, I want encrypted columns to automatically decrypt without needing to enter a separate encryption key.",
+      "dependsOn": ["US-071", "US-072"],
+      "acceptanceCriteria": [
+        "New EnvelopeKeyProvider context at app root holds wrapping key + per-project encryption keys map",
+        "Login page runs PBKDF2 derivation in parallel with login API call (hides latency)",
+        "Signup page does the same (wrapping key ready for first project creation)",
+        "After login, when projects are loaded, wrapped blobs are auto-unwrapped",
+        "Projects with no wrapped_encryption_key (e.g. created via MCP server) auto-generate a key, wrap it, and PATCH to server when wrapping key is available — no user prompt needed",
+        "Table detail pages auto-call unlock(key) on EncryptionProvider when envelope key is available",
+        "Existing EncryptionProvider / useEncryption() API unchanged (backward compatible)",
+        "Manual Unlock dialog remains functional as fallback (OAuth/passkey users)",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Verify in browser: login → navigate to table with encrypted columns → columns auto-decrypt"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "PR #101 merged. EnvelopeKeyProvider, parallel PBKDF2 login, auto-unlock, error resilience."
+    },
+    {
+      "id": "US-074",
+      "title": "Dashboard — generate and wrap key on project creation",
+      "description": "As a developer creating a project, I want an encryption key to be automatically generated and wrapped so I don't need to manage keys manually.",
+      "dependsOn": ["US-071", "US-072", "US-073"],
+      "acceptanceCriteria": [
+        "Project creation dialog generates a random encryption key via generateEncryptionKey()",
+        "Key is wrapped with the wrapping key from EnvelopeKeyProvider context",
+        "Wrapped blob is sent as wrapped_encryption_key in POST /v1/projects",
+        "Unwrapped key is stored in EnvelopeKeyProvider.encryptionKeys map",
+        "If no wrapping key is available (OAuth login), project is created without wrapped key",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Verify in browser"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "PR #103 merged. Auto-gen + wrap on project creation, OAuth fallback."
+    },
+    {
+      "id": "US-075",
+      "title": "Dashboard — reveal encryption key in project settings",
+      "description": "As a developer, I want to reveal and copy my project's encryption key from the settings page so I can use it with the SDK.",
+      "dependsOn": ["US-073"],
+      "acceptanceCriteria": [
+        "Project settings page shows Encryption Key section",
+        "Reveal button displays the key from EnvelopeKeyProvider (already unwrapped in memory)",
+        "Copy button copies key to clipboard",
+        "Hide button re-hides the key",
+        "Warning text: key is never stored by pqdb, store it securely, cannot be recovered if lost",
+        "If no encryption key available (OAuth login, no wrapped blob), shows explanation message",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Verify in browser"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "PR #102 merged. RevealEncryptionKey component with Reveal/Copy/Hide."
+    },
+    {
+      "id": "US-076",
+      "title": "Password change with re-wrapping",
+      "description": "As a developer changing my password, I want all my project encryption keys to be re-wrapped with the new password so auto-decrypt continues working.",
+      "dependsOn": ["US-071", "US-072", "US-073"],
+      "acceptanceCriteria": [
+        "Change Password UI in account settings (dialog with current + new password fields)",
+        "On submit: call POST /v1/auth/change-password, then re-wrap all project keys client-side",
+        "Re-wrapping: unwrap each blob with old wrapping key, wrap with new wrapping key, PATCH each project",
+        "Update wrapping key in EnvelopeKeyProvider",
+        "No re-encryption of actual data needed (only the envelope changes)",
+        "If re-wrapping fails for a project, skip it and warn (don't block password change)",
+        "Unit tests pass",
+        "Integration tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds",
+        "Verify in browser"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "PR #104 merged. Change password dialog with re-wrapping, partial failure resilience."
+    },
+    {
+      "id": "US-077",
+      "title": "MCP server — auto-receive encryption key via OAuth callback",
+      "description": "As a developer connecting to the MCP server via OAuth, I want the encryption key to be passed automatically during the OAuth callback so I don't need to manually copy it from the dashboard.",
+      "dependsOn": ["US-073"],
+      "acceptanceCriteria": [
+        "Dashboard mcp-callback.ts includes the unwrapped encryption key in the OAuth redirect URL alongside the JWT token",
+        "Dashboard derives wrapping key from password during MCP OAuth login, unwraps project encryption key, adds as encryption_key query param",
+        "If no wrapping key or no wrapped encryption key available, encryption_key param is omitted (graceful fallback)",
+        "MCP server oauth-provider.ts extracts encryption_key from the callback and stores it in config",
+        "MCP server http-app.ts passes the encryption key to createPqdbMcpServer when creating the SDK client",
+        "PQDB_ENCRYPTION_KEY env var still works as override — if set, it takes precedence over the OAuth-provided key",
+        "MCP CRUD tools automatically decrypt encrypted columns when the key is available via OAuth",
+        "Unit tests: dashboard mcp-callback includes encryption key when available",
+        "Unit tests: MCP oauth-provider extracts and stores encryption key",
+        "Unit tests: MCP falls back gracefully when no encryption key in callback",
+        "Unit tests pass",
+        "CI passes",
+        "Typecheck passes",
+        "Production build succeeds"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "PR #105 merged. Dashboard passes encryption key in MCP OAuth callback. MCP server extracts and uses it."
+    }
+  ]
+}

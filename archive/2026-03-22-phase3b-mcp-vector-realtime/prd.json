@@ -1,0 +1,173 @@
+{
+  "project": "pqdb",
+  "branchName": "main",
+  "description": "Phase 3b \u2014 MCP + Vector Search + Realtime",
+  "userStories": [
+    {
+      "id": "US-056",
+      "title": "MCP server scaffolding",
+      "dependsOn": [],
+      "passes": true,
+      "notes": "PR #76 merged. MCP scaffolding: TypeScript, stdio+SSE, 29 tests.",
+      "priority": 1,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-057",
+      "title": "MCP schema tools + resources",
+      "dependsOn": [
+        "US-056"
+      ],
+      "passes": true,
+      "notes": "PR #80 merged. MCP schema tools + resources. 19 tests.",
+      "priority": 2,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-058",
+      "title": "MCP CRUD tools",
+      "dependsOn": [
+        "US-057"
+      ],
+      "passes": true,
+      "notes": "PR #83 merged. MCP CRUD tools: query/insert/update/delete with encryption. 24 tests.",
+      "priority": 3,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-059",
+      "title": "MCP auth tools + NL query",
+      "dependsOn": [
+        "US-058"
+      ],
+      "passes": true,
+      "notes": "PR #85 merged. MCP auth tools + NL query + similar_to. 108 tests.",
+      "priority": 4,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-060",
+      "title": "Vector similarity search backend",
+      "dependsOn": [],
+      "passes": true,
+      "notes": "PR #78 merged. similar_to on select, cosine/l2/ip, 39 tests.",
+      "priority": 1,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-061",
+      "title": "Vector index management",
+      "dependsOn": [
+        "US-060"
+      ],
+      "passes": true,
+      "notes": "PR #81 merged. Vector index management: HNSW+IVFFlat, Dashboard UI. 28 tests.",
+      "priority": 5,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-062",
+      "title": "SDK vector search",
+      "dependsOn": [
+        "US-060"
+      ],
+      "passes": true,
+      "notes": "PR #79 merged. SDK .similarTo() method. 10 tests.",
+      "priority": 5,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-063",
+      "title": "Realtime triggers + NOTIFY",
+      "dependsOn": [],
+      "passes": true,
+      "notes": "PR #77 merged. pqdb_notify_changes(), pg_notify PK only, 36 tests.",
+      "priority": 1,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-064",
+      "title": "Realtime WebSocket server",
+      "dependsOn": [
+        "US-063"
+      ],
+      "passes": true,
+      "notes": "PR #82 merged. Realtime WebSocket server. 37 tests.",
+      "priority": 2,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-065",
+      "title": "Realtime RLS enforcement",
+      "dependsOn": [
+        "US-064"
+      ],
+      "passes": true,
+      "notes": "PR #84 merged. Realtime RLS: owner/all/none, service bypass, fallback. 26 tests.",
+      "priority": 3,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-066",
+      "title": "SDK realtime client",
+      "dependsOn": [
+        "US-065"
+      ],
+      "passes": true,
+      "notes": "PR #86 merged. SDK realtime client: subscribe, reconnect, decryption. 22 tests.",
+      "priority": 4,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-067",
+      "title": "Dashboard MCP page",
+      "dependsOn": [
+        "US-059"
+      ],
+      "passes": true,
+      "notes": "PR #88 merged. Dashboard MCP page: connection info, tool list, Test Tool UI. 15 tests.",
+      "priority": 5,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-068",
+      "title": "Dashboard Realtime page",
+      "dependsOn": [
+        "US-066"
+      ],
+      "passes": true,
+      "notes": "PR #87 merged. Dashboard Realtime page: live event inspector, stats. 16 tests.",
+      "priority": 5,
+      "description": "",
+      "acceptanceCriteria": []
+    },
+    {
+      "id": "US-069",
+      "title": "Phase 3b E2E tests",
+      "dependsOn": [
+        "US-059",
+        "US-062",
+        "US-066",
+        "US-067",
+        "US-068"
+      ],
+      "passes": true,
+      "notes": "PR #89 merged. 7 E2E tests (MCP + vector + realtime). 3 backend bugs fixed. Phase 3b COMPLETE.",
+      "priority": 6,
+      "description": "",
+      "acceptanceCriteria": []
+    }
+  ]
+}
