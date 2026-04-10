@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Search, Settings, Plug, LogOut } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 import { ProjectSelector } from "./project-selector";
@@ -6,10 +7,10 @@ import { BranchSelector } from "./branch-selector";
 import { ConnectPopup } from "./connect-popup";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { useNavigate } from "~/lib/navigation";
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { clearTokens } from "~/lib/auth-store";
 import { getActiveBranch, setActiveBranch } from "~/lib/branch-store";
-import type { Project } from "~/lib/projects";
+import { fetchProject, type Project } from "~/lib/projects";
 
 export function TopBar() {
   const navigate = useNavigate();
@@ -22,6 +23,18 @@ export function TopBar() {
   const [activeBranch, setActiveBranchState] = React.useState<string | null>(
     () => getActiveBranch(),
   );
+
+  // Fetch project details when we only have the URL id so the breadcrumb
+  // can display the human-readable project name.
+  const { data: urlProject } = useQuery({
+    queryKey: ["project", urlProjectId],
+    queryFn: () => fetchProject(urlProjectId!),
+    enabled: !!urlProjectId && !selectedProject,
+  });
+
+  const activeProjectId = selectedProject?.id ?? urlProjectId;
+  const activeProjectName = selectedProject?.name ?? urlProject?.name;
+  const insideProject = !!activeProjectId;
 
   function handleProjectSelect(project: Project) {
     setSelectedProject(project);
@@ -63,19 +76,36 @@ export function TopBar() {
           </PopoverContent>
         </Popover>
         <span className="text-muted-foreground">/</span>
-        <ProjectSelector
-          selectedProjectId={selectedProject?.id ?? null}
-          onProjectSelect={handleProjectSelect}
-        />
-        {(selectedProject?.id ?? urlProjectId) && (
+        {insideProject ? (
           <>
+            <Link
+              to="/projects"
+              data-testid="breadcrumb-all-projects"
+              className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              All projects
+            </Link>
+            <span className="text-muted-foreground">/</span>
+            <Link
+              to="/projects/$projectId"
+              params={{ projectId: activeProjectId! }}
+              data-testid="breadcrumb-project-name"
+              className="rounded-md px-2 py-1 text-sm font-medium text-foreground hover:bg-accent"
+            >
+              {activeProjectName ?? activeProjectId}
+            </Link>
             <span className="text-muted-foreground">/</span>
             <BranchSelector
-              projectId={(selectedProject?.id ?? urlProjectId)!}
+              projectId={activeProjectId!}
               activeBranch={activeBranch}
               onBranchChange={handleBranchChange}
             />
           </>
+        ) : (
+          <ProjectSelector
+            selectedProjectId={selectedProject?.id ?? null}
+            onProjectSelect={handleProjectSelect}
+          />
         )}
       </div>
 

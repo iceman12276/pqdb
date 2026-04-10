@@ -133,4 +133,21 @@ describe("SidebarNav", () => {
     renderSidebar();
     expect(mockUseParams).toHaveBeenCalledWith({ strict: false });
   });
+
+  it("renders the pqdb logo as a Link to /projects (US-009)", () => {
+    mockUseParams.mockReturnValue({ projectId: "proj-abc" });
+    renderSidebar();
+    const logo = screen.getByText("pqdb");
+    const link = logo.closest("a");
+    expect(link).not.toBeNull();
+    expect(link).toHaveAttribute("href", "/projects");
+  });
+
+  it("logo link has cursor-pointer hover class (US-009)", () => {
+    mockUseParams.mockReturnValue({ projectId: "proj-abc" });
+    renderSidebar();
+    const logo = screen.getByText("pqdb");
+    const link = logo.closest("a");
+    expect(link?.className).toMatch(/cursor-pointer/);
+  });
 });

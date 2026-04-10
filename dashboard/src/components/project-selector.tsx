@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { fetchProjects, type Project } from "~/lib/projects";
 
 interface ProjectSelectorProps {
@@ -45,6 +46,18 @@ export function ProjectSelector({
 
       {open && (
         <div className="absolute top-full left-0 z-50 mt-1 min-w-[200px] rounded-md border border-border bg-popover p-1 shadow-md">
+          <Link
+            to="/projects"
+            className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm font-medium hover:bg-accent"
+            onClick={() => setOpen(false)}
+          >
+            All Projects
+          </Link>
+          <div
+            data-testid="all-projects-divider"
+            className="my-1 h-px bg-border"
+            role="separator"
+          />
           {projects.length === 0 ? (
             <p className="px-2 py-1.5 text-sm text-muted-foreground">
               No projects
