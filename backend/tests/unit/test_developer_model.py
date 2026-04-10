@@ -13,8 +13,23 @@ class TestDeveloperModel:
 
     def test_columns_exist(self) -> None:
         columns = {c.name for c in Developer.__table__.columns}
-        expected = {"id", "email", "password_hash", "email_verified", "created_at"}
+        expected = {
+            "id",
+            "email",
+            "password_hash",
+            "email_verified",
+            "ml_kem_public_key",
+            "created_at",
+        }
         assert columns == expected
+
+    def test_ml_kem_public_key_column_is_nullable_bytea(self) -> None:
+        col = Developer.__table__.columns["ml_kem_public_key"]
+        assert col.nullable is True
+        # SQLAlchemy LargeBinary maps to BYTEA on Postgres
+        from sqlalchemy import LargeBinary
+
+        assert isinstance(col.type, LargeBinary)
 
     def test_id_is_primary_key(self) -> None:
         pk_cols = [c.name for c in Developer.__table__.primary_key]
