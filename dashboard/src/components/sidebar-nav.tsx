@@ -86,9 +86,12 @@ export function SidebarNav({ projectStatus }: { projectStatus?: string } = {}) {
       className="flex h-full w-60 flex-col border-r border-border bg-sidebar px-3 py-4"
     >
       <div className="mb-6 px-3">
-        <span className="text-lg font-semibold text-sidebar-foreground">
-          pqdb
-        </span>
+        <Link
+          to="/projects"
+          className="cursor-pointer text-lg font-semibold text-sidebar-foreground hover:text-sidebar-accent-foreground"
+        >
+          <span>pqdb</span>
+        </Link>
       </div>
       <ul className="flex flex-1 flex-col gap-1 overflow-y-auto">
         {sidebarNavItems.map((item) => {
