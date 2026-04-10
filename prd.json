@@ -193,6 +193,11 @@
       "title": "MCP server supports PQDB_PRIVATE_KEY and uses encapsulate in create_project",
       "description": "As a user running the MCP server, I want to pass my ML-KEM private key via PQDB_PRIVATE_KEY so that the MCP can create projects with proper encryption and perform CRUD on searchable/private columns.",
       "dependsOn": ["US-001", "US-003"],
+      "followUps": [
+        "nl-query.ts generated filters from NL parsing don't go through transformFilters yet — NL .eq on a searchable column will miss",
+        "MCP tests are not in CI (.github/workflows/ci.yml has no mcp job) — structural gap that allowed broken tests to land in attempts 1-2",
+        "Error message in crud-tools.ts 'no key' path only mentions PQDB_ENCRYPTION_KEY and OAuth, should also mention PQDB_PRIVATE_KEY + pqdb_select_project"
+      ],
       "acceptanceCriteria": [
         "mcp/src/config.ts reads an optional PQDB_PRIVATE_KEY env var (base64 or base64url encoded)",
         "Config decodes the key to Uint8Array and verifies the length matches the expected ML-KEM-768 private key size (~2400 bytes); fails fast with a clear error on mismatch",
@@ -211,8 +216,8 @@
         "CI passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Merged via PR #149 (ed034ebc) after 3 fix cycles. Attempt 1: shared secret stored but never consumed by CRUD — encryption_active=true was unfalsifiable. Attempt 2: wired getCurrentEncryptionKeyString into getCryptoState but pqdb_query_rows never called transformFilters — integration test fails at line 365 with 0 rows (HMAC digest vs plaintext mismatch). Agent didn't run the test. Attempt 3: wired transformFilters in query/update/delete + nl-query.ts dynamic key. Agent ran integration test locally, 3/3 pass. Reviewer ran it independently, confirmed 3/3 pass."
     },
     {
       "id": "US-009",
