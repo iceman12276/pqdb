@@ -11,8 +11,8 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { createProject, type ProjectCreateResponse } from "~/lib/projects";
-import { useEnvelopeKeys, uint8ArrayToBase64 } from "~/lib/keypair-context";
-import { generateEncryptionKey, wrapKey } from "~/lib/envelope-crypto";
+import { useKeypair, useEnvelopeKeys, uint8ArrayToBase64 } from "~/lib/keypair-context";
+import { encapsulate } from "@pqdb/client";
 
 interface CreateProjectDialogProps {
   open: boolean;
@@ -28,7 +28,8 @@ export function CreateProjectDialog({
   const [name, setName] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
-  const { wrappingKey, addEncryptionKey } = useEnvelopeKeys();
+  const { publicKey } = useKeypair();
+  const { setProjectEncryptionKey } = useEnvelopeKeys();
 
   function resetForm() {
     setName("");
@@ -49,18 +50,18 @@ export function CreateProjectDialog({
 
     try {
       let wrappedEncryptionKey: string | undefined;
-      let encryptionKey: string | undefined;
+      let sharedSecret: Uint8Array | undefined;
 
-      if (wrappingKey) {
-        encryptionKey = generateEncryptionKey();
-        const wrappedBlob = await wrapKey(encryptionKey, wrappingKey);
-        wrappedEncryptionKey = uint8ArrayToBase64(wrappedBlob);
+      if (publicKey) {
+        const result = await encapsulate(publicKey);
+        sharedSecret = result.sharedSecret;
+        wrappedEncryptionKey = uint8ArrayToBase64(result.ciphertext);
       }
 
       const project = await createProject(name.trim(), "us-east-1", wrappedEncryptionKey);
 
-      if (wrappingKey && encryptionKey) {
-        addEncryptionKey(project.id, encryptionKey);
+      if (sharedSecret) {
+        setProjectEncryptionKey(project.id, sharedSecret);
       }
 
       resetForm();

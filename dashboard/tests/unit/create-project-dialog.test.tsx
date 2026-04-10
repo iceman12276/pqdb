@@ -10,27 +10,43 @@ vi.mock("~/lib/projects", () => ({
   createProject: mockCreateProject,
 }));
 
-const { mockUseEnvelopeKeys, mockGenerateEncryptionKey, mockWrapKey } =
-  vi.hoisted(() => ({
+const { mockUseKeypair, mockUseEnvelopeKeys, mockEncapsulate } = vi.hoisted(
+  () => ({
+    mockUseKeypair: vi.fn(),
     mockUseEnvelopeKeys: vi.fn(),
-    mockGenerateEncryptionKey: vi.fn(),
-    mockWrapKey: vi.fn(),
-  }));
+    mockEncapsulate: vi.fn(),
+  }),
+);
 
 vi.mock("~/lib/keypair-context", () => ({
+  useKeypair: mockUseKeypair,
   useEnvelopeKeys: mockUseEnvelopeKeys,
   uint8ArrayToBase64: (bytes: Uint8Array) =>
     btoa(String.fromCharCode(...bytes)),
 }));
 
-vi.mock("~/lib/envelope-crypto", () => ({
-  generateEncryptionKey: mockGenerateEncryptionKey,
-  wrapKey: mockWrapKey,
+vi.mock("@pqdb/client", () => ({
+  encapsulate: mockEncapsulate,
 }));
 
 import { CreateProjectDialog } from "~/components/create-project-dialog";
 
-const fakeWrappingKey = {} as CryptoKey;
+function setupKeypair(
+  overrides: Partial<{
+    publicKey: Uint8Array | null;
+    privateKey: Uint8Array | null;
+    loaded: boolean;
+    error: string | null;
+  }> = {},
+) {
+  const defaults = {
+    publicKey: null,
+    privateKey: null,
+    loaded: true,
+    error: null,
+  };
+  mockUseKeypair.mockReturnValue({ ...defaults, ...overrides });
+}
 
 function setupEnvelopeKeys(overrides: Record<string, unknown> = {}) {
   const defaults = {
@@ -40,11 +56,17 @@ function setupEnvelopeKeys(overrides: Record<string, unknown> = {}) {
     clearKeys: vi.fn(),
     getEncryptionKey: vi.fn(() => null),
     addEncryptionKey: vi.fn(),
+    setProjectEncryptionKey: vi.fn(),
     unwrapProjectKeys: vi.fn(),
   };
   mockUseEnvelopeKeys.mockReturnValue({ ...defaults, ...overrides });
   return { ...defaults, ...overrides };
 }
+
+const fakePublicKey = new Uint8Array(1184); // ML-KEM-768 public key is 1184 bytes
+const fakeCiphertext = new Uint8Array([10, 20, 30, 40, 50]);
+const fakeSharedSecret = new Uint8Array(32); // 32-byte shared secret
+fakeSharedSecret.fill(0xab);
 
 const createdProject = {
   id: "new-id",
@@ -73,6 +95,7 @@ describe("CreateProjectDialog", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setupKeypair();
     setupEnvelopeKeys();
   });
 
@@ -103,107 +126,65 @@ describe("CreateProjectDialog", () => {
     expect(mockCreateProject).not.toHaveBeenCalled();
   });
 
-  it("calls createProject without wrappedEncryptionKey when no wrapping key (OAuth)", async () => {
+  it("calls encapsulate(publicKey), POSTs base64 ciphertext, stores sharedSecret in context", async () => {
     const user = userEvent.setup();
-    setupEnvelopeKeys({ wrappingKey: null });
+    const mockSetProjectEncryptionKey = vi.fn();
+    setupKeypair({ publicKey: fakePublicKey });
+    setupEnvelopeKeys({
+      setProjectEncryptionKey: mockSetProjectEncryptionKey,
+    });
+
+    mockEncapsulate.mockResolvedValueOnce({
+      ciphertext: fakeCiphertext,
+      sharedSecret: fakeSharedSecret,
+    });
+    mockCreateProject.mockResolvedValueOnce({
+      ...createdProject,
+      id: "proj-encap",
+    });
+
+    render(<CreateProjectDialog {...defaultProps} />);
+
+    await user.type(screen.getByLabelText(/project name/i), "PQC Project");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => {
+      // Verify encapsulate was called with the public key
+      expect(mockEncapsulate).toHaveBeenCalledWith(fakePublicKey);
+    });
+
+    // Verify createProject was called with base64-encoded ciphertext
+    const wrappedKeyArg = mockCreateProject.mock.calls[0][2];
+    expect(typeof wrappedKeyArg).toBe("string");
+    // base64 of fakeCiphertext [10, 20, 30, 40, 50]
+    const expectedBase64 = btoa(String.fromCharCode(...fakeCiphertext));
+    expect(wrappedKeyArg).toBe(expectedBase64);
+
+    // Verify shared secret was stored in context
+    expect(mockSetProjectEncryptionKey).toHaveBeenCalledWith(
+      "proj-encap",
+      fakeSharedSecret,
+    );
+  });
+
+  it("does not call encapsulate when publicKey is null (keypair not loaded)", async () => {
+    const user = userEvent.setup();
+    setupKeypair({ publicKey: null });
     mockCreateProject.mockResolvedValueOnce(createdProject);
 
     render(<CreateProjectDialog {...defaultProps} />);
 
-    await user.type(screen.getByLabelText(/project name/i), "New Project");
+    await user.type(screen.getByLabelText(/project name/i), "No Key Project");
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 
     await waitFor(() => {
       expect(mockCreateProject).toHaveBeenCalledWith(
-        "New Project",
+        "No Key Project",
         "us-east-1",
         undefined,
       );
     });
-    expect(mockGenerateEncryptionKey).not.toHaveBeenCalled();
-    expect(mockWrapKey).not.toHaveBeenCalled();
-  });
-
-  it("generates and wraps encryption key when wrapping key is available", async () => {
-    const user = userEvent.setup();
-    const mockAddEncryptionKey = vi.fn();
-    setupEnvelopeKeys({
-      wrappingKey: fakeWrappingKey,
-      addEncryptionKey: mockAddEncryptionKey,
-    });
-
-    const fakeEncKey = "fake-encryption-key-base64url";
-    const fakeWrappedBlob = new Uint8Array([1, 2, 3, 4, 5]);
-    mockGenerateEncryptionKey.mockReturnValue(fakeEncKey);
-    mockWrapKey.mockResolvedValue(fakeWrappedBlob);
-    mockCreateProject.mockResolvedValueOnce({
-      ...createdProject,
-      id: "proj-123",
-    });
-
-    render(<CreateProjectDialog {...defaultProps} />);
-
-    await user.type(screen.getByLabelText(/project name/i), "New Project");
-    await user.click(screen.getByRole("button", { name: /^create$/i }));
-
-    await waitFor(() => {
-      expect(mockGenerateEncryptionKey).toHaveBeenCalledOnce();
-      expect(mockWrapKey).toHaveBeenCalledWith(fakeEncKey, fakeWrappingKey);
-    });
-
-    // Verify createProject was called with the base64 wrapped key
-    const wrappedKeyArg = mockCreateProject.mock.calls[0][2];
-    expect(typeof wrappedKeyArg).toBe("string");
-    expect(wrappedKeyArg.length).toBeGreaterThan(0);
-  });
-
-  it("stores encryption key in context after successful project creation", async () => {
-    const user = userEvent.setup();
-    const mockAddEncryptionKey = vi.fn();
-    setupEnvelopeKeys({
-      wrappingKey: fakeWrappingKey,
-      addEncryptionKey: mockAddEncryptionKey,
-    });
-
-    const fakeEncKey = "fake-enc-key";
-    mockGenerateEncryptionKey.mockReturnValue(fakeEncKey);
-    mockWrapKey.mockResolvedValue(new Uint8Array([10, 20, 30]));
-    mockCreateProject.mockResolvedValueOnce({
-      ...createdProject,
-      id: "proj-456",
-    });
-
-    render(<CreateProjectDialog {...defaultProps} />);
-
-    await user.type(screen.getByLabelText(/project name/i), "New Project");
-    await user.click(screen.getByRole("button", { name: /^create$/i }));
-
-    await waitFor(() => {
-      expect(mockAddEncryptionKey).toHaveBeenCalledWith(
-        "proj-456",
-        fakeEncKey,
-      );
-    });
-  });
-
-  it("does not store encryption key if wrapping key is null", async () => {
-    const user = userEvent.setup();
-    const mockAddEncryptionKey = vi.fn();
-    setupEnvelopeKeys({
-      wrappingKey: null,
-      addEncryptionKey: mockAddEncryptionKey,
-    });
-    mockCreateProject.mockResolvedValueOnce(createdProject);
-
-    render(<CreateProjectDialog {...defaultProps} />);
-
-    await user.type(screen.getByLabelText(/project name/i), "New Project");
-    await user.click(screen.getByRole("button", { name: /^create$/i }));
-
-    await waitFor(() => {
-      expect(mockCreateProject).toHaveBeenCalled();
-    });
-    expect(mockAddEncryptionKey).not.toHaveBeenCalled();
+    expect(mockEncapsulate).not.toHaveBeenCalled();
   });
 
   it("calls onCreated with project data on success", async () => {
@@ -259,5 +240,23 @@ describe("CreateProjectDialog", () => {
       created_at: "2026-03-18T00:00:00Z",
       api_keys: [],
     });
+  });
+
+  it("shows error when encapsulate fails", async () => {
+    const user = userEvent.setup();
+    setupKeypair({ publicKey: fakePublicKey });
+    setupEnvelopeKeys();
+
+    mockEncapsulate.mockRejectedValueOnce(new Error("Encapsulation failed"));
+
+    render(<CreateProjectDialog {...defaultProps} />);
+
+    await user.type(screen.getByLabelText(/project name/i), "Fail Project");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    expect(
+      await screen.findByText(/encapsulation failed/i),
+    ).toBeInTheDocument();
+    expect(mockCreateProject).not.toHaveBeenCalled();
   });
 });
