@@ -310,7 +310,7 @@ class TestUserRoleAssignment:
                     await s.commit()
                 await engine.dispose()
 
-            asyncio.get_event_loop().run_until_complete(_setup())
+            asyncio.run(_setup())
 
             # Now assign a role via the API
             resp = client.put(
