@@ -38,7 +38,11 @@ interface FetchResult {
 }
 
 export interface ApiClient {
-  signup(email: string, password: string): Promise<AuthResult<TokenResponse>>;
+  signup(
+    email: string,
+    password: string,
+    mlKemPublicKey?: string,
+  ): Promise<AuthResult<TokenResponse>>;
   login(email: string, password: string): Promise<AuthResult<TokenResponse>>;
   refresh(refreshToken: string): Promise<AuthResult<AccessTokenResponse>>;
   fetch(path: string, init?: RequestInit): Promise<FetchResult>;
@@ -75,8 +79,16 @@ export function createApiClient(config: { baseUrl: string }): ApiClient {
   async function signup(
     email: string,
     password: string,
+    mlKemPublicKey?: string,
   ): Promise<AuthResult<TokenResponse>> {
-    return authRequest<TokenResponse>("/v1/auth/signup", { email, password });
+    const body: Record<string, string> = { email, password };
+    if (mlKemPublicKey !== undefined) {
+      // Snake case because the FastAPI schema field is `ml_kem_public_key`
+      // and the pydantic validator enforces base64 decoding to exactly
+      // 1184 bytes at the boundary.
+      body.ml_kem_public_key = mlKemPublicKey;
+    }
+    return authRequest<TokenResponse>("/v1/auth/signup", body);
   }
 
   async function login(

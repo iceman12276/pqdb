@@ -1,10 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import "fake-indexeddb/auto";
+import { IDBFactory } from "fake-indexeddb";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { mockSignup, mockNavigate } = vi.hoisted(() => ({
+const {
+  mockSignup,
+  mockNavigate,
+  mockGenerateKeyPair,
+  mockSaveKeypair,
+} = vi.hoisted(() => ({
   mockSignup: vi.fn(),
   mockNavigate: vi.fn(),
+  mockGenerateKeyPair: vi.fn(),
+  mockSaveKeypair: vi.fn(),
 }));
 
 vi.mock("~/lib/api-client", () => ({
@@ -15,11 +24,60 @@ vi.mock("~/lib/navigation", () => ({
   useNavigate: () => mockNavigate,
 }));
 
+vi.mock("@pqdb/client", () => ({
+  generateKeyPair: mockGenerateKeyPair,
+}));
+
+vi.mock("~/lib/keypair-store", () => ({
+  saveKeypair: mockSaveKeypair,
+  loadKeypair: vi.fn(),
+  deleteKeypair: vi.fn(),
+}));
+
 import { SignupPage } from "~/components/signup-page";
+
+// A real-length ML-KEM-768 public/secret key is 1184 / 2400 bytes. We use
+// those exact lengths in mocks so base64 length assertions reflect the real
+// data shape the backend validates on signup.
+const MOCK_PUBLIC_KEY = new Uint8Array(1184).fill(7);
+const MOCK_SECRET_KEY = new Uint8Array(2400).fill(11);
+
+// Minimal unsigned JWT with a `sub` claim the signup page can extract.
+// Not a valid signature — the dashboard only reads `sub` locally, the
+// server verifies on every subsequent request.
+const FAKE_JWT_HEADER = btoa(JSON.stringify({ alg: "none", typ: "JWT" }))
+  .replace(/=+$/, "")
+  .replace(/\+/g, "-")
+  .replace(/\//g, "_");
+const FAKE_JWT_PAYLOAD = btoa(
+  JSON.stringify({ sub: "11111111-1111-1111-1111-111111111111" }),
+)
+  .replace(/=+$/, "")
+  .replace(/\+/g, "-")
+  .replace(/\//g, "_");
+const FAKE_JWT = `${FAKE_JWT_HEADER}.${FAKE_JWT_PAYLOAD}.sig`;
 
 describe("SignupPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    globalThis.indexedDB = new IDBFactory();
+    mockGenerateKeyPair.mockResolvedValue({
+      publicKey: MOCK_PUBLIC_KEY,
+      secretKey: MOCK_SECRET_KEY,
+    });
+    mockSaveKeypair.mockResolvedValue(undefined);
+    if (!("createObjectURL" in URL)) {
+      (URL as unknown as { createObjectURL: () => string }).createObjectURL =
+        vi.fn(() => "blob:mock");
+    } else {
+      vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock");
+    }
+    if (!("revokeObjectURL" in URL)) {
+      (URL as unknown as { revokeObjectURL: () => void }).revokeObjectURL =
+        vi.fn();
+    } else {
+      vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    }
   });
 
   it("renders email and password fields", () => {
@@ -67,11 +125,11 @@ describe("SignupPage", () => {
     expect(mockSignup).not.toHaveBeenCalled();
   });
 
-  it("calls signup and navigates on success", async () => {
+  it("generates a keypair and sends the public key in the signup POST", async () => {
     const user = userEvent.setup();
     mockSignup.mockResolvedValueOnce({
       data: {
-        access_token: "at",
+        access_token: FAKE_JWT,
         refresh_token: "rt",
         token_type: "bearer",
       },
@@ -85,11 +143,93 @@ describe("SignupPage", () => {
     await user.click(screen.getByRole("button", { name: /create account/i }));
 
     await waitFor(() => {
-      expect(mockSignup).toHaveBeenCalledWith(
-        "test@example.com",
-        "password123",
-      );
+      expect(mockGenerateKeyPair).toHaveBeenCalledTimes(1);
     });
+    await waitFor(() => {
+      expect(mockSignup).toHaveBeenCalledTimes(1);
+    });
+
+    // Signup must be called with email, password, and a base64-encoded
+    // public key of the ML-KEM-768 canonical length (1184 bytes → 1580
+    // base64 characters with padding). This is the exact invariant the
+    // backend enforces in SignupRequest.
+    const args = mockSignup.mock.calls[0]!;
+    expect(args[0]).toBe("test@example.com");
+    expect(args[1]).toBe("password123");
+    expect(typeof args[2]).toBe("string");
+    const decoded = Uint8Array.from(atob(args[2]), (c) => c.charCodeAt(0));
+    expect(decoded.length).toBe(1184);
+    expect(decoded).toEqual(MOCK_PUBLIC_KEY);
+  });
+
+  it("saves the private key to IndexedDB after a successful signup", async () => {
+    const user = userEvent.setup();
+    mockSignup.mockResolvedValueOnce({
+      data: {
+        access_token: FAKE_JWT,
+        refresh_token: "rt",
+        token_type: "bearer",
+      },
+      error: null,
+    });
+
+    render(<SignupPage />);
+    await user.type(screen.getByLabelText(/email/i), "test@example.com");
+    await user.type(screen.getByLabelText(/password/i), "password123");
+    await user.click(screen.getByRole("button", { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(mockSaveKeypair).toHaveBeenCalledTimes(1);
+    });
+    const [, kp] = mockSaveKeypair.mock.calls[0]!;
+    expect(kp.publicKey).toEqual(MOCK_PUBLIC_KEY);
+    expect(kp.secretKey).toEqual(MOCK_SECRET_KEY);
+  });
+
+  it("shows the recovery modal after a successful signup and does not navigate immediately", async () => {
+    const user = userEvent.setup();
+    mockSignup.mockResolvedValueOnce({
+      data: {
+        access_token: FAKE_JWT,
+        refresh_token: "rt",
+        token_type: "bearer",
+      },
+      error: null,
+    });
+
+    render(<SignupPage />);
+    await user.type(screen.getByLabelText(/email/i), "test@example.com");
+    await user.type(screen.getByLabelText(/password/i), "password123");
+    await user.click(screen.getByRole("button", { name: /create account/i }));
+
+    // The recovery modal should appear before navigation happens — the
+    // user MUST see and dismiss the modal so they don't lose their key.
+    expect(
+      await screen.findByRole("dialog", { name: /save your recovery file/i }),
+    ).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("navigates to /projects only after the recovery modal is closed", async () => {
+    const user = userEvent.setup();
+    mockSignup.mockResolvedValueOnce({
+      data: {
+        access_token: FAKE_JWT,
+        refresh_token: "rt",
+        token_type: "bearer",
+      },
+      error: null,
+    });
+
+    render(<SignupPage />);
+    await user.type(screen.getByLabelText(/email/i), "test@example.com");
+    await user.type(screen.getByLabelText(/password/i), "password123");
+    await user.click(screen.getByRole("button", { name: /create account/i }));
+
+    await screen.findByRole("dialog", { name: /save your recovery file/i });
+    await user.click(screen.getByRole("checkbox", { name: /i understand/i }));
+    await user.click(screen.getByRole("button", { name: /^close$/i }));
+
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith({ to: "/projects" });
     });
@@ -133,7 +273,7 @@ describe("SignupPage", () => {
     ).toBeDisabled();
 
     resolveSignup!({
-      data: { access_token: "at", refresh_token: "rt" },
+      data: { access_token: FAKE_JWT, refresh_token: "rt" },
       error: null,
     });
   });
