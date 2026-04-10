@@ -64,8 +64,8 @@
         "CI passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Merged via PR #146 (2a61e309) after 1 fix cycle. Original commit had missing length validation (silent failure: any base64 was accepted, including 0/100/2000-byte garbage). Fix added: ML_KEM_768_PUBLIC_KEY_BYTES=1184 constant + length check in _validate_b64; HTTPBearer(auto_error=False) to return 401 instead of FastAPI's default 403; 4 new tests (wrong-length, empty, oversized, two-developer isolation). Bonus: GET /v1/auth/me/public-key now returns 401 uniformly across all 60+ protected endpoints."
     },
     {
       "id": "US-004",
