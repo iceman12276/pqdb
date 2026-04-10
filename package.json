@@ -1,4 +1,5 @@
 {
+  "name": "pqdb",
   "private": true,
   "workspaces": [
     "sdk",
