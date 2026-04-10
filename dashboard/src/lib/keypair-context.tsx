@@ -79,6 +79,7 @@ export interface EnvelopeKeyState {
   clearKeys: () => void;
   getEncryptionKey: (projectId: string) => string | null;
   addEncryptionKey: (projectId: string, key: string) => void;
+  setProjectEncryptionKey: (projectId: string, sharedSecret: Uint8Array) => void;
   unwrapProjectKeys: (
     projects: Array<{ id: string; wrapped_encryption_key: string | null }>,
   ) => Promise<void>;
@@ -91,6 +92,7 @@ const EnvelopeKeyContext = React.createContext<EnvelopeKeyState>({
   clearKeys: () => {},
   getEncryptionKey: () => null,
   addEncryptionKey: () => {},
+  setProjectEncryptionKey: () => {},
   unwrapProjectKeys: async () => {},
 });
 
@@ -261,6 +263,18 @@ export function KeypairProvider({
     [],
   );
 
+  const setProjectEncryptionKey = React.useCallback(
+    (projectId: string, sharedSecret: Uint8Array) => {
+      const base64 = uint8ArrayToBase64(sharedSecret);
+      setEncryptionKeys((prev) => {
+        const next = new Map(prev);
+        next.set(projectId, base64);
+        return next;
+      });
+    },
+    [],
+  );
+
   const unwrapProjectKeys = React.useCallback(
     async (
       projects: Array<{ id: string; wrapped_encryption_key: string | null }>,
@@ -361,6 +375,7 @@ export function KeypairProvider({
       clearKeys,
       getEncryptionKey,
       addEncryptionKey,
+      setProjectEncryptionKey,
       unwrapProjectKeys,
     }),
     [
@@ -370,6 +385,7 @@ export function KeypairProvider({
       clearKeys,
       getEncryptionKey,
       addEncryptionKey,
+      setProjectEncryptionKey,
       unwrapProjectKeys,
     ],
   );
