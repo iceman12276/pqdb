@@ -189,8 +189,8 @@
         "CI passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Merged via PR #153 (67184f72). All 3 reviewers APPROVE/CLEAN. base64url encoding verified identical between dashboard and MCP (critical for cross-client encryption compatibility). 19 new unit tests. E2E gap tracked as follow-up. No fix cycles needed. Merge conflict with US-006's keypair-context changes resolved by GitHub squash-merge."
     },
     {
       "id": "US-008",
