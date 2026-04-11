@@ -1,15 +1,15 @@
 {
   "project": "pqdb",
   "branchName": "main",
-  "description": "Local crypto proxy for hosted MCP — split the MCP server into a hosted core (no private key, passes ciphertext through) and a local crypto proxy that intercepts tool calls, encrypts/decrypts using the developer's private key from their recovery file, and forwards to the hosted MCP. The proxy exposes the same MCP tools on localhost so Claude Code doesn't know about encryption. Zero-knowledge preserved in production.",
+  "description": "Local crypto proxy for hosted MCP \u2014 split the MCP server into a hosted core (no private key, passes ciphertext through) and a local crypto proxy that intercepts tool calls, encrypts/decrypts using the developer's private key from their recovery file, and forwards to the hosted MCP. The proxy exposes the same MCP tools on localhost so Claude Code doesn't know about encryption. Zero-knowledge preserved in production.",
   "userStories": [
     {
       "id": "US-010",
       "title": "Recovery file discovery and private key loading",
       "description": "As a developer setting up the crypto proxy, I want the proxy to automatically find my recovery file so I don't have to manually extract and paste a base64 private key.",
       "dependsOn": [],
-      "passes": true,
-      "notes": "Merged via PR #154 (a0390bf1). 14 unit tests. Auto-discover ~/.pqdb/recovery.json or ~/Downloads/pqdb-recovery-*.json.",
+      "passes": false,
+      "notes": "",
       "acceptanceCriteria": [
         "New file mcp/src/proxy/recovery.ts exports discoverRecoveryFile(explicitPath?: string): string and loadPrivateKeyFromRecovery(path: string): Uint8Array",
         "Discovery order: --recovery-file <path> flag > ~/.pqdb/recovery.json > most recent ~/Downloads/pqdb-recovery-*.json (by mtime)",
@@ -24,17 +24,15 @@
         "Production build succeeds",
         "CI passes"
       ],
-      "priority": 1,
-      "passes": false,
-      "notes": ""
+      "priority": 1
     },
     {
       "id": "US-011",
       "title": "Upstream MCP client",
       "description": "As the crypto proxy, I need to connect to the hosted MCP server as an MCP client so I can forward tool calls and receive responses.",
       "dependsOn": [],
-      "passes": true,
-      "notes": "Merged via PR #155 (34cacc6b). 17 unit tests. UpstreamClient with StreamableHTTPClientTransport.",
+      "passes": false,
+      "notes": "",
       "acceptanceCriteria": [
         "New file mcp/src/proxy/upstream-client.ts exports UpstreamClient class",
         "Constructor takes targetUrl: string and optional authHeaders: Record<string, string>",
@@ -49,15 +47,15 @@
         "Production build succeeds",
         "CI passes"
       ],
-      "priority": 1,
-      "passes": false,
-      "notes": ""
+      "priority": 1
     },
     {
       "id": "US-012",
       "title": "Crypto interceptor",
       "description": "As the crypto proxy, I need to intercept crypto-relevant tool calls, encrypt data before forwarding to the hosted MCP, and decrypt responses before returning to Claude Code.",
-      "dependsOn": ["US-010"],
+      "dependsOn": [
+        "US-010"
+      ],
       "acceptanceCriteria": [
         "New file mcp/src/proxy/crypto-interceptor.ts exports CryptoInterceptor class and isCryptoTool(name: string): boolean",
         "isCryptoTool returns true for: pqdb_insert_rows, pqdb_query_rows, pqdb_update_rows, pqdb_delete_rows, pqdb_create_project, pqdb_select_project, pqdb_natural_language_query",
@@ -65,7 +63,7 @@
         "transformResponse(toolName, result, metadata) decrypts/transforms responses: query (transformSelectResponse), select_project (decapsulate + store shared secret), natural_language_query (decrypt _encrypted columns)",
         "Fetches table schema from backend /v1/db/introspect for column sensitivity info",
         "Fetches HMAC key from backend /v1/db/hmac-key for blind index computation",
-        "Reuses ALL crypto functions from @pqdb/client — no duplication",
+        "Reuses ALL crypto functions from @pqdb/client \u2014 no duplication",
         "create_project: fetches developer public key via GET /v1/auth/me/public-key, calls encapsulate(), stores shared secret",
         "select_project: calls decapsulate() with private key, stores shared secret for subsequent CRUD",
         "Non-crypto tools return args/results unchanged",
@@ -83,12 +81,15 @@
       "id": "US-013",
       "title": "Proxy server assembly",
       "description": "As the crypto proxy, I need to combine the upstream client and crypto interceptor into a functioning MCP server that dynamically registers all tools from the hosted MCP.",
-      "dependsOn": ["US-011", "US-012"],
+      "dependsOn": [
+        "US-011",
+        "US-012"
+      ],
       "acceptanceCriteria": [
         "New file mcp/src/proxy/proxy-server.ts exports createCryptoProxyServer(config: ProxyConfig)",
         "On startup: connects to upstream, calls listTools(), registers each tool on the local McpServer",
-        "For crypto tools: handler calls interceptor.transformRequest → upstream.callTool → interceptor.transformResponse",
-        "For non-crypto tools: handler calls upstream.callTool directly → returns result as-is",
+        "For crypto tools: handler calls interceptor.transformRequest \u2192 upstream.callTool \u2192 interceptor.transformResponse",
+        "For non-crypto tools: handler calls upstream.callTool directly \u2192 returns result as-is",
         "New tools added to the hosted MCP are automatically available through the proxy without code changes",
         "New file mcp/src/proxy/index.ts with barrel exports",
         "Integration test at mcp/tests/unit/proxy-server.test.ts using a real hosted MCP instance connected via in-process transport",
@@ -106,15 +107,18 @@
       "id": "US-014",
       "title": "CLI integration and developer experience",
       "description": "As a developer, I want to start the crypto proxy with a simple CLI command that auto-discovers my recovery file and connects to a hosted MCP server.",
-      "dependsOn": ["US-010", "US-013"],
+      "dependsOn": [
+        "US-010",
+        "US-013"
+      ],
       "acceptanceCriteria": [
         "mcp/src/cli.ts updated: --mode proxy flag routes to proxy startup",
         "mcp/src/config.ts updated: parses --mode, --target, --recovery-file args",
         "node mcp/dist/cli.js --mode proxy --target http://localhost:3002/mcp starts the proxy on stdio",
         "Recovery file auto-discovered (or overridden with --recovery-file)",
-        "--mode full (or no --mode) retains existing behavior exactly — zero regression",
+        "--mode full (or no --mode) retains existing behavior exactly \u2014 zero regression",
         "When recovery file not found: clear error with instructions listing all locations checked",
-        "Startup log: [pqdb-proxy] Crypto proxy → <target-url> (key from <recovery-file-path>)",
+        "Startup log: [pqdb-proxy] Crypto proxy \u2192 <target-url> (key from <recovery-file-path>)",
         "Unit tests for CLI arg parsing",
         "Unit tests pass",
         "Typecheck passes",
@@ -124,6 +128,56 @@
       "priority": 4,
       "passes": true,
       "notes": "Merged via PR #158 (1adf7369). 12 config unit tests. --mode proxy --target --recovery-file. Auto-discover recovery file. Zero regression on --mode full."
+    },
+    {
+      "id": "US-015",
+      "title": "Proxy OAuth login handler",
+      "description": "As a developer starting the crypto proxy, I want the proxy to open my browser to the pqdb login page so I can authenticate, and the proxy captures my JWT automatically.",
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "New file mcp/src/proxy/proxy-auth.ts exports proxyLogin(dashboardUrl: string): Promise<ProxyAuthResult>",
+        "ProxyAuthResult contains { devJwt: string, refreshToken?: string, encryptionKey?: string }",
+        "On call: starts an Express HTTP server on a random available port",
+        "Opens the developer browser to {dashboardUrl}/login?mcp_callback=http://localhost:{port}/mcp-auth-complete&request_id={uuid}",
+        "Handles POST /mcp-auth-complete with body { request_id, token, refresh_token?, encryption_key? }",
+        "Validates request_id matches the one sent in the login URL, rejects mismatch with 400",
+        "Returns the JWT after successful callback, shuts down the Express server",
+        "Times out after 120 seconds with clear error: Login timed out",
+        "Uses child_process.execFile (not exec) to open browser safely",
+        "Unit tests at mcp/tests/unit/proxy-auth.test.ts",
+        "Unit tests pass",
+        "Typecheck passes",
+        "Production build succeeds",
+        "CI passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Merged via PR #159 (0ea38062). 7 unit tests. proxyLogin() with Express callback server + browser open."
+    },
+    {
+      "id": "US-016",
+      "title": "Wire OAuth into proxy startup + end-to-end test",
+      "description": "As a developer, I want the proxy to automatically authenticate before connecting to the hosted MCP, so the full flow works without manual token management.",
+      "dependsOn": [
+        "US-015"
+      ],
+      "acceptanceCriteria": [
+        "mcp/src/cli.ts proxy mode updated: calls proxyLogin(dashboardUrl) before createCryptoProxyServer()",
+        "dashboardUrl comes from PQDB_DASHBOARD_URL env var",
+        "ProxyConfig.authToken populated with the JWT from proxyLogin()",
+        "The proxy connects to the hosted MCP with the JWT as Bearer auth",
+        "The proxy starts stdio transport to Claude Code after successful auth",
+        "If login times out, the proxy exits with a clear error",
+        "Console log: [pqdb-proxy] Crypto proxy connected to {target}",
+        "Integration test: start hosted MCP, start proxy, verify proxy connects and can list tools",
+        "Unit tests pass",
+        "Typecheck passes",
+        "Production build succeeds",
+        "CI passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Merged via PR #160 (c5e53673). 8 unit tests. startProxy() wires OAuth \u2192 crypto proxy \u2192 stdio. PROXY OAUTH COMPLETE."
     }
   ]
 }
