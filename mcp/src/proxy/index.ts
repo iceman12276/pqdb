@@ -10,3 +10,5 @@ export type { CryptoInterceptorConfig } from "./crypto-interceptor.js";
 export { UpstreamClient } from "./upstream-client.js";
 export type { ToolInfo, CallToolResult } from "./upstream-client.js";
 export { discoverRecoveryFile, loadPrivateKeyFromRecovery } from "./recovery.js";
+export { proxyLogin } from "./proxy-auth.js";
+export type { ProxyAuthResult, ProxyLoginOptions } from "./proxy-auth.js";
