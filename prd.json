@@ -8,6 +8,8 @@
       "title": "Recovery file discovery and private key loading",
       "description": "As a developer setting up the crypto proxy, I want the proxy to automatically find my recovery file so I don't have to manually extract and paste a base64 private key.",
       "dependsOn": [],
+      "passes": true,
+      "notes": "Merged via PR #154 (a0390bf1). 14 unit tests. Auto-discover ~/.pqdb/recovery.json or ~/Downloads/pqdb-recovery-*.json.",
       "acceptanceCriteria": [
         "New file mcp/src/proxy/recovery.ts exports discoverRecoveryFile(explicitPath?: string): string and loadPrivateKeyFromRecovery(path: string): Uint8Array",
         "Discovery order: --recovery-file <path> flag > ~/.pqdb/recovery.json > most recent ~/Downloads/pqdb-recovery-*.json (by mtime)",
@@ -31,6 +33,8 @@
       "title": "Upstream MCP client",
       "description": "As the crypto proxy, I need to connect to the hosted MCP server as an MCP client so I can forward tool calls and receive responses.",
       "dependsOn": [],
+      "passes": true,
+      "notes": "Merged via PR #155 (34cacc6b). 17 unit tests. UpstreamClient with StreamableHTTPClientTransport.",
       "acceptanceCriteria": [
         "New file mcp/src/proxy/upstream-client.ts exports UpstreamClient class",
         "Constructor takes targetUrl: string and optional authHeaders: Record<string, string>",
