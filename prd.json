@@ -122,8 +122,8 @@
         "CI passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Merged via PR #158 (1adf7369). 12 config unit tests. --mode proxy --target --recovery-file. Auto-discover recovery file. Zero regression on --mode full."
     }
   ]
 }
