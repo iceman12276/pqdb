@@ -99,8 +99,8 @@
         "CI passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Merged via PR #157 (23235149). 10 integration tests. Dynamic tool registration + crypto/non-crypto routing."
     },
     {
       "id": "US-014",
