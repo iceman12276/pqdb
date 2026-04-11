@@ -41,7 +41,7 @@ async function main(): Promise<void> {
       targetUrl: config.target!,
       privateKey,
       backendUrl: config.projectUrl,
-      authToken: "", // populated after OAuth in a future phase
+      authToken: config.devToken ?? process.env.PQDB_DEV_TOKEN ?? "",
     };
 
     const { mcpServer, upstream } = await createCryptoProxyServer(proxyConfig);

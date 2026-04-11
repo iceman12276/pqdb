@@ -36,7 +36,10 @@ export async function createCryptoProxyServer(config: ProxyConfig): Promise<{
   upstream: UpstreamClient;
 }> {
   // 1. Connect to the hosted MCP server
-  const upstream = new UpstreamClient(config.targetUrl);
+  const authHeaders = config.authToken
+    ? { Authorization: `Bearer ${config.authToken}` }
+    : undefined;
+  const upstream = new UpstreamClient(config.targetUrl, authHeaders);
   await upstream.connect();
 
   // 2. Discover all available tools
