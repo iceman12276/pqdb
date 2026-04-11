@@ -24,34 +24,56 @@ import {
   discoverRecoveryFile,
   loadPrivateKeyFromRecovery,
   createCryptoProxyServer,
+  proxyLogin,
 } from "./proxy/index.js";
 import type { ProxyConfig } from "./proxy/index.js";
+import type { ServerConfig } from "./config.js";
+
+/**
+ * Start the crypto proxy: authenticate via OAuth, then connect to the
+ * upstream hosted MCP and expose tools over stdio.
+ *
+ * Exported for testability (US-016).
+ */
+export async function startProxy(config: ServerConfig): Promise<void> {
+  const dashboardUrl = process.env.PQDB_DASHBOARD_URL;
+  if (!dashboardUrl) {
+    throw new Error(
+      "PQDB_DASHBOARD_URL is required for proxy mode. " +
+        "Set it to the dashboard URL (e.g., https://localhost:8443).",
+    );
+  }
+
+  const recoveryPath = discoverRecoveryFile(config.recoveryFile);
+  const privateKey = loadPrivateKeyFromRecovery(recoveryPath);
+
+  // Authenticate via OAuth before connecting to upstream
+  const authResult = await proxyLogin(dashboardUrl);
+  console.error("[pqdb-proxy] Authenticated successfully");
+
+  const proxyConfig: ProxyConfig = {
+    targetUrl: config.target!,
+    privateKey,
+    backendUrl: config.projectUrl,
+    authToken: authResult.devJwt,
+  };
+
+  const { mcpServer } = await createCryptoProxyServer(proxyConfig);
+
+  const transport = new StdioServerTransport();
+  await mcpServer.connect(transport);
+
+  console.error(
+    `[pqdb-proxy] Crypto proxy connected to ${config.target} (key from ${recoveryPath})`,
+  );
+}
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const config = buildConfig(args);
 
   if (config.mode === "proxy") {
-    // Crypto proxy mode: discover recovery file, load private key,
-    // connect to hosted MCP server, and expose via stdio.
-    const recoveryPath = discoverRecoveryFile(config.recoveryFile);
-    const privateKey = loadPrivateKeyFromRecovery(recoveryPath);
-
-    const proxyConfig: ProxyConfig = {
-      targetUrl: config.target!,
-      privateKey,
-      backendUrl: config.projectUrl,
-      authToken: config.devToken ?? process.env.PQDB_DEV_TOKEN ?? "",
-    };
-
-    const { mcpServer, upstream } = await createCryptoProxyServer(proxyConfig);
-
-    const transport = new StdioServerTransport();
-    await mcpServer.connect(transport);
-
-    console.error(
-      `[pqdb-proxy] Crypto proxy → ${config.target} (key from ${recoveryPath})`,
-    );
+    await startProxy(config);
     return;
   }
 
@@ -120,7 +142,15 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error("[pqdb-mcp] Fatal error:", err);
-  process.exit(1);
-});
+/* istanbul ignore next -- entry-point guard */
+const isEntryPoint =
+  typeof process !== "undefined" &&
+  process.argv[1] &&
+  (process.argv[1].endsWith("/cli.js") || process.argv[1].endsWith("/cli.ts"));
+
+if (isEntryPoint) {
+  main().catch((err) => {
+    console.error("[pqdb-mcp] Fatal error:", err);
+    process.exit(1);
+  });
+}
