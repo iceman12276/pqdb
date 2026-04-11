@@ -8,6 +8,9 @@ describe("parseArgs", () => {
       projectUrl: undefined,
       transport: "stdio",
       port: 3001,
+      mode: "full",
+      target: undefined,
+      recoveryFile: undefined,
     });
   });
 
@@ -59,12 +62,81 @@ describe("parseArgs", () => {
       projectUrl: "http://api.example.com",
       transport: "sse",
       port: 5000,
+      mode: "full",
+      target: undefined,
+      recoveryFile: undefined,
     });
   });
 
   it("parses https:// project URL", () => {
     const result = parseArgs(["--project-url", "https://localhost"]);
     expect(result.projectUrl).toBe("https://localhost");
+  });
+
+  // ── --mode flag (US-014) ────────────────────────────────────────────
+
+  it("defaults mode to 'full' when --mode is not specified", () => {
+    const result = parseArgs([]);
+    expect(result.mode).toBe("full");
+  });
+
+  it("parses --mode full", () => {
+    const result = parseArgs(["--mode", "full"]);
+    expect(result.mode).toBe("full");
+  });
+
+  it("parses --mode proxy", () => {
+    const result = parseArgs(["--mode", "proxy"]);
+    expect(result.mode).toBe("proxy");
+  });
+
+  it("throws on invalid mode", () => {
+    expect(() => parseArgs(["--mode", "invalid"])).toThrow(
+      'Invalid mode: invalid. Must be "full" or "proxy".',
+    );
+  });
+
+  // ── --target flag (US-014) ──────────────────────────────────────────
+
+  it("parses --target URL", () => {
+    const result = parseArgs(["--target", "http://localhost:3002/mcp"]);
+    expect(result.target).toBe("http://localhost:3002/mcp");
+  });
+
+  it("target is undefined when not specified", () => {
+    const result = parseArgs([]);
+    expect(result.target).toBeUndefined();
+  });
+
+  // ── --recovery-file flag (US-014) ───────────────────────────────────
+
+  it("parses --recovery-file path", () => {
+    const result = parseArgs(["--recovery-file", "/path/to/recovery.json"]);
+    expect(result.recoveryFile).toBe("/path/to/recovery.json");
+  });
+
+  it("recoveryFile is undefined when not specified", () => {
+    const result = parseArgs([]);
+    expect(result.recoveryFile).toBeUndefined();
+  });
+
+  // ── combined proxy args (US-014) ────────────────────────────────────
+
+  it("parses all proxy args together", () => {
+    const result = parseArgs([
+      "--mode", "proxy",
+      "--target", "http://hosted:3002/mcp",
+      "--recovery-file", "/tmp/recovery.json",
+      "--project-url", "http://localhost:8000",
+    ]);
+    expect(result).toEqual({
+      projectUrl: "http://localhost:8000",
+      transport: "stdio",
+      port: 3001,
+      mode: "proxy",
+      target: "http://hosted:3002/mcp",
+      recoveryFile: "/tmp/recovery.json",
+    });
   });
 });
 
@@ -155,6 +227,9 @@ describe("buildConfig", () => {
       devToken: undefined,
       projectId: undefined,
       privateKey: undefined,
+      mode: "full",
+      target: undefined,
+      recoveryFile: undefined,
     });
   });
 
@@ -216,6 +291,64 @@ describe("buildConfig", () => {
       port: 3001,
     });
     expect(config.projectUrl).toBe("https://localhost");
+  });
+
+  // ── proxy mode (US-014) ───────────────────────────────────────────────
+
+  it("throws when mode=proxy but --target is missing", () => {
+    delete process.env.PQDB_API_KEY;
+    expect(() =>
+      buildConfig({
+        projectUrl: "http://localhost:8000",
+        transport: "stdio",
+        port: 3001,
+        mode: "proxy",
+        target: undefined,
+        recoveryFile: undefined,
+      }),
+    ).toThrow("--target is required when --mode proxy");
+  });
+
+  it("does not require PQDB_API_KEY in proxy mode", () => {
+    delete process.env.PQDB_API_KEY;
+    const config = buildConfig({
+      projectUrl: "http://localhost:8000",
+      transport: "stdio",
+      port: 3001,
+      mode: "proxy",
+      target: "http://localhost:3002/mcp",
+      recoveryFile: undefined,
+    });
+    expect(config.mode).toBe("proxy");
+    expect(config.target).toBe("http://localhost:3002/mcp");
+  });
+
+  it("mode defaults to 'full' and retains existing behavior", () => {
+    process.env.PQDB_API_KEY = "pqdb_anon_testkey123";
+    const config = buildConfig({
+      projectUrl: "http://localhost:8000",
+      transport: "stdio",
+      port: 3001,
+      mode: "full",
+      target: undefined,
+      recoveryFile: undefined,
+    });
+    expect(config.mode).toBe("full");
+    expect(config.target).toBeUndefined();
+    expect(config.recoveryFile).toBeUndefined();
+  });
+
+  it("passes recoveryFile through in proxy mode", () => {
+    delete process.env.PQDB_API_KEY;
+    const config = buildConfig({
+      projectUrl: "http://localhost:8000",
+      transport: "stdio",
+      port: 3001,
+      mode: "proxy",
+      target: "http://localhost:3002/mcp",
+      recoveryFile: "/custom/path.json",
+    });
+    expect(config.recoveryFile).toBe("/custom/path.json");
   });
 
   // ── PQDB_PRIVATE_KEY (US-008) ─────────────────────────────────────────
