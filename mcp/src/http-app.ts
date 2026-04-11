@@ -262,6 +262,9 @@ export function createMcpHttpApp(options: HttpAppOptions): Express {
           devToken: devJwt,
           projectId,
           privateKey: undefined,
+          mode: "full",
+          target: undefined,
+          recoveryFile: undefined,
         };
 
         const { mcpServer } = createPqdbMcpServer(config);

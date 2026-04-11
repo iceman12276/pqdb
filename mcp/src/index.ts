@@ -7,7 +7,7 @@
 export { createPqdbMcpServer, SERVER_NAME, SERVER_VERSION } from "./server.js";
 export type { PqdbMcpServer } from "./server.js";
 export { parseArgs, buildConfig } from "./config.js";
-export type { ServerConfig, Transport, ParsedArgs } from "./config.js";
+export type { ServerConfig, Transport, Mode, ParsedArgs } from "./config.js";
 export { registerSchemaTools } from "./schema-tools.js";
 export { registerCrudTools } from "./crud-tools.js";
 export { registerAuthTools } from "./auth-tools.js";

@@ -4,6 +4,8 @@
 
 export type Transport = "stdio" | "sse" | "http";
 
+export type Mode = "full" | "proxy";
+
 /** Expected length (bytes) of an ML-KEM-768 private (secret) key (FIPS 203). */
 export const ML_KEM_768_SECRET_KEY_BYTES = 2400;
 
@@ -29,22 +31,35 @@ export interface ServerConfig {
    * key and unwraps them on project selection.
    */
   privateKey: Uint8Array | undefined;
+  /** Operating mode: "full" runs the complete MCP server, "proxy" runs the crypto proxy. */
+  mode: Mode;
+  /** URL of the hosted MCP server to proxy (required when mode=proxy). */
+  target: string | undefined;
+  /** Optional explicit path to the recovery file (overrides auto-discovery). */
+  recoveryFile: string | undefined;
 }
 
 export interface ParsedArgs {
   projectUrl: string | undefined;
   transport: Transport;
   port: number;
+  mode: Mode;
+  target: string | undefined;
+  recoveryFile: string | undefined;
 }
 
 /**
  * Parse CLI arguments from argv.
  * Supports: --project-url <url> --transport <stdio|sse> --port <number>
+ *           --mode <full|proxy> --target <url> --recovery-file <path>
  */
 export function parseArgs(argv: string[]): ParsedArgs {
   let projectUrl: string | undefined;
   let transport: Transport = "stdio";
   let port = 3001;
+  let mode: Mode = "full";
+  let target: string | undefined;
+  let recoveryFile: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -61,10 +76,20 @@ export function parseArgs(argv: string[]): ParsedArgs {
       if (isNaN(port) || port < 1 || port > 65535) {
         throw new Error(`Invalid port: ${argv[i]}. Must be 1-65535.`);
       }
+    } else if (arg === "--mode" && i + 1 < argv.length) {
+      const val = argv[++i];
+      if (val !== "full" && val !== "proxy") {
+        throw new Error(`Invalid mode: ${val}. Must be "full" or "proxy".`);
+      }
+      mode = val;
+    } else if (arg === "--target" && i + 1 < argv.length) {
+      target = argv[++i];
+    } else if (arg === "--recovery-file" && i + 1 < argv.length) {
+      recoveryFile = argv[++i];
     }
   }
 
-  return { projectUrl, transport, port };
+  return { projectUrl, transport, port, mode, target, recoveryFile };
 }
 
 /**
@@ -132,9 +157,21 @@ export function parsePrivateKey(raw: string): Uint8Array {
  * Build a complete ServerConfig from CLI args + environment variables.
  */
 export function buildConfig(args: ParsedArgs): ServerConfig {
+  const mode = args.mode ?? "full";
+
+  // Proxy mode: validate --target, skip API key requirement
+  if (mode === "proxy") {
+    if (!args.target) {
+      throw new Error(
+        "--target is required when --mode proxy. " +
+          "Example: --mode proxy --target http://localhost:3002/mcp",
+      );
+    }
+  }
+
   const apiKey = process.env.PQDB_API_KEY ?? "";
-  // API key is required for stdio/sse (pre-configured), optional for http (OAuth provides auth)
-  if (!apiKey && args.transport !== "http") {
+  // API key is required for stdio/sse in full mode, optional for http and proxy mode
+  if (!apiKey && args.transport !== "http" && mode !== "proxy") {
     throw new Error("PQDB_API_KEY environment variable is required.");
   }
 
@@ -160,5 +197,8 @@ export function buildConfig(args: ParsedArgs): ServerConfig {
     devToken: process.env.PQDB_DEV_TOKEN || undefined,
     projectId: undefined,
     privateKey,
+    mode,
+    target: args.target,
+    recoveryFile: args.recoveryFile,
   };
 }

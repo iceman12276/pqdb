@@ -10,6 +10,9 @@
  *
  *   # HTTP with OAuth (no API key needed — browser login):
  *   pqdb-mcp --project-url http://localhost:8000 --transport http --port 3002
+ *
+ *   # Crypto proxy (connects to a hosted MCP server):
+ *   pqdb-mcp --mode proxy --target http://localhost:3002/mcp --project-url http://localhost:8000
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -17,10 +20,40 @@ import express from "express";
 import { parseArgs, buildConfig } from "./config.js";
 import { createPqdbMcpServer } from "./server.js";
 import { createMcpHttpApp } from "./http-app.js";
+import {
+  discoverRecoveryFile,
+  loadPrivateKeyFromRecovery,
+  createCryptoProxyServer,
+} from "./proxy/index.js";
+import type { ProxyConfig } from "./proxy/index.js";
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const config = buildConfig(args);
+
+  if (config.mode === "proxy") {
+    // Crypto proxy mode: discover recovery file, load private key,
+    // connect to hosted MCP server, and expose via stdio.
+    const recoveryPath = discoverRecoveryFile(config.recoveryFile);
+    const privateKey = loadPrivateKeyFromRecovery(recoveryPath);
+
+    const proxyConfig: ProxyConfig = {
+      targetUrl: config.target!,
+      privateKey,
+      backendUrl: config.projectUrl,
+      authToken: "", // populated after OAuth in a future phase
+    };
+
+    const { mcpServer, upstream } = await createCryptoProxyServer(proxyConfig);
+
+    const transport = new StdioServerTransport();
+    await mcpServer.connect(transport);
+
+    console.error(
+      `[pqdb-proxy] Crypto proxy → ${config.target} (key from ${recoveryPath})`,
+    );
+    return;
+  }
 
   if (config.transport === "stdio") {
     const { mcpServer } = createPqdbMcpServer(config);
