@@ -190,6 +190,16 @@ jobs:
       - name: Install workspace dependencies
         run: npm ci
 
+      # The MCP workspace imports `@pqdb/client` from the sibling `sdk/`
+      # workspace. The types live in `sdk/dist/` (built by tsup) and the
+      # workspace symlink resolves there — NOT to `sdk/src/`. Without
+      # this step, `tsc --noEmit` fails with TS2307 "Cannot find module
+      # '@pqdb/client'" because the dist directory is empty on a fresh
+      # CI checkout. Locally this step is implicit because devs run
+      # `npm run build -w sdk` as part of normal work.
+      - name: Build SDK (needed for MCP typecheck to resolve @pqdb/client)
+        run: npm run build -w sdk
+
       - name: Type check
         run: npm run typecheck -w mcp
 
