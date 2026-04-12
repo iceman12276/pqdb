@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createPqdbMcpServer } from "../../src/server.js";
 import type { ServerConfig } from "../../src/config.js";
+import { setAuthState } from "../../src/auth-state.js";
 
 // Mock @pqdb/client
 vi.mock("@pqdb/client", () => ({
@@ -66,7 +67,7 @@ describe("pqdb_execute_sql tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient();
   });
 
@@ -150,7 +151,7 @@ describe("pqdb_list_extensions tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient();
   });
 
@@ -207,8 +208,19 @@ describe("pqdb_list_migrations tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient({ devToken: "dev-jwt-token-123" });
+    // pqdb_list_migrations hits the backend via `apikeyGet` with an
+    // empty apiKey string, which then reads the developer JWT and
+    // project ID from auth-state to build headers. Tests have to
+    // populate auth-state explicitly — `createPqdbMcpServer` does
+    // not (in production, `http-app.ts` sets auth-state on the
+    // initialize request).
+    setAuthState({
+      devToken: "dev-jwt-token-123",
+      projectId: "proj-test-123",
+      projectUrl: "http://localhost:8000",
+    });
   });
 
   it("is registered and listed", async () => {
@@ -217,7 +229,7 @@ describe("pqdb_list_migrations tool", () => {
     expect(names).toContain("pqdb_list_migrations");
   });
 
-  it("calls GET /v1/db/migrations with Authorization header", async () => {
+  it("calls GET /v1/projects/migrations with Bearer + x-project-id headers", async () => {
     const migrations = [
       { revision: "abc123", description: "create users table", applied_at: "2026-01-01" },
       { revision: "def456", description: "add posts table", applied_at: "2026-01-02" },
@@ -230,10 +242,13 @@ describe("pqdb_list_migrations tool", () => {
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:8000/v1/db/migrations",
+      "http://localhost:8000/v1/projects/migrations",
       {
         method: "GET",
-        headers: { Authorization: "Bearer dev-jwt-token-123" },
+        headers: {
+          Authorization: "Bearer dev-jwt-token-123",
+          "x-project-id": "proj-test-123",
+        },
       },
     );
 
@@ -244,7 +259,7 @@ describe("pqdb_list_migrations tool", () => {
   });
 
   it("returns error when devToken is not set", async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     const clientNoToken = await createTestClient({ devToken: undefined });
 
     const result = await clientNoToken.callTool({
