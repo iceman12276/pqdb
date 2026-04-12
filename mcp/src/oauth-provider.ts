@@ -283,10 +283,48 @@ export class PqdbOAuthProvider implements OAuthServerProvider {
    * Verifies an access token (the developer JWT) and returns AuthInfo.
    */
   async verifyAccessToken(token: string): Promise<AuthInfo> {
-    const session = this.sessions.get(token);
-    if (!session || session.expiresAt < Date.now()) {
+    let session = this.sessions.get(token);
+
+    // Fast path: session was issued by this MCP's own OAuth flow.
+    if (session && session.expiresAt >= Date.now()) {
+      return {
+        token,
+        clientId: session.clientId,
+        scopes: session.scopes,
+        expiresAt: Math.floor(session.expiresAt / 1000),
+      };
+    }
+
+    // Proxy fallback: the crypto proxy hands us a dashboard-issued dev JWT
+    // that never went through our /authorize → /token dance, so it isn't in
+    // `sessions`. Validate it directly against the backend and auto-register
+    // a session so future calls hit the fast path above.
+    //
+    // Security: any valid dashboard JWT grants the same access to the backend
+    // REST API directly, so accepting it here doesn't widen the attack surface.
+    // The hosted MCP never holds decryption keys — the ML-KEM private key
+    // lives only on the developer's machine inside the proxy.
+    try {
+      const res = await fetch(`${this.projectUrl}/v1/projects`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        throw new Error("Invalid or expired token");
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message === "Invalid or expired token") {
+        throw err;
+      }
       throw new Error("Invalid or expired token");
     }
+
+    session = {
+      clientId: "proxy-dev-jwt",
+      scopes: [],
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+      encryptionKey: undefined,
+    };
+    this.sessions.set(token, session);
 
     return {
       token,

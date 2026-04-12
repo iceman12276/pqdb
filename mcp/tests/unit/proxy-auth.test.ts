@@ -60,6 +60,39 @@ function postJson(url: string, body: Record<string, unknown>): Promise<{ statusC
 }
 
 /**
+ * Helper: send an OPTIONS preflight request.
+ */
+function optionsRequest(
+  url: string,
+  origin: string,
+): Promise<{ statusCode: number; headers: http.IncomingHttpHeaders }> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const req = http.request(
+      {
+        hostname: parsed.hostname,
+        port: parsed.port,
+        path: parsed.pathname,
+        method: "OPTIONS",
+        headers: {
+          Origin: origin,
+          "Access-Control-Request-Method": "POST",
+          "Access-Control-Request-Headers": "Content-Type",
+        },
+      },
+      (res) => {
+        res.on("data", () => {});
+        res.on("end", () => {
+          resolve({ statusCode: res.statusCode ?? 0, headers: res.headers });
+        });
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/**
  * Extract the port from the login URL that was passed to execFile.
  */
 function extractPortFromExecFile(): number {
@@ -244,6 +277,58 @@ describe("proxyLogin", () => {
     await postJson(`http://localhost:${port}/mcp-auth-complete`, {
       request_id: requestId,
       token: "cleanup",
+    });
+    await loginPromise;
+  });
+
+  it("returns redirect_url pointing to the dashboard on successful callback", async () => {
+    const dashboardUrl = "https://localhost:8443";
+    const loginPromise = proxyLogin(dashboardUrl);
+
+    await vi.waitFor(() => {
+      expect(mockedExecFile).toHaveBeenCalledOnce();
+    });
+
+    const port = extractPortFromExecFile();
+    const requestId = extractRequestIdFromExecFile();
+
+    const response = await postJson(`http://localhost:${port}/mcp-auth-complete`, {
+      request_id: requestId,
+      token: "jwt-token",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    expect(body.redirect_url).toBe("https://localhost:8443/projects");
+
+    await loginPromise;
+  });
+
+  it("sets CORS headers so the dashboard can POST cross-origin", async () => {
+    const dashboardUrl = "https://localhost:8443";
+    const loginPromise = proxyLogin(dashboardUrl);
+
+    await vi.waitFor(() => {
+      expect(mockedExecFile).toHaveBeenCalledOnce();
+    });
+
+    const port = extractPortFromExecFile();
+    const requestId = extractRequestIdFromExecFile();
+
+    // Preflight OPTIONS should succeed with CORS headers
+    const preflight = await optionsRequest(
+      `http://localhost:${port}/mcp-auth-complete`,
+      dashboardUrl,
+    );
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers["access-control-allow-origin"]).toBe(dashboardUrl);
+    expect(preflight.headers["access-control-allow-methods"]).toMatch(/POST/);
+    expect(preflight.headers["access-control-allow-headers"]).toMatch(/Content-Type/i);
+
+    // Clean up — actual POST so the promise resolves
+    await postJson(`http://localhost:${port}/mcp-auth-complete`, {
+      request_id: requestId,
+      token: "jwt-token",
     });
     await loginPromise;
   });
