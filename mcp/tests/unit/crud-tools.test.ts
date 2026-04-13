@@ -80,7 +80,7 @@ describe("pqdb_query_rows tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient();
   });
 
@@ -192,7 +192,12 @@ describe("pqdb_query_rows tool", () => {
     );
   });
 
-  it("replaces encrypted values with [encrypted] when no encryption key", async () => {
+  it("forwards raw ciphertext unchanged when no encryption key (transparent forwarder)", async () => {
+    // PR #161 removed the [encrypted] masking from the query response.
+    // The hosted MCP is now a transparent forwarder when it holds no
+    // private key — it returns shadow columns (_encrypted, _index) as
+    // raw bytes so a downstream crypto proxy can decrypt them. Without
+    // this behavior the proxy couldn't receive the ciphertext to decrypt.
     mockFetchOk({
       data: [
         {
@@ -211,7 +216,8 @@ describe("pqdb_query_rows tool", () => {
 
     const text = (result.content[0] as { type: string; text: string }).text;
     const parsed = JSON.parse(text);
-    expect(parsed.data[0].email_encrypted).toBe("[encrypted]");
+    expect(parsed.data[0].email_encrypted).toBe("base64ciphertext==");
+    expect(parsed.data[0].email_index).toBe("hmac_hash");
     expect(parsed.data[0].name).toBe("Alice");
   });
 });
@@ -222,7 +228,7 @@ describe("pqdb_insert_rows tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient();
   });
 
@@ -262,10 +268,10 @@ describe("pqdb_insert_rows tool", () => {
   });
 
   it("returns { data, error: null } on success", async () => {
+    // PR #161: when no encryption key is available the handler skips
+    // the schema introspection step and forwards the insert directly.
+    // Only one fetch is made.
     const inserted = [{ id: "1", name: "Alice" }];
-    mockFetchOk({
-      tables: [{ name: "users", columns: [{ name: "name", type: "text", sensitivity: "plain" }] }],
-    });
     mockFetchOk({ data: inserted });
 
     const result = await client.callTool({
@@ -294,30 +300,30 @@ describe("pqdb_insert_rows tool", () => {
     expect(parsed.error).toContain("at least one row");
   });
 
-  it("errors when rows contain _encrypted columns without encryption key", async () => {
-    // Introspect returns a table with a searchable (encrypted) column
-    mockFetchOk({
-      tables: [{
-        name: "users",
-        columns: [
-          { name: "name", type: "text", sensitivity: "plain" },
-          { name: "email", type: "text", sensitivity: "searchable" },
-        ],
-      }],
-    });
+  it("forwards rows targeting sensitive columns without encryption (transparent forwarder)", async () => {
+    // PR #161 removed the "reject rows that target encrypted columns
+    // when no key is available" gate. The hosted MCP is now a
+    // transparent forwarder when it holds no crypto key — the caller
+    // is trusted to have pre-encrypted anything sensitive. If the
+    // caller forwards plaintext, the backend will store it as-is
+    // (matching the PostgREST / Supabase "the server stores what it's
+    // given" model). The test asserts only that the forward happens.
+    const inserted = [{ id: "1", email: "precooked_ciphertext", name: "Alice" }];
+    mockFetchOk({ data: inserted });
 
     const result = await client.callTool({
       name: "pqdb_insert_rows",
       arguments: {
         table: "users",
-        rows: [{ email: "some_value", name: "Alice" }],
+        rows: [{ email: "precooked_ciphertext", name: "Alice" }],
       },
     });
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeFalsy();
     const text = (result.content[0] as { type: string; text: string }).text;
     const parsed = JSON.parse(text);
-    expect(parsed.error).toContain("encryption");
+    expect(parsed.data).toEqual(inserted);
+    expect(parsed.error).toBeNull();
   });
 
   it("includes x-branch header when branch parameter is provided", async () => {
@@ -347,7 +353,7 @@ describe("pqdb_update_rows tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient();
   });
 
@@ -393,10 +399,9 @@ describe("pqdb_update_rows tool", () => {
   });
 
   it("returns { data, error: null } on success", async () => {
+    // PR #161: when no encryption key is available the handler skips
+    // schema introspection and forwards the update directly.
     const updated = [{ id: "1", name: "Bob" }];
-    mockFetchOk({
-      tables: [{ name: "users", columns: [{ name: "name", type: "text", sensitivity: "plain" }] }],
-    });
     mockFetchOk({ data: updated });
 
     const result = await client.callTool({
@@ -415,10 +420,6 @@ describe("pqdb_update_rows tool", () => {
   });
 
   it("returns { data: null, error } on API failure", async () => {
-    // introspect succeeds, but the update itself fails
-    mockFetchOk({
-      tables: [{ name: "users", columns: [{ name: "name", type: "text", sensitivity: "plain" }] }],
-    });
     mockFetchError(400, "Must provide values to update");
 
     const result = await client.callTool({
@@ -437,30 +438,26 @@ describe("pqdb_update_rows tool", () => {
     expect(parsed.error).toContain("values to update");
   });
 
-  it("errors when values contain _encrypted columns without encryption key", async () => {
-    mockFetchOk({
-      tables: [{
-        name: "users",
-        columns: [
-          { name: "name", type: "text", sensitivity: "plain" },
-          { name: "email", type: "text", sensitivity: "searchable" },
-        ],
-      }],
-    });
+  it("forwards values targeting sensitive columns without encryption (transparent forwarder)", async () => {
+    // PR #161 removed the rejection gate. Same reasoning as insert_rows
+    // above — the hosted MCP trusts the caller to have pre-encrypted
+    // anything that needs encryption.
+    const updated = [{ id: "1", email: "precooked_ciphertext" }];
+    mockFetchOk({ data: updated });
 
     const result = await client.callTool({
       name: "pqdb_update_rows",
       arguments: {
         table: "users",
-        values: { email: "some_value" },
+        values: { email: "precooked_ciphertext" },
         filters: [{ column: "id", op: "eq", value: "1" }],
       },
     });
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeFalsy();
     const text = (result.content[0] as { type: string; text: string }).text;
     const parsed = JSON.parse(text);
-    expect(parsed.error).toContain("encryption");
+    expect(parsed.data).toEqual(updated);
   });
 
   it("includes x-branch header when branch parameter is provided", async () => {
@@ -494,7 +491,7 @@ describe("pqdb_delete_rows tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient();
   });
 
@@ -615,7 +612,7 @@ describe("US-008 — crud-tools consume the per-project shared secret", () => {
       getCurrentEncryptionKeyString,
     } = await import("../../src/auth-state.js");
 
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     clearCurrentSharedSecret();
 
     // Pretend deriveKeyPair returned something usable; actual bytes don't matter
@@ -687,36 +684,37 @@ describe("US-008 — crud-tools consume the per-project shared secret", () => {
     clearCurrentSharedSecret();
   });
 
-  it("without a shared secret AND without PQDB_ENCRYPTION_KEY, encrypted columns are rejected", async () => {
+  it("without a shared secret AND without PQDB_ENCRYPTION_KEY, forwards rows as transparent forwarder", async () => {
+    // PR #161 replaced the "reject sensitive columns without a key"
+    // behavior with "forward as-is and trust the caller". The hosted
+    // MCP no longer participates in crypto when it holds no key — the
+    // caller (the crypto proxy, or a downstream tool) is responsible
+    // for providing correctly-encrypted data.
     const {
       clearCurrentSharedSecret,
     } = await import("../../src/auth-state.js");
 
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     clearCurrentSharedSecret();
 
     const client = await createTestClient({ encryptionKey: undefined });
 
-    // Introspect returns a table with a searchable column
-    mockFetchOk({
-      tables: [{
-        name: "users",
-        columns: [
-          { name: "email", type: "text", sensitivity: "searchable" },
-        ],
-      }],
-    });
+    // Only the insert call happens — schema introspection is skipped
+    // when no encryption key is available.
+    const inserted = [{ id: "1", email: "precooked_ciphertext" }];
+    mockFetchOk({ data: inserted });
 
     const result = await client.callTool({
       name: "pqdb_insert_rows",
       arguments: {
         table: "users",
-        rows: [{ email: "alice@test.com" }],
+        rows: [{ email: "precooked_ciphertext" }],
       },
     });
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeFalsy();
     const text = (result.content[0] as { type: string; text: string }).text;
-    expect(text).toContain("encryption");
+    const parsed = JSON.parse(text);
+    expect(parsed.data).toEqual(inserted);
   });
 });
