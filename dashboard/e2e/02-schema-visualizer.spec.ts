@@ -11,6 +11,7 @@ import {
   apiCreateProject,
   apiCreateTable,
   injectTokens,
+  injectDummyKeypair,
   mockProjectKeys,
 } from "./helpers";
 
@@ -56,11 +57,14 @@ test.describe("Schema visualizer", () => {
     // Inject auth tokens and mock project keys so schema fetch works
     await page.goto("/login", { waitUntil: "networkidle" });
     await injectTokens(page, accessToken, refreshToken);
+    // Prevent RecoverKeypairModal from intercepting pointer events — this
+    // test doesn't decrypt anything, so dummy keypair bytes are fine.
+    await injectDummyKeypair(page, accessToken);
     await mockProjectKeys(page, projectId, serviceRoleKey);
     await page.goto(`/projects/${projectId}/schema`);
 
-    // Wait for schema to load
-    await expect(page.getByText("Schema")).toBeVisible({ timeout: 15_000 });
+    // Wait for SchemaPage content (not the sidebar "Schema" label).
+    await expect(page.getByTestId("schema-selector")).toBeVisible({ timeout: 15_000 });
 
     // Should show both tables
     await expect(page.getByText("users")).toBeVisible();
@@ -75,10 +79,19 @@ test.describe("Schema visualizer", () => {
   test("ERD tab renders the flow diagram", async ({ page }) => {
     await page.goto("/login", { waitUntil: "networkidle" });
     await injectTokens(page, accessToken, refreshToken);
+    // Prevent RecoverKeypairModal from intercepting pointer events — this
+    // test doesn't decrypt anything, so dummy keypair bytes are fine.
+    await injectDummyKeypair(page, accessToken);
     await mockProjectKeys(page, projectId, serviceRoleKey);
     await page.goto(`/projects/${projectId}/schema`);
 
-    await expect(page.getByText("Schema")).toBeVisible({ timeout: 15_000 });
+    // Wait for SchemaPage to pass its loading state and render the actual
+    // schema. Using `data-testid="schema-selector"` (the schema dropdown
+    // that only mounts inside SchemaPage after tables load) because
+    // `getByText("Schema")` would also match the sidebar nav label
+    // (sidebar-nav.tsx:44), which is always visible and therefore a
+    // false-positive that doesn't actually prove SchemaPage rendered.
+    await expect(page.getByTestId("schema-selector")).toBeVisible({ timeout: 15_000 });
 
     // Switch to ERD tab
     await page.getByRole("tab", { name: "ERD" }).click();
@@ -93,10 +106,15 @@ test.describe("Schema visualizer", () => {
   test("logical vs physical view toggle works", async ({ page }) => {
     await page.goto("/login", { waitUntil: "networkidle" });
     await injectTokens(page, accessToken, refreshToken);
+    // Prevent RecoverKeypairModal from intercepting pointer events — this
+    // test doesn't decrypt anything, so dummy keypair bytes are fine.
+    await injectDummyKeypair(page, accessToken);
     await mockProjectKeys(page, projectId, serviceRoleKey);
     await page.goto(`/projects/${projectId}/schema`);
 
+    // Wait for SchemaPage content (same reasoning as the ERD test above).
     await expect(page.getByText("Schema")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("users").first()).toBeVisible({ timeout: 15_000 });
 
     // Default is logical view — should show "email" column
     await expect(page.getByText("email").first()).toBeVisible();
