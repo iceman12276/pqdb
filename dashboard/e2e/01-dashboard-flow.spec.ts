@@ -32,8 +32,17 @@ test.describe("Dashboard flow", () => {
     expect(page.url()).toContain(`/projects/${projectId}`);
     await expect(page.getByTestId("project-overview")).toBeVisible({ timeout: 15_000 });
 
-    // 5. Verify the project name is displayed
-    await expect(page.getByText(projectName)).toBeVisible();
+    // 5. Verify the project name is displayed. The project name now
+    // appears in TWO elements on this page: the breadcrumb
+    // (`data-testid="breadcrumb-project-name"`) and the h1 heading.
+    // Using a bare `getByText(projectName)` throws a strict-mode
+    // violation ("resolved to 2 elements") whenever both mount by
+    // assertion time, which is a deterministic race on CI. Target
+    // the h1 specifically — it's the canonical "project name on
+    // the overview page" element.
+    await expect(
+      page.getByRole("heading", { level: 1, name: projectName }),
+    ).toBeVisible();
 
     // 6. Verify status cards are rendered
     await expect(page.getByTestId("status-cards")).toBeVisible();
