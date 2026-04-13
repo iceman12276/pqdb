@@ -70,8 +70,24 @@ export async function createProject(page: Page, name: string): Promise<string> {
 }
 
 /**
- * Inject auth tokens into sessionStorage so the app treats us as logged in.
- * Useful when we need to bypass the UI login flow (e.g. after API signup).
+ * Inject auth tokens AND a dummy keypair into the browser context so the
+ * app treats us as fully authenticated. Useful when we need to bypass the
+ * UI login flow (e.g. after API signup).
+ *
+ * Writes the tokens to `sessionStorage` (matching `auth-store.ts`) AND
+ * writes a dummy ML-KEM-768 keypair to IndexedDB (matching
+ * `keypair-store.ts`) so `useKeypair()` resolves to `loaded: true` instead
+ * of `error: "missing"`. Without the keypair injection, the
+ * `RecoverKeypairModal` rendered by `KeypairRecovery` in `__root.tsx`
+ * intercepts all pointer events with its z-50 overlay and turns every
+ * subsequent click into a 60-second timeout.
+ *
+ * The dummy keypair bytes are NOT real ML-KEM keys — they're correctly-
+ * sized random fillers. That's fine for UI tests that exercise schema,
+ * navigation, or other non-crypto flows. Tests that actually decrypt
+ * encrypted rows MUST use {@link apiSignupWithKeypair} (not yet
+ * implemented) to get a real keypair whose public half was uploaded
+ * during signup.
  */
 export async function injectTokens(
   page: Page,
@@ -87,6 +103,7 @@ export async function injectTokens(
     },
     { access_token: accessToken, refresh_token: refreshToken },
   );
+  await injectDummyKeypair(page, accessToken);
 }
 
 /**

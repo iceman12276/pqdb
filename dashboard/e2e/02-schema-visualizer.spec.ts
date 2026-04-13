@@ -11,7 +11,6 @@ import {
   apiCreateProject,
   apiCreateTable,
   injectTokens,
-  injectDummyKeypair,
   mockProjectKeys,
 } from "./helpers";
 
@@ -57,9 +56,6 @@ test.describe("Schema visualizer", () => {
     // Inject auth tokens and mock project keys so schema fetch works
     await page.goto("/login", { waitUntil: "networkidle" });
     await injectTokens(page, accessToken, refreshToken);
-    // Prevent RecoverKeypairModal from intercepting pointer events — this
-    // test doesn't decrypt anything, so dummy keypair bytes are fine.
-    await injectDummyKeypair(page, accessToken);
     await mockProjectKeys(page, projectId, serviceRoleKey);
     await page.goto(`/projects/${projectId}/schema`);
 
@@ -79,9 +75,6 @@ test.describe("Schema visualizer", () => {
   test("ERD tab renders the flow diagram", async ({ page }) => {
     await page.goto("/login", { waitUntil: "networkidle" });
     await injectTokens(page, accessToken, refreshToken);
-    // Prevent RecoverKeypairModal from intercepting pointer events — this
-    // test doesn't decrypt anything, so dummy keypair bytes are fine.
-    await injectDummyKeypair(page, accessToken);
     await mockProjectKeys(page, projectId, serviceRoleKey);
     await page.goto(`/projects/${projectId}/schema`);
 
@@ -106,9 +99,6 @@ test.describe("Schema visualizer", () => {
   test("logical vs physical view toggle works", async ({ page }) => {
     await page.goto("/login", { waitUntil: "networkidle" });
     await injectTokens(page, accessToken, refreshToken);
-    // Prevent RecoverKeypairModal from intercepting pointer events — this
-    // test doesn't decrypt anything, so dummy keypair bytes are fine.
-    await injectDummyKeypair(page, accessToken);
     await mockProjectKeys(page, projectId, serviceRoleKey);
     await page.goto(`/projects/${projectId}/schema`);
 
