@@ -301,12 +301,19 @@ export function registerProjectTools(
 
   mcpServer.tool(
     "pqdb_create_project",
-    "Create a new pqdb project. Requires PQDB_DEV_TOKEN. When PQDB_PRIVATE_KEY is also set, the project is created with a ML-KEM-768 wrapped encryption key so searchable/private columns can be used immediately.",
+    "Create a new pqdb project. Requires PQDB_DEV_TOKEN. When PQDB_PRIVATE_KEY is also set, the project is created with a ML-KEM-768 wrapped encryption key so searchable/private columns can be used immediately. When called from the crypto proxy, `wrapped_encryption_key` may be supplied in the args and will be forwarded to the backend as-is.",
     {
       name: z.string().describe("Name of the project"),
       region: z.string().optional().describe("Region for the project (e.g. us-east-1)"),
+      wrapped_encryption_key: z
+        .string()
+        .optional()
+        .describe(
+          "Base64-encoded ML-KEM-768 ciphertext. Proxy clients supply this; " +
+            "native callers leave it unset and rely on PQDB_PRIVATE_KEY.",
+        ),
     },
-    async ({ name, region }) => {
+    async ({ name, region, wrapped_encryption_key }) => {
       const authError = requireDevToken(devToken);
       if (authError) return authError;
 
@@ -326,6 +333,7 @@ export function registerProjectTools(
         let pendingSharedSecret: Uint8Array | null = null;
 
         if (privKey) {
+          // Native path: this MCP holds a private key, so it owns the crypto.
           // Fetch the developer's stored ML-KEM public key.
           const pkResp = await devGet<{ public_key: string | null }>(
             projectUrl,
@@ -349,6 +357,13 @@ export function registerProjectTools(
 
           // Defer committing the shared secret until AFTER the POST succeeds.
           pendingSharedSecret = sharedSecret;
+        } else if (wrapped_encryption_key) {
+          // Proxy path: the caller already encapsulated with the developer's
+          // public key and pre-shipped the wrapped key. Forward it as-is.
+          // The shared secret lives in the proxy's process memory — this
+          // MCP is a transparent forwarder and doesn't participate in crypto.
+          body.wrapped_encryption_key = wrapped_encryption_key;
+          wrappedEncryptionKeyPresent = true;
         } else {
           warning =
             "No PQDB_PRIVATE_KEY set — project created without encryption. " +

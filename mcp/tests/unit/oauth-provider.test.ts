@@ -37,9 +37,10 @@ describe("PqdbOAuthProvider", () => {
   let provider: PqdbOAuthProvider;
   const dashboardUrl = "http://localhost:3000";
   const mcpServerUrl = "http://localhost:3002";
+  const projectUrl = "http://localhost:8000";
 
   beforeEach(async () => {
-    provider = new PqdbOAuthProvider({ dashboardUrl, mcpServerUrl });
+    provider = new PqdbOAuthProvider({ dashboardUrl, mcpServerUrl, projectUrl });
     // Register the test client so redirect_uri validation passes in completeAuthorization
     await provider.clientsStore.registerClient(makeClient());
   });
@@ -248,10 +249,49 @@ describe("PqdbOAuthProvider", () => {
       expect(authInfo.scopes).toEqual([]);
     });
 
-    it("throws for unknown token", async () => {
+    it("throws for unknown token when backend also rejects it", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(null, { status: 401 }));
+
       await expect(provider.verifyAccessToken("unknown-token")).rejects.toThrow(
         "Invalid or expired token",
       );
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      fetchSpy.mockRestore();
+    });
+
+    it("accepts a foreign dev JWT when backend validates it (proxy fallback)", async () => {
+      // The proxy flow hands the hosted MCP a JWT that was issued via the
+      // dashboard directly — it was never registered via completeAuthorization.
+      // verifyAccessToken must call the backend to validate it and then
+      // auto-register a session.
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+
+      const authInfo = await provider.verifyAccessToken("proxy-dev-jwt");
+      expect(authInfo.token).toBe("proxy-dev-jwt");
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      const url = fetchSpy.mock.calls[0][0];
+      expect(String(url)).toBe(`${projectUrl}/v1/projects`);
+      const init = fetchSpy.mock.calls[0][1] as RequestInit;
+      expect(
+        (init.headers as Record<string, string>).Authorization,
+      ).toBe("Bearer proxy-dev-jwt");
+      fetchSpy.mockRestore();
+    });
+
+    it("caches a backend-verified token so the second call doesn't re-hit the backend", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+
+      await provider.verifyAccessToken("cached-jwt");
+      await provider.verifyAccessToken("cached-jwt");
+
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      fetchSpy.mockRestore();
     });
   });
 

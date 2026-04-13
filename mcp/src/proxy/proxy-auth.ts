@@ -42,6 +42,17 @@ export function proxyLogin(
     const app = express();
     app.use(express.json());
 
+    app.use("/mcp-auth-complete", (req, res, next) => {
+      res.header("Access-Control-Allow-Origin", dashboardUrl);
+      res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+      res.header("Access-Control-Allow-Headers", "Content-Type");
+      if (req.method === "OPTIONS") {
+        res.sendStatus(204);
+        return;
+      }
+      next();
+    });
+
     app.post("/mcp-auth-complete", (req, res) => {
       const bodyRequestId = req.body?.request_id as string | undefined;
       const token = req.body?.token as string | undefined;
@@ -62,7 +73,7 @@ export function proxyLogin(
         encryptionKey: req.body.encryption_key ?? undefined,
       };
 
-      res.json({ ok: true });
+      res.json({ redirect_url: `${dashboardUrl}/projects` });
       clearTimeout(timer);
       server.close();
       resolve(result);

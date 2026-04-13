@@ -60,16 +60,6 @@ import {
  * Replace values in _encrypted columns with "[encrypted]" when
  * no encryption key is available.
  */
-function maskEncryptedValues(rows: Record<string, unknown>[]): Record<string, unknown>[] {
-  return rows.map((row) => {
-    const masked: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(row)) {
-      masked[key] = key.endsWith("_encrypted") ? "[encrypted]" : value;
-    }
-    return masked;
-  });
-}
-
 /** Build a success MCP tool result. */
 function successResult(response: CrudResponse) {
   return {
@@ -289,12 +279,12 @@ export function registerCrudTools(
           branchHeaders,
         );
 
-        if (!isEncryptionAvailable()) {
-          return successResult({ data: maskEncryptedValues(result.data), error: null });
-        }
-
-        // Decrypt encrypted columns
-        if (schemaForDecrypt) {
+        // Native path: this MCP holds a key — decrypt the ciphertext before
+        // returning so the caller sees plaintext.
+        // Proxy path: no key here — return the raw ciphertext exactly as the
+        // backend shipped it so the proxy can decrypt upstream. No masking:
+        // the proxy needs the real bytes.
+        if (isEncryptionAvailable() && schemaForDecrypt) {
           const { keyPair } = await getCryptoState();
           const decrypted = await transformSelectResponse(
             result.data,
@@ -333,28 +323,14 @@ export function registerCrudTools(
       try {
         let transformedRows = rows;
 
+        // Native path: this MCP holds a crypto key, so it owns the encryption.
+        // Proxy path: no key here — the caller (the crypto proxy) has already
+        // encrypted anything that needs encrypting. Forward the rows as-is.
         if (isEncryptionAvailable()) {
           const schema = await getTableSchema(table);
           if (tableHasEncryptedColumns(schema)) {
             const { keyPair, hmacKey } = await getCryptoState();
             transformedRows = await transformInsertRows(rows, schema, keyPair, hmacKey);
-          }
-        } else {
-          // Check if any rows target encrypted columns without encryption key
-          for (const row of rows) {
-            const schema = await getTableSchema(table);
-            const hasSensitive = Object.keys(row).some((k) => {
-              const col = schema.columns[k];
-              return col && (col.sensitivity === "searchable" || col.sensitivity === "private");
-            });
-            if (hasSensitive) {
-              return errorResult({
-                data: null,
-                error:
-                  "Cannot write to encrypted columns without an encryption key. " +
-                  "Set PQDB_ENCRYPTION_KEY or connect via OAuth to enable client-side encryption.",
-              });
-            }
           }
         }
 
@@ -401,6 +377,10 @@ export function registerCrudTools(
         let transformedValues = values;
         let outgoingFilters: FilterClause[] = (filters ?? []) as FilterClause[];
 
+        // Native path: this MCP holds a crypto key — encrypt values and
+        // rewrite filter values into blind-index lookups.
+        // Proxy path: no key here — the caller has already transformed both
+        // the values and the filters. Forward both as-is.
         if (isEncryptionAvailable()) {
           const schema = await getTableSchema(table);
           if (tableHasEncryptedColumns(schema)) {
@@ -417,20 +397,6 @@ export function registerCrudTools(
             if (outgoingFilters.length > 0) {
               outgoingFilters = transformFilters(outgoingFilters, schema, hmacKey);
             }
-          }
-        } else {
-          const schema = await getTableSchema(table);
-          const hasSensitive = Object.keys(values).some((k) => {
-            const col = schema.columns[k];
-            return col && (col.sensitivity === "searchable" || col.sensitivity === "private");
-          });
-          if (hasSensitive) {
-            return errorResult({
-              data: null,
-              error:
-                "Cannot write to encrypted columns without an encryption key. " +
-                "Set PQDB_ENCRYPTION_KEY or connect via OAuth to enable client-side encryption.",
-            });
           }
         }
 

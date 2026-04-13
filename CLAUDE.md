@@ -144,6 +144,21 @@ All endpoints prefixed with `/v1/`. Error format: `{"error": {"code": "...", "me
 - SDK unit tests: test query builder payloads, crypto round-trips, shadow column mapping
 - E2E tests: Docker Compose + real backend + SDK, full encrypt/query/decrypt round-trip
 
+### Integration test acceptance criteria (MANDATORY for PRDs)
+
+A PRD story is NOT complete until an integration test proves the **user-observable outcome**, not just that the pipeline connects. Acceptance criteria like "proxy can list tools" or "server responds to health check" are transport-layer smoke tests — necessary but never sufficient on their own.
+
+**When writing acceptance criteria for any story that spans service boundaries** (proxy ↔ server, client ↔ API, SDK ↔ backend, MCP ↔ dashboard), the story must include one integration test that:
+
+1. **Exercises the real user goal**, not a proxy for it. If the feature is "data inserted via MCP is decryptable in the dashboard," the test must insert via MCP and then read it back via the other path and assert the plaintext matches. "MCP can connect" is not the goal.
+2. **Uses real components across the boundary**, not mocks on both sides. Mock one side at most; the other side must be the real implementation so the wire format, serialization, and error handling are actually exercised.
+3. **Asserts on the observable outcome a user would see**, not on intermediate internal state. "Response status was 200" is weaker than "the decrypted plaintext equals the inserted plaintext."
+4. **Includes an adversarial assertion** where it's cheap — for crypto features, verify that an actor with the wrong key gets nothing useful. This turns the zero-knowledge guarantee into a test property.
+
+Precedent: see `mcp/tests/e2e/proxy-crypto-roundtrip.test.ts` for the canonical pattern — real backend, real hosted MCP over HTTP, real proxy CryptoInterceptor, plaintext-marker assertions on both the plaintext round-trip and the foreign-key adversarial case.
+
+**Anti-pattern (from the Phase 5e incident)**: US-010 through US-016 shipped with the acceptance criterion "integration test: start hosted MCP, start proxy, verify proxy connects and can list tools." Five stacked bugs in the crypto pipeline were invisible to that test because it never exercised crypto. The story read as "complete" for weeks until the first real insert-and-decrypt attempt was made. Do not let this happen again.
+
 ### Dependencies
 - Backend: use `uv add <package>` (never edit pyproject.toml manually)
 - SDK: use `npm install <package>` (commit package-lock.json)

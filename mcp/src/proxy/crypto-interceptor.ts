@@ -104,6 +104,14 @@ export class CryptoInterceptor {
 
   private sharedSecret: Uint8Array | null = null;
   private pendingSharedSecret: Uint8Array | null = null;
+  /**
+   * Currently selected project ID. Captured when the client calls
+   * pqdb_select_project or pqdb_create_project, and attached as the
+   * `x-project-id` header on all direct backend fetches (HMAC key,
+   * schema introspection). The backend's developer-JWT auth path
+   * requires this header alongside `Authorization: Bearer`.
+   */
+  private currentProjectId: string | null = null;
 
   /** Schema cache with 60s TTL. */
   private readonly schemaCache = new Map<
@@ -152,7 +160,13 @@ export class CryptoInterceptor {
       case "pqdb_create_project":
         return this.transformCreateProjectRequest(args);
       case "pqdb_select_project":
-        // Select project: args pass through unchanged; decapsulation happens on response
+        // Capture the target project_id so subsequent direct backend fetches
+        // (HMAC key, schema introspection) can send the required x-project-id
+        // header. The call itself passes through unchanged; the wrapped key is
+        // decapsulated on the response.
+        if (typeof args.project_id === "string") {
+          this.currentProjectId = args.project_id;
+        }
         return args;
       case "pqdb_natural_language_query":
         // NL query: args pass through unchanged; decryption happens on response
@@ -352,6 +366,18 @@ export class CryptoInterceptor {
     const project = (data.project ?? data) as Record<string, unknown>;
     const wrappedKey = project?.wrapped_encryption_key;
 
+    // Capture the project ID from the authoritative response so the
+    // interceptor's direct backend fetches know which project to target.
+    // Prefer project.id (nested) then data.active_project_id (top-level).
+    const responseProjectId =
+      (typeof project?.id === "string" ? project.id : undefined) ??
+      (typeof data.active_project_id === "string"
+        ? (data.active_project_id as string)
+        : undefined);
+    if (responseProjectId) {
+      this.currentProjectId = responseProjectId;
+    }
+
     if (!wrappedKey || typeof wrappedKey !== "string") {
       // No wrapped key — project doesn't use encryption
       return result;
@@ -383,6 +409,15 @@ export class CryptoInterceptor {
 
     this.sharedSecret = this.pendingSharedSecret;
     this.pendingSharedSecret = null;
+
+    // Capture the newly-created project ID so subsequent direct backend
+    // fetches (HMAC key, schema introspection) can attach x-project-id.
+    const data = parsed.data as Record<string, unknown> | undefined;
+    const project = data?.project as Record<string, unknown> | undefined;
+    if (project && typeof project.id === "string") {
+      this.currentProjectId = project.id;
+    }
+
     return result;
   }
 
@@ -512,9 +547,19 @@ export class CryptoInterceptor {
 
   /** Fetch JSON from the backend with auth. */
   private async fetchJson<T>(path: string): Promise<T> {
+    // Developer-JWT auth requires both Authorization and x-project-id when
+    // hitting project-scoped endpoints. /v1/auth/me/public-key is the only
+    // non-project-scoped endpoint we call, and it ignores extra headers —
+    // so sending x-project-id when known is always safe.
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.authToken}`,
+    };
+    if (this.currentProjectId) {
+      headers["x-project-id"] = this.currentProjectId;
+    }
     const response = await fetch(`${this.backendUrl}${path}`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${this.authToken}` },
+      headers,
     });
 
     if (!response.ok) {
