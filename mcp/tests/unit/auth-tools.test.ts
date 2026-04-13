@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createPqdbMcpServer } from "../../src/server.js";
 import type { ServerConfig } from "../../src/config.js";
+import { setAuthState } from "../../src/auth-state.js";
 
 // Mock @pqdb/client
 vi.mock("@pqdb/client", () => ({
@@ -65,7 +66,7 @@ describe("pqdb_list_users tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient();
   });
 
@@ -75,29 +76,42 @@ describe("pqdb_list_users tool", () => {
     expect(names).toContain("pqdb_list_users");
   });
 
-  it("calls GET /v1/auth/users with apikey header", async () => {
-    const users = [
-      { id: "u1", email: "alice@test.com", role: "authenticated", email_verified: true },
-      { id: "u2", email: "bob@test.com", role: "admin", email_verified: false },
-    ];
-    mockFetchOk(users);
+  it("POSTs a read-only SQL query against _pqdb_users using the apikey", async () => {
+    // The handler was refactored away from a dedicated /v1/auth/users
+    // endpoint to a SQL query against the `_pqdb_users` table (there
+    // is no dedicated list-users REST endpoint). The proper assertion
+    // is that the handler sends a read-only SQL SELECT and forwards
+    // the `rows` payload.
+    const sqlResponse = {
+      rows: [
+        { id: "u1", email: "alice@test.com", role: "authenticated", email_verified: true, created_at: "2026-01-01T00:00:00Z" },
+        { id: "u2", email: "bob@test.com", role: "admin", email_verified: false, created_at: "2026-01-02T00:00:00Z" },
+      ],
+      columns: ["id", "email", "role", "email_verified", "created_at"],
+      row_count: 2,
+    };
+    mockFetchOk(sqlResponse);
 
     const result = await client.callTool({
       name: "pqdb_list_users",
       arguments: {},
     });
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:8000/v1/auth/users",
-      {
-        method: "GET",
-        headers: { apikey: "pqdb_service_testkey123" },
-      },
-    );
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, options] = mockFetch.mock.calls[0] as [
+      string,
+      { method: string; headers: Record<string, string>; body: string },
+    ];
+    expect(url).toBe("http://localhost:8000/v1/db/sql");
+    expect(options.method).toBe("POST");
+    expect(options.headers).toMatchObject({ apikey: "pqdb_service_testkey123" });
+    const body = JSON.parse(options.body) as { query: string; mode: string };
+    expect(body.mode).toBe("read");
+    expect(body.query).toMatch(/SELECT .* FROM _pqdb_users/);
 
     const text = (result.content[0] as { type: string; text: string }).text;
     const parsed = JSON.parse(text);
-    expect(parsed.data).toEqual(users);
+    expect(parsed.data).toEqual(sqlResponse.rows);
     expect(parsed.error).toBeNull();
   });
 
@@ -123,8 +137,18 @@ describe("pqdb_list_roles tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient();
+    // pqdb_list_roles hits the project-scoped endpoint
+    // /v1/projects/{project_id}/auth/roles and reads both the
+    // developer JWT and the project ID from auth-state. The test
+    // helper has to populate auth-state explicitly — in production,
+    // http-app.ts sets it on the initialize request.
+    setAuthState({
+      devToken: "dev-jwt-token-123",
+      projectId: "proj-test-123",
+      projectUrl: "http://localhost:8000",
+    });
   });
 
   it("is registered and listed", async () => {
@@ -133,7 +157,7 @@ describe("pqdb_list_roles tool", () => {
     expect(names).toContain("pqdb_list_roles");
   });
 
-  it("calls GET /v1/auth/roles with apikey header", async () => {
+  it("calls GET /v1/projects/{pid}/auth/roles with Bearer header", async () => {
     const roles = [
       { id: "r1", name: "anon", description: "Anonymous" },
       { id: "r2", name: "authenticated", description: "Authenticated user" },
@@ -147,11 +171,8 @@ describe("pqdb_list_roles tool", () => {
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:8000/v1/auth/roles",
-      {
-        method: "GET",
-        headers: { apikey: "pqdb_service_testkey123" },
-      },
+      "http://localhost:8000/v1/projects/proj-test-123/auth/roles",
+      { headers: { Authorization: "Bearer dev-jwt-token-123" } },
     );
 
     const text = (result.content[0] as { type: string; text: string }).text;
@@ -182,7 +203,7 @@ describe("pqdb_list_policies tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient();
   });
 

@@ -66,8 +66,10 @@ describe("pqdb_get_project tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
-    client = await createTestClient();
+    vi.resetAllMocks();
+    // pqdb_get_project requires a developer JWT — it hits the backend
+    // via `devGet` which sends `Authorization: Bearer <devToken>`.
+    client = await createTestClient({ devToken: "dev-jwt-token-123" });
   });
 
   it("is registered and listed", async () => {
@@ -82,7 +84,7 @@ describe("pqdb_get_project tool", () => {
     expect(tool?.inputSchema.required).toContain("project_id");
   });
 
-  it("calls GET /v1/projects/{id} with apikey header", async () => {
+  it("calls GET /v1/projects/{id} with Authorization Bearer header", async () => {
     const project = {
       id: "proj-123",
       name: "My Project",
@@ -102,7 +104,7 @@ describe("pqdb_get_project tool", () => {
       "http://localhost:8000/v1/projects/proj-123",
       {
         method: "GET",
-        headers: { apikey: "pqdb_service_testkey123" },
+        headers: { Authorization: "Bearer dev-jwt-token-123" },
       },
     );
 
@@ -134,7 +136,7 @@ describe("pqdb_list_projects tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient({ devToken: "dev-jwt-token-123" });
   });
 
@@ -171,7 +173,7 @@ describe("pqdb_list_projects tool", () => {
   });
 
   it("returns error when devToken is not set", async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     const clientNoToken = await createTestClient({ devToken: undefined });
 
     const result = await clientNoToken.callTool({
@@ -192,7 +194,7 @@ describe("pqdb_create_project tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient({ devToken: "dev-jwt-token-123" });
   });
 
@@ -245,7 +247,7 @@ describe("pqdb_create_project tool", () => {
   });
 
   it("returns error when devToken is not set", async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     const clientNoToken = await createTestClient({ devToken: undefined });
 
     const result = await clientNoToken.callTool({
@@ -280,8 +282,9 @@ describe("pqdb_get_logs tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
-    client = await createTestClient();
+    vi.resetAllMocks();
+    // pqdb_get_logs uses `devGet` — developer JWT with Bearer auth.
+    client = await createTestClient({ devToken: "dev-jwt-token-123" });
   });
 
   it("is registered and listed", async () => {
@@ -296,7 +299,7 @@ describe("pqdb_get_logs tool", () => {
     expect(tool?.inputSchema.required).toContain("project_id");
   });
 
-  it("calls GET /v1/projects/{id}/logs with apikey header", async () => {
+  it("calls GET /v1/projects/{id}/logs with Authorization Bearer header", async () => {
     const logs = [
       { id: "l1", action: "insert", table: "users", timestamp: "2026-01-01T00:00:00Z" },
       { id: "l2", action: "select", table: "posts", timestamp: "2026-01-01T01:00:00Z" },
@@ -312,7 +315,7 @@ describe("pqdb_get_logs tool", () => {
       "http://localhost:8000/v1/projects/proj-123/logs",
       {
         method: "GET",
-        headers: { apikey: "pqdb_service_testkey123" },
+        headers: { Authorization: "Bearer dev-jwt-token-123" },
       },
     );
 
@@ -343,7 +346,7 @@ describe("pqdb_pause_project tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient({ devToken: "dev-jwt-token-123" });
   });
 
@@ -381,7 +384,7 @@ describe("pqdb_pause_project tool", () => {
   });
 
   it("returns error when devToken is not set", async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     const clientNoToken = await createTestClient({ devToken: undefined });
 
     const result = await clientNoToken.callTool({
@@ -402,7 +405,7 @@ describe("pqdb_restore_project tool", () => {
   let client: Client;
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     client = await createTestClient({ devToken: "dev-jwt-token-123" });
   });
 
@@ -440,7 +443,7 @@ describe("pqdb_restore_project tool", () => {
   });
 
   it("returns error when devToken is not set", async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     const clientNoToken = await createTestClient({ devToken: undefined });
 
     const result = await clientNoToken.callTool({
